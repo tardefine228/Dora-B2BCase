@@ -1,0 +1,18 @@
+extend-exclude = [
+  "data",
+  "frontend",
+  "node_modules",
+  ".venv",
+  "venv",
+]
+
+line-length = 100
+
+[lint]
+select = [
+  "E",
+  "F",
+  "I",
+  "B",
+  "UP",
+]
