@@ -20,6 +20,8 @@ class SearchResult:
     pp_code: str
     pp_link: str
     score: float
+    record_id: str = ""
+    position: str = ""
 
 
 def search(query: str, top_k: int = DEFAULT_TOP_K) -> list[SearchResult]:
@@ -59,6 +61,8 @@ def search(query: str, top_k: int = DEFAULT_TOP_K) -> list[SearchResult]:
                 group=payload.get("group", ""),
                 pp_code=payload.get("pp_code", ""),
                 pp_link=payload.get("pp_link", ""),
+                record_id=payload.get("record_id", ""),
+                position=payload.get("position", ""),
                 score=hit.score,
             )
         )
