@@ -63,6 +63,8 @@ def index_catalog() -> None:
             payload={
                 "name": item["name"],
                 "group": item.get("group", ""),
+                "position": item.get("position", ""),
+                "record_id": item.get("record_id", ""),
                 "pp_code": item.get("pp_code", ""),
                 "pp_link": item.get("pp_link", ""),
             },
