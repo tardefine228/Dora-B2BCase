@@ -36,3 +36,12 @@ Thumbs.db
 # IDE
 .idea/
 .vscode/
+
+# ENV 
+.env
+.env.local
+
+# ML artefacts
+models_cache/
+qdrant_storage/
+*.onnx
