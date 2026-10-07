@@ -1,0 +1,4 @@
+# Optional and heavyweight. Install only for semantic Qdrant search/reindexing.
+-r requirements.txt
+qdrant-client>=1.14,<2.0
+sentence-transformers>=3.0,<6.0
