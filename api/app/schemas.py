@@ -1,43 +1,38 @@
-from typing import Literal
+"""Public request/response contracts; exposed automatically in OpenAPI."""
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class APIModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+
+ProductName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=500),
+]
 
 
 class ClassifyRequest(APIModel):
-    name: str = Field(min_length=1, max_length=500)
-
-    @field_validator("name", mode="before")
-    @classmethod
-    def strip_name(cls, value: object) -> object:
-        return value.strip() if isinstance(value, str) else value
+    name: ProductName = Field(
+        description="Название товара или код ОКПД2; от 1 до 500 символов.",
+        examples=["Ноутбук Lenovo IdeaPad"],
+    )
 
 
 class BatchClassifyRequest(APIModel):
-    items: list[str] = Field(min_length=1, max_length=100)
-
-    @field_validator("items", mode="before")
-    @classmethod
-    def strip_items(cls, value: object) -> object:
-        if isinstance(value, list):
-            return [item.strip() if isinstance(item, str) else item for item in value]
-        return value
-
-    @field_validator("items")
-    @classmethod
-    def validate_items(cls, value: list[str]) -> list[str]:
-        if any(not item for item in value):
-            raise ValueError("Название каждого товара должно быть непустым")
-        if any(len(item) > 500 for item in value):
-            raise ValueError("Название товара не должно быть длиннее 500 символов")
-        return value
+    items: list[ProductName] = Field(
+        min_length=1,
+        max_length=100,
+        description="От 1 до 100 названий товаров, каждое — до 500 символов.",
+        examples=[["Ноутбук Lenovo", "Мышь компьютерная"]],
+    )
 
 
 class Alternative(APIModel):
-    code: str
+    code: str | None = None
     title: str | None = None
     confidence: float = Field(ge=0, le=1)
 
@@ -68,4 +63,18 @@ class BatchJobStatusResponse(APIModel):
     completed: int = Field(ge=0, le=100)
     progress_percent: float = Field(ge=0, le=100)
     results: list[ClassifyResponse] = Field(default_factory=list)
+    error: str | None = None
+
+
+class ReindexJobAccepted(APIModel):
+    job_id: str
+    status: Literal["queued"]
+    status_url: str
+
+
+class ReindexJobStatusResponse(APIModel):
+    job_id: str
+    status: Literal["queued", "running", "completed", "failed"]
+    total: int | None = Field(default=None, ge=0)
+    indexed: int = Field(ge=0)
     error: str | None = None
