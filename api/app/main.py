@@ -1,10 +1,16 @@
-import asyncio
+"""Dora B2BCase API — классификация товаров по ПП № 1875."""
+
 import logging
 import time
+from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 
+from app.core.config import settings
+from app.core.log_config import configure_logging
+from app.core.metrics import metrics as metrics_store
 from app.job_store import BatchJob, create_job, get_job
+from app.middleware.observe import ObserveMiddleware
 from app.schemas import (
     BatchClassifyRequest,
     BatchJobAccepted,
@@ -12,57 +18,38 @@ from app.schemas import (
     ClassifyRequest,
     ClassifyResponse,
 )
+from app.services.classifier import get_classifier
 
+configure_logging(settings.log_level)
 logger = logging.getLogger("dora.api")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        get_classifier()
+        logger.info("Классификатор готов (backend=%s)", settings.classifier_backend)
+    except Exception:
+        logger.exception("Не удалось инициализировать классификатор")
+    yield
+
 
 app = FastAPI(
     title="Dora B2BCase API",
     description="API классификатора товаров по ПП № 1875",
-    version="0.1.0",
+    version="0.2.0",
+    lifespan=lifespan,
 )
-
-
-def _mock_result(query: str, latency_ms: float = 0) -> ClassifyResponse:
-    """Temporary response so the API and frontend can be developed before ML is ready."""
-    return ClassifyResponse(
-        query=query,
-        code="MOCK-001",
-        title="Демонстрационный ответ — ML-модуль ещё не подключён",
-        confidence=0,
-        status="review",
-        clause_ref=None,
-        clause_url=None,
-        alternatives=[],
-        latency_ms=latency_ms,
-    )
-
-
-async def _run_batch_job(job_id: str) -> None:
-    job = get_job(job_id)
-    if job is None:
-        return
-
-    job.status = "running"
-    try:
-        for name in job.items:
-            started_at = time.perf_counter()
-            result = await asyncio.to_thread(_mock_result, name)
-            latency_ms = (time.perf_counter() - started_at) * 1000
-            job.results.append(result.model_copy(update={"latency_ms": latency_ms}))
-            job.completed += 1
-        job.status = "completed"
-    except Exception:
-        logger.exception("Batch job failed: %s", job_id)
-        job.status = "failed"
-        job.error = "Не удалось обработать список товаров"
+app.add_middleware(ObserveMiddleware)
 
 
 def _job_status_response(job: BatchJob) -> BatchJobStatusResponse:
-    progress_percent = round(job.completed * 100 / len(job.items), 1)
+    total = len(job.items)
+    progress_percent = round(job.completed * 100 / total, 1) if total else 0.0
     return BatchJobStatusResponse(
         job_id=job.job_id,
         status=job.status,
-        total=len(job.items),
+        total=total,
         completed=job.completed,
         progress_percent=progress_percent,
         results=job.results,
@@ -70,33 +57,49 @@ def _job_status_response(job: BatchJob) -> BatchJobStatusResponse:
     )
 
 
-@app.middleware("http")
-async def log_request_time(request, call_next):
-    started_at = time.perf_counter()
-    response = await call_next(request)
-    latency_ms = (time.perf_counter() - started_at) * 1000
-    response.headers["X-Process-Time-Ms"] = f"{latency_ms:.2f}"
-    logger.info(
-        "%s %s status=%s latency_ms=%.2f",
-        request.method,
-        request.url.path,
-        response.status_code,
-        latency_ms,
-    )
-    return response
-
-
 @app.get("/health", tags=["system"])
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict:
+    return {
+        "status": "ok",
+        "service": "dora-api",
+        "classifier_backend": settings.classifier_backend,
+        "version": app.version,
+    }
+
+
+@app.get("/metrics", tags=["system"])
+def metrics_endpoint() -> dict:
+    return metrics_store.snapshot()
 
 
 @app.post("/classify", response_model=ClassifyResponse, tags=["classification"])
 def classify(request: ClassifyRequest) -> ClassifyResponse:
-    started_at = time.perf_counter()
-    result = _mock_result(request.name)
-    latency_ms = (time.perf_counter() - started_at) * 1000
-    return result.model_copy(update={"latency_ms": latency_ms})
+    started = time.perf_counter()
+    result = get_classifier().classify(request.name)
+    latency_ms = (time.perf_counter() - started) * 1000
+    return result.model_copy(update={"query": request.name, "latency_ms": round(latency_ms, 3)})
+
+
+async def _run_batch_job(job_id: str) -> None:
+    job = get_job(job_id)
+    if job is None:
+        return
+    job.status = "running"
+    try:
+        classifier = get_classifier()
+        for name in job.items:
+            started = time.perf_counter()
+            result = classifier.classify(name)
+            latency_ms = (time.perf_counter() - started) * 1000
+            job.results.append(
+                result.model_copy(update={"query": name, "latency_ms": round(latency_ms, 3)})
+            )
+            job.completed += 1
+        job.status = "completed"
+    except Exception:
+        logger.exception("Batch job failed: %s", job_id)
+        job.status = "failed"
+        job.error = "Не удалось обработать список товаров"
 
 
 @app.post(
