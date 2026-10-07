@@ -1,0 +1,18 @@
+# ML
+torch
+sentence-transformers
+qdrant-client
+numpy
+
+# API
+fastapi
+uvicorn
+
+# Utilities
+python-multipart
+pymorphy3
+python-dotenv
+
+# Dev (optional)
+ruff
+pre-commit
