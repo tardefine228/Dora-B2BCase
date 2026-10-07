@@ -69,7 +69,7 @@ def index_catalog() -> None:
                 "pp_link": item.get("pp_link", ""),
             },
         )
-        for item, vector in zip(catalog, vectors)
+        for item, vector in zip(catalog, vectors, strict=True)
     ]
 
     # 6. Upload to Qdrant

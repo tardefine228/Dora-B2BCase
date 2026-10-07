@@ -18,4 +18,9 @@ print("appendix:", Counter(r.get("appendix") for r in rows))
 print("empty names:", sum(1 for n in names if not n))
 print("duplicate record_id:", len(ids) - len(set(ids)))
 print("duplicate (okpd2, name):", len(pairs) - len(set(pairs)))
-print("name len min/avg/max:", min(map(len, names)), sum(map(len, names)) // len(names), max(map(len, names)))
+name_len_min, name_len_avg, name_len_max = (
+    min(map(len, names)),
+    sum(map(len, names)) // len(names),
+    max(map(len, names)),
+)
+print("name len min/avg/max:", name_len_min, name_len_avg, name_len_max)
