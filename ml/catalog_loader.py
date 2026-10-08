@@ -18,16 +18,17 @@ def load_catalog() -> list[dict]:
     Returns:
         List of dicts with fields: id, record_id, name, group, position,
         description, pp_code, pp_link, code_role.
-    Falls back to dummy data if the real file is missing (for offline tests).
+    Raises ``FileNotFoundError`` rather than silently indexing a dummy catalog.
     """
     path = RAW_DATA_DIR / CATALOG_FILE
+    if not path.is_file():
+        raise FileNotFoundError(f"Catalog JSON not found: {path}")
 
-    if path.exists():
-        with path.open(encoding="utf-8") as f:
-            rows = json.load(f)
-        return _rows_to_items(rows)
-
-    return _get_dummy_catalog()
+    with path.open(encoding="utf-8") as f:
+        rows = json.load(f)
+    if not isinstance(rows, list):
+        raise ValueError(f"Catalog JSON must contain an array: {path}")
+    return _rows_to_items(rows)
 
 
 def _rows_to_items(rows: list[dict]) -> list[dict]:
@@ -36,6 +37,8 @@ def _rows_to_items(rows: list[dict]) -> list[dict]:
     skipped = 0
 
     for idx, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            raise ValueError(f"Catalog row {idx} is not an object")
         name = (row.get("name") or "").strip()
         if not name:
             skipped += 1
@@ -69,23 +72,6 @@ def _rows_to_items(rows: list[dict]) -> list[dict]:
         print(f"   Parsed {len(items)} items, skipped {skipped}")
 
     return items
-
-
-def _get_dummy_catalog() -> list[dict]:
-    """Tiny fallback catalog for offline tests."""
-    return [
-        {
-            "id": 1,
-            "record_id": "dummy-1",
-            "name": "Электрический перфоратор Bosch GBH 2-26",
-            "group": "Приложение 1",
-            "position": "Приложение 1, позиция 1",
-            "description": "ОКПД2: 28.24",
-            "pp_code": "28.24",
-            "pp_link": "dummy",
-            "code_role": "Включён",
-        },
-    ]
 
 
 def item_to_text(item: dict) -> str:
