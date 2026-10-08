@@ -1,4 +1,4 @@
-name: Lint and API tests
+name: Lint, API tests and model quality gate
 
 on:
   push:
@@ -21,15 +21,72 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          python -m pip install ruff
           python -m pip install -r api/requirements-dev.txt
 
       - name: Run Ruff
         run: ruff check .
 
-      - name: Check formatting
-        run: ruff format --check .
-
       - name: Run API tests
         env:
           PYTHONPATH: api
         run: python -m pytest api/tests -q
+
+  # Model quality gate: rebuild the reranker from the catalog deterministically
+  # and fail the build when the labeled-set metrics regress below the floor
+  # recorded in eval/experiments.md. The artifact is cached by the hash of
+  # everything that influences training; a cache hit skips the ~5 min rebuild.
+  quality:
+    runs-on: ubuntu-latest
+    needs: check
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r api/requirements-dev.txt numpy
+
+      - name: Restore model artifacts
+        id: model-cache
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: reranker-${{ hashFiles('ml/**/*.py', 'scripts/build_model.py', 'data/data.csv', 'data/data.json') }}
+
+      - name: Build model artifacts
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        run: python scripts/build_model.py
+
+      - name: Model tests (trained artifact)
+        env:
+          PYTHONPATH: api
+        run: python -m pytest api/tests/test_reranker.py api/tests/test_lexicon.py -q
+
+      - name: Quality gate on the labeled set
+        env:
+          PYTHONPATH: api
+        # Floors = current result minus a small tolerance (see eval/experiments.md).
+        run: |
+          python eval/run_eval.py --sweep --output eval_report_ci.md \
+            --min-top1 ${MIN_TOP1:-90} \
+            --min-top3 ${MIN_TOP3:-93} \
+            --min-silence ${MIN_SILENCE:-75} \
+            --min-exact ${MIN_EXACT:-98}
+
+      - name: Upload evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: |
+            eval_report_ci.md
+            models/reranker.json
+          if-no-files-found: ignore

@@ -124,6 +124,161 @@ MODEL_WORDS = (
 )
 
 
+# Hard negatives: everyday goods that PP-1875 does not list. The confidence
+# model must learn that a catalog modifier ("бытовой", "компьютерный") matching
+# around an unknown head noun is not a hit. The list is deliberately disjoint
+# from eval/labeled_examples.csv, which stays a clean measurement set; heads
+# that happen to be in the catalog vocabulary are skipped at training time.
+OUT_OF_SCOPE_HEADS = (
+    "диван",
+    "кофеварка",
+    "блендер",
+    "тостер",
+    "фен",
+    "наушники",
+    "клавиатура",
+    "сканер",
+    "газонокосилка",
+    "дрель",
+    "шуруповерт",
+    "молоток",
+    "отвертка",
+    "лопата",
+    "ведро",
+    "швабра",
+    "шампунь",
+    "картридж",
+    "флешка",
+    "роутер",
+    "батарейка",
+    "фонарик",
+    "палатка",
+    "рюкзак",
+    "зонт",
+    "карандаш",
+    "степлер",
+    "обои",
+    "ламинат",
+    "унитаз",
+    "раковина",
+    "бойлер",
+    "мультиварка",
+    "соковыжималка",
+    "миксер",
+    "пароварка",
+    "вентилятор",
+    "сейф",
+    "тумба",
+    "подушка",
+    "одеяло",
+    "полотенце",
+    "штора",
+    "ковер",
+    "кастрюля",
+    "сковорода",
+    "чашка",
+    "тарелка",
+    "термос",
+    "мешок",
+    "замок",
+    "самокат",
+    "кукла",
+    "гантели",
+    "колонка",
+    "модем",
+    "удлинитель",
+    "розетка",
+    "глюкометр",
+    "ингалятор",
+    "респиратор",
+    "каска",
+    "бензин",
+    "антифриз",
+    "домкрат",
+    "трос",
+    "коврик",
+    "видеокамера",
+    "ксерокс",
+    "калькулятор",
+    "кофемашина",
+    "посудомойка",
+    "морозилка",
+    "плитка",
+    "брусчатка",
+    "шпатлевка",
+    "герметик",
+    "скрепки",
+    "папка",
+    "бейдж",
+)
+# Catalog modifiers that legitimately co-occur with unlisted goods.
+HARD_NEGATIVE_MODIFIERS = (
+    "бытовой",
+    "бытовая",
+    "электрический",
+    "электрическая",
+    "металлический",
+    "металлическая",
+    "лазерный",
+    "компьютерный",
+    "компьютерная",
+    "медицинский",
+    "промышленный",
+    "детский",
+    "детская",
+    "резиновый",
+    "стальной",
+    "пластмассовый",
+    "деревянный",
+    "автоматический",
+    "цифровой",
+    "портативный",
+    "настольный",
+    "офисный",
+    "кухонный",
+    "хирургический",
+    "текстильный",
+    "защитный",
+    "электронный",
+    "беспроводной",
+    "кожаный",
+    "для дома",
+    "для офиса",
+)
+_GARBAGE_SYLLABLES = ("ба", "ву", "гро", "дз", "кы", "мя", "пру", "тл", "фи", "хе", "ща", "эр")
+
+
+def make_negative_queries(
+    rng: random.Random, known_stems: set[str], *, garbage: int = 40
+) -> list[str]:
+    """Synthetic out-of-catalog queries (all candidates are labeled 0)."""
+    queries: list[str] = []
+    for head in OUT_OF_SCOPE_HEADS:
+        if stem(head) in known_stems:
+            continue  # the catalog does mention it — not a safe negative
+        queries.append(head)
+        queries.append(f"{head} {rng.choice(HARD_NEGATIVE_MODIFIERS)}")
+        queries.append(f"{rng.choice(HARD_NEGATIVE_MODIFIERS)} {head}")
+        if rng.random() < 0.5:
+            queries.append(f"{head} {rng.choice(BRAND_WORDS)} {rng.choice(MODEL_WORDS)}")
+        if rng.random() < 0.5:
+            queries.append(
+                f"{head} {rng.choice(HARD_NEGATIVE_MODIFIERS)} "
+                f"{rng.choice(HARD_NEGATIVE_MODIFIERS)}"
+            )
+        if rng.random() < 0.3:
+            queries.append(_typo(head, rng))
+    for _ in range(garbage):
+        words = [
+            "".join(rng.choice(_GARBAGE_SYLLABLES) for _ in range(rng.randint(2, 4)))
+            for _ in range(rng.randint(1, 3))
+        ]
+        if rng.random() < 0.3:
+            words.append(rng.choice(BRAND_WORDS))
+        queries.append(" ".join(words))
+    return queries
+
+
 @dataclass
 class TrainingPair:
     query: str
@@ -254,13 +409,25 @@ def make_query_variants(
     if rng.random() < 0.5:
         variants.append(" ".join(_typo(word, rng) for word in word_list[: min(4, len(word_list))]))
 
-    # Lexicon bridges: everyday product words for an abstract category name
-    # ("кроссовки" for "Обувь") — these are queries the API must resolve.
+    variants.extend(make_bridge_variants(name, rng, bridge_sources))
+    return variants
+
+
+def make_bridge_variants(
+    name: str, rng: random.Random, bridge_sources: list[str] | None
+) -> list[str]:
+    """Everyday product words for an abstract category name ("кроссовки" → "Обувь")."""
+    word_list = tokens(name)
+    variants: list[str] = []
     for source in bridge_sources or ():
-        if source not in word_list:
-            variants.append(source)
-            if rng.random() < 0.5:
-                variants.append(f"{source} {rng.choice(BRAND_WORDS)}")
+        if source in word_list:
+            continue
+        variants.append(source)
+        if rng.random() < 0.5:
+            variants.append(f"{source} {rng.choice(BRAND_WORDS)}")
+        # "костюм мужской", "сапоги детские" — the real shape of such queries.
+        variants.append(f"{source} {rng.choice(NOISE_WORDS)}")
+        variants.append(f"{rng.choice(NOISE_WORDS)} {source} {rng.choice(NOISE_WORDS)}")
     return variants
 
 
@@ -271,20 +438,27 @@ def bridge_sources_by_name(catalog: list[dict]) -> dict[str, list[str]]:
     ортопедическая детская" — otherwise the same query gets conflicting labels
     and the model learns to distrust it.
     """
-    from ml.features import best_match_weight
-    from ml.lexicon import BRIDGES
+    from ml.features import best_match_weight, content_stems
+    from ml.lexicon import BRIDGES, CANONICAL_CODES
 
-    canonical: dict[str, tuple[int, str]] = {}  # target -> (stem count, name)
+    canonical: dict[str, tuple[int, str]] = {}  # target -> (rank, name)
     for item in catalog:
         name = item["name"]
         name_stems = stems(name)
-        for _source, target in BRIDGES.items():
+        code = item.get("pp_code") or ""
+        for target in set(BRIDGES.values()):
             target_stem = stems(target)[0]
             if best_match_weight(target_stem, set(name_stems)) <= 0:
                 continue
+            pinned = CANONICAL_CODES.get(target)
+            if pinned and not (code == pinned or code.startswith(pinned + ".")):
+                continue
+            # Fewer content words = more general position ("Одежда, кроме
+            # одежды из меха" beats "Одежда защитная огнестойкая").
+            rank = len(content_stems(set(name_stems)))
             current = canonical.get(target)
-            if current is None or len(name_stems) < current[0]:
-                canonical[target] = (len(name_stems), name)
+            if current is None or rank < current[0]:
+                canonical[target] = (rank, name)
 
     sources: dict[str, list[str]] = {}
     for source, target in BRIDGES.items():
@@ -298,13 +472,45 @@ def build_pairs(
     rng: random.Random,
     max_queries: int,
     idf: dict[str, float] | None = None,
+    negative_queries: list[str] | None = None,
 ) -> list[TrainingPair]:
-    sampled = rng.sample(catalog, min(max_queries, len(catalog)))
     pairs: list[TrainingPair] = []
     code_by_title = {item["name"]: item.get("pp_code") or "" for item in catalog}
     # Precompute candidate features once: training scores ~10^6 pairs.
     prepared_titles = [(item["name"], prepare_candidate(item["name"])) for item in catalog]
     bridges = bridge_sources_by_name(catalog)
+    # Canonical bridge positions must always be in the sample — otherwise the
+    # model never sees a positive example for "кроссовки" → "Обувь".
+    sampled = rng.sample(catalog, min(max_queries, len(catalog)))
+    sampled_titles = {item["name"] for item in sampled}
+    sampled += [
+        item for item in catalog if item["name"] in bridges and item["name"] not in sampled_titles
+    ]
+
+    # Hard negatives: the retrieval shortlist for an unlisted product, all 0.
+    for query in negative_queries or ():
+        prepared_query = prepare_candidate(expand_query(query))
+        scored = sorted(
+            (
+                (lexical_score_prepared(prepared_query, prepared), title)
+                for title, prepared in prepared_titles
+            ),
+            key=lambda pair: pair[0],
+            reverse=True,
+        )
+        shortlist = [(score, title) for score, title in scored[:12] if score > 0]
+        if not shortlist:
+            shortlist = [(0.0, title) for _s, title in rng.sample(scored, 3)]
+        for score, title in shortlist:
+            pairs.append(
+                TrainingPair(
+                    query=query,
+                    title=title,
+                    code=code_by_title.get(title, ""),
+                    label=0,
+                    retrieval_score=score,
+                )
+            )
 
     for item in sampled:
         true_title = item["name"]
@@ -386,10 +592,14 @@ def fit_logistic_named(
 
 # Operating point of the service: minimum confidence for showing a
 # suggestion, below it the answer is not_found. Chosen by the threshold
-# sweep on eval/labeled_examples.csv (eval/experiments.md): below ~0.14 the
-# service floods the user with weak hints, above ~0.20 it silences correct
-# suggestions. Calibration only picks threshold_ok (precision-targeted).
-REVIEW_CONFIDENCE_FLOOR = 0.14
+# sweep on eval/labeled_examples.csv (``python eval/run_eval.py --sweep``,
+# table in eval/experiments.md): with hard negatives in training the unlisted
+# goods of the labeled set settle at ≤ 0.146 while the weakest correct hints
+# sit at ≥ 0.186, so 0.165 is the midpoint of the gap (metrics are flat on
+# 0.16–0.18); above ~0.20 correct suggestions start to disappear. Re-run the
+# sweep after every model change — the scale moves. Calibration only picks
+# threshold_ok (precision-targeted).
+REVIEW_CONFIDENCE_FLOOR = 0.165
 
 
 def calibrate_thresholds(
@@ -479,7 +689,14 @@ def train(
     known_stems = build_known_stems([item["name"] for item in catalog])
     stem_idf = idf_table([item["name"] for item in catalog])
 
-    pairs = build_pairs(catalog, rng, max_queries=max_queries, idf=stem_idf)
+    negative_queries = make_negative_queries(rng, known_stems)
+    pairs = build_pairs(
+        catalog,
+        rng,
+        max_queries=max_queries,
+        idf=stem_idf,
+        negative_queries=negative_queries,
+    )
     rng.shuffle(pairs)
     split = int(len(pairs) * (1 - validation_share))
     train_pairs, validation_pairs = pairs[:split], pairs[split:]
@@ -565,6 +782,7 @@ def train(
         if ok_decisions
         else None,
         "corpus_rows": len(catalog),
+        "hard_negative_queries": len(negative_queries),
     }
 
     output.parent.mkdir(parents=True, exist_ok=True)
