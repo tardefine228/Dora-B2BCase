@@ -64,5 +64,21 @@ class Settings:
         self.classification_cache_size = _positive_int("CLASSIFICATION_CACHE_SIZE", 512)
         self.max_request_body_bytes = _positive_int("MAX_REQUEST_BODY_BYTES", 1_000_000)
 
+        # Per-client rate limiting (token bucket); probes, metrics and /ui are exempt.
+        self.rate_limit_enabled = _bool("RATE_LIMIT_ENABLED", default=True)
+        self.rate_limit_rps = _positive_int("RATE_LIMIT_RPS", 10)
+        self.rate_limit_burst = _positive_int("RATE_LIMIT_BURST", 20)
+        self.rate_limit_admin_rps = _positive_int("RATE_LIMIT_ADMIN_RPS", 1)
+        self.rate_limit_admin_burst = _positive_int("RATE_LIMIT_ADMIN_BURST", 2)
+
+        # Background jobs: sqlite survives an API restart, memory is for tests/demos.
+        self.job_store = os.getenv("JOB_STORE", "sqlite").strip().lower()
+        if self.job_store not in {"memory", "sqlite"}:
+            raise ValueError("JOB_STORE must be 'memory' or 'sqlite'")
+        self.job_store_path = os.getenv("JOB_STORE_PATH", "data/jobs.sqlite").strip()
+        self.job_ttl_hours = _positive_int("JOB_TTL_HOURS", 24)
+        self.job_max_active = _positive_int("JOB_MAX_ACTIVE", 16)
+        self.job_max_stored = _positive_int("JOB_MAX_STORED", 512)
+
 
 settings = Settings()

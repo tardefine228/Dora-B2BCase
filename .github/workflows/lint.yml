@@ -73,12 +73,13 @@ jobs:
       - name: Quality gate on the labeled set
         env:
           PYTHONPATH: api
-        # Floors = current result minus a small tolerance (see eval/experiments.md).
+        # Floors = current result minus 1-2 labeled rows (see eval/experiments.md,
+        # experiment 11: the set grew to 214 rows, so the floors were re-taken).
         run: |
           python eval/run_eval.py --sweep --output eval_report_ci.md \
-            --min-top1 ${MIN_TOP1:-90} \
-            --min-top3 ${MIN_TOP3:-93} \
-            --min-silence ${MIN_SILENCE:-75} \
+            --min-top1 ${MIN_TOP1:-83} \
+            --min-top3 ${MIN_TOP3:-88} \
+            --min-silence ${MIN_SILENCE:-91} \
             --min-exact ${MIN_EXACT:-98}
 
       - name: Upload evaluation report
