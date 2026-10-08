@@ -46,6 +46,14 @@ class Settings:
         self.catalog_path = os.getenv("CATALOG_PATH", "").strip()
         self.data_dir = os.getenv("DATA_DIR", "data").strip() or "data"
 
+        # Comma-separated origins for browser clients; empty value disables CORS
+        # headers (same-origin deployments such as /ui do not need them).
+        self.cors_allow_origins = [
+            origin.strip()
+            for origin in os.getenv("CORS_ALLOW_ORIGINS", "*").split(",")
+            if origin.strip()
+        ]
+
         self.model_name = os.getenv("MODEL_NAME", "BAAI/bge-m3").strip()
         self.model_device = os.getenv("MODEL_DEVICE", "cpu").strip() or "cpu"
         self.model_local_only = _bool("MODEL_LOCAL_ONLY", default=False)

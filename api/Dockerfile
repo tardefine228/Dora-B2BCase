@@ -23,6 +23,7 @@ RUN if [ "$INSTALL_ML" = "true" ]; then \
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app
 COPY --chown=app:app api/app ./app
 COPY --chown=app:app ml ./ml
+COPY --chown=app:app frontend ./frontend
 COPY --chown=app:app data/data.csv data/data.json ./data/
 
 ENV DATA_DIR=/app/data \

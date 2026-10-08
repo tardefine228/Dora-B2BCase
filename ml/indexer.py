@@ -119,10 +119,16 @@ def index_catalog() -> int:
         first_records = catalog[:INDEX_BATCH_SIZE]
         first_vectors = encode_texts([item_to_text(item) for item in first_records])
         vector_dim = len(first_vectors[0]) if first_vectors else 0
+        if vector_dim == 0:
+            raise ValueError("Эмбеддер вернул пустые векторы")
         if vector_dim != QDRANT_VECTOR_DIM:
-            raise ValueError(
-                f"Размер вектора модели ({vector_dim}) не совпадает с "
-                f"QDRANT_VECTOR_DIM ({QDRANT_VECTOR_DIM})"
+            # The collection is rebuilt from scratch, so the real model dimension
+            # wins; the config value is only a hint (bge-m3 = 1024, tfidf = 512).
+            logger.warning(
+                "Размерность модели (%d) отличается от QDRANT_VECTOR_DIM (%d); "
+                "коллекция создаётся по размерности модели",
+                vector_dim,
+                QDRANT_VECTOR_DIM,
             )
 
         client.create_collection(

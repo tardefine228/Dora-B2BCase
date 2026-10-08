@@ -15,6 +15,14 @@ def _project_path(value: str) -> Path:
     return path if path.is_absolute() else ROOT_DIR / path
 
 
+# === Embedding backend ===
+# auto | sentence-transformers | tfidf
+EMBEDDER_BACKEND: str = os.getenv("EMBEDDER_BACKEND", "auto").strip().lower()
+TFIDF_DIM: int = int(os.getenv("TFIDF_DIM", "512"))
+TFIDF_NGRAMS: tuple[int, ...] = tuple(
+    int(size) for size in os.getenv("TFIDF_NGRAMS", "3,4").split(",") if size.strip()
+)
+
 # === Model ===
 _model_value = os.getenv("MODEL_NAME", "BAAI/bge-m3").strip()
 _model_path = Path(_model_value).expanduser()
@@ -56,6 +64,7 @@ USE_ONNX: bool = os.getenv("USE_ONNX", "false").lower() in {"1", "true", "yes", 
 USE_INT8: bool = os.getenv("USE_INT8", "false").lower() in {"1", "true", "yes", "on"}
 
 # === Paths ===
+MODELS_DIR: Path = _project_path(os.getenv("MODELS_DIR", str(ROOT_DIR / "models")))
 DATA_DIR: Path = _project_path(os.getenv("DATA_DIR", str(ROOT_DIR / "data")))
 # The checked-in JSON is stored directly in data/; allow RAW_DATA_DIR to override it.
 RAW_DATA_DIR: Path = _project_path(os.getenv("RAW_DATA_DIR", str(DATA_DIR)))

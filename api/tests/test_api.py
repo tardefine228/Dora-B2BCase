@@ -6,10 +6,10 @@ from fastapi.testclient import TestClient
 client = TestClient(app)
 
 
-def test_root_redirects_to_openapi_docs() -> None:
+def test_root_redirects_to_the_demo_ui() -> None:
     response = client.get("/", follow_redirects=False)
     assert response.status_code == 307
-    assert response.headers["location"] == "/docs"
+    assert response.headers["location"] == "/ui/"
 
 
 def test_health_and_readiness() -> None:
