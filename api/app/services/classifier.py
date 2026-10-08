@@ -27,6 +27,7 @@ from typing import Protocol
 
 from app.core.config import settings
 from app.schemas import Alternative, ClassifyResponse
+from app.services.source_lookup import clause_url_for
 
 logger = logging.getLogger("dora.classifier")
 
@@ -56,12 +57,21 @@ def _tokenize(text: str) -> list[str]:
     return [token for token in TOKEN_RE.findall(text.lower()) if len(token) > 1]
 
 
+def _display_confidence(reranker, raw_confidence: float) -> float:
+    """Calibrated scale for display; the raw value still decides the status."""
+    calibrate = getattr(reranker, "display_confidence", None)
+    if not callable(calibrate):
+        return raw_confidence
+    return min(max(float(calibrate(raw_confidence)), 0.0), 1.0)
+
+
 def _not_found(query: str) -> ClassifyResponse:
     return ClassifyResponse(
         query=query,
         code=None,
         title=None,
         confidence=0.0,
+        confidence_raw=0.0,
         status="not_found",
         clause_ref=None,
         clause_url=None,
@@ -95,6 +105,7 @@ def _distinct_alternatives(ranked, status: str, threshold_review: float) -> list
                 title=candidate.title,
                 confidence=round(min(max(candidate.probability, 0.0), 1.0), 4),
                 clause_ref=candidate.clause_ref,
+                clause_url=clause_url_for(candidate.payload.get("record_id")),
             )
         )
         if len(alternatives) == _MAX_ALTERNATIVES:
@@ -182,6 +193,9 @@ class CatalogClassifier:
                     "name": name,
                     "appendix": (row.get("appendix") or "").strip(),
                     "clause_ref": clause_ref,
+                    # Source of record: /source/{record_id} renders the pages of
+                    # data/source_text.txt this position was parsed from.
+                    "record_id": (row.get("record_id") or "").strip(),
                     # Precomputed once: retrieval scores every row per request.
                     "prepared": prepare_candidate(name),
                 }
@@ -215,9 +229,10 @@ class CatalogClassifier:
                         code=code,
                         title=row["name"],
                         confidence=1.0,
+                        confidence_raw=1.0,
                         status="ok",
                         clause_ref=row["clause_ref"],
-                        clause_url=None,
+                        clause_url=clause_url_for(row.get("record_id")),
                         alternatives=[],
                         latency_ms=0.0,
                     )
@@ -268,7 +283,7 @@ class CatalogClassifier:
                 confidence=0.5,
                 status="review",
                 clause_ref=best["clause_ref"],
-                clause_url=None,
+                clause_url=clause_url_for(best.get("record_id")),
                 alternatives=[],
                 latency_ms=0.0,
             )
@@ -279,6 +294,7 @@ class CatalogClassifier:
                 title=row["name"],
                 clause_ref=row["clause_ref"],
                 retrieval_score=0.0,
+                payload={"record_id": row.get("record_id") or ""},
             )
             for row in shortlist
         ]
@@ -289,10 +305,11 @@ class CatalogClassifier:
 
         best = ranked[0]
         if self._reranker is not None:
-            confidence_raw, status = self._reranker.evaluate(query, ranked)
+            raw_confidence, status = self._reranker.evaluate(query, ranked)
         else:  # pragma: no cover
-            confidence_raw, status = best.probability, "review"
-        confidence = round(min(max(confidence_raw, 0.0), 1.0), 4)
+            raw_confidence, status = best.probability, "review"
+        raw_confidence = round(min(max(raw_confidence, 0.0), 1.0), 4)
+        confidence = round(_display_confidence(self._reranker, raw_confidence), 4)
 
         threshold_review = getattr(self._reranker, "threshold_review", 0.45)
         alternatives = _distinct_alternatives(ranked, status, threshold_review)
@@ -305,6 +322,7 @@ class CatalogClassifier:
                 code=None,
                 title=None,
                 confidence=0.0,
+                confidence_raw=0.0,
                 status="not_found",
                 clause_ref=None,
                 clause_url=None,
@@ -317,9 +335,10 @@ class CatalogClassifier:
             code=best.code,
             title=best.title,
             confidence=confidence,
+            confidence_raw=raw_confidence,
             status=status,
             clause_ref=best.clause_ref,
-            clause_url=None,
+            clause_url=clause_url_for(best.payload.get("record_id")),
             alternatives=alternatives,
             latency_ms=0.0,
         )
@@ -388,22 +407,27 @@ class QdrantClassifier:
                         title=hit.name or "",
                         clause_ref=hit.position or hit.group or None,
                         retrieval_score=float(hit.score),
+                        payload={"record_id": getattr(hit, "record_id", "") or ""},
                     )
                     for hit in hits
                 ]
                 ranked = self._reranker.rerank(query, candidates)
                 best = ranked[0]
-                confidence_raw, status = self._reranker.evaluate(query, ranked)
-                confidence = round(min(max(confidence_raw, 0.0), 1.0), 4)
+                raw_confidence, status = self._reranker.evaluate(query, ranked)
+                raw_confidence = round(min(max(raw_confidence, 0.0), 1.0), 4)
+                confidence = round(_display_confidence(self._reranker, raw_confidence), 4)
                 threshold_review = getattr(self._reranker, "threshold_review", 0.45)
                 alternatives = _distinct_alternatives(ranked, status, threshold_review)
                 clause_ref = best.clause_ref
+                clause_url = clause_url_for(best.payload.get("record_id"))
                 code, title = best.code, best.title
                 if status == "not_found":
-                    code, title, clause_ref, confidence = None, None, None, 0.0
+                    code, title, clause_ref, clause_url = None, None, None, None
+                    confidence, raw_confidence = 0.0, 0.0
             else:  # pragma: no cover - fallback when the reranker is unavailable
                 top = hits[0]
                 confidence = max(0.0, min(float(top.score), 1.0))
+                raw_confidence = confidence
                 status = "ok" if confidence >= 0.75 else "review"
                 alternatives = [
                     Alternative(
@@ -414,6 +438,7 @@ class QdrantClassifier:
                     for hit in hits[1:3]
                 ]
                 clause_ref = top.position or top.group or None
+                clause_url = clause_url_for(top.record_id)
                 code, title = top.pp_code or None, top.name or None
 
             results.append(
@@ -422,10 +447,12 @@ class QdrantClassifier:
                     code=code,
                     title=title,
                     confidence=confidence,
+                    confidence_raw=raw_confidence,
                     status=status,
                     clause_ref=clause_ref,
-                    # pp_link currently contains a human-readable source citation, not a URL.
-                    clause_url=None,
+                    # The source citation itself lives in clause_ref; the URL points
+                    # at the fragment served by GET /source/{record_id}.
+                    clause_url=clause_url,
                     alternatives=alternatives,
                     latency_ms=0.0,
                 )

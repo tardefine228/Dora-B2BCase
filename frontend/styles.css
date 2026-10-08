@@ -64,6 +64,10 @@ button {
 }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.primary:hover { background: var(--accent-dark); }
+button.secondary { background: #fff; color: var(--accent-dark); border-color: var(--accent); }
+button.secondary:hover { background: #eef4fb; }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+a.source-link { color: var(--accent-dark); }
 
 .api-config label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
 .api-config input { width: 160px; padding: 6px 8px; }

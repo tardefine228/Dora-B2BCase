@@ -13,6 +13,18 @@ from pathlib import Path
 
 import httpx
 
+RATE_LIMIT_HINT = (
+    "API вернул 429 (rate limit). Нагрузочный тест дергает API чаще лимита: "
+    "запустите целевой API с RATE_LIMIT_ENABLED=false."
+)
+
+
+def ensure_ok(response, context: str = "запрос к API") -> None:
+    """Fail fast with an actionable message when the client runs into the limiter."""
+    if response.status_code == 429:
+        raise RuntimeError(f"{context}: {RATE_LIMIT_HINT}")
+    response.raise_for_status()
+
 
 def process_rss_mb(pid: int) -> float | None:
     """Read Linux process RSS if /proc is available; return None otherwise."""
@@ -60,7 +72,7 @@ async def run(args: argparse.Namespace) -> None:
                 request_started = time.perf_counter()
                 response = await client.post("/classify/batch", json=payload)
                 latencies.append((time.perf_counter() - request_started) * 1000)
-                response.raise_for_status()
+                ensure_ok(response, "POST /classify/batch")
                 return response.json()
 
             accepted = await asyncio.gather(
@@ -76,7 +88,7 @@ async def run(args: argparse.Namespace) -> None:
 
                 async def poll_job(job_id: str, status_url: str) -> tuple[str, dict]:
                     response = await client.get(status_url)
-                    response.raise_for_status()
+                    ensure_ok(response, f"GET {status_url}")
                     return job_id, response.json()
 
                 states = await asyncio.gather(

@@ -9,8 +9,14 @@ Two models are fitted:
 
 1. a pairwise logistic reranker that orders candidate positions;
 2. a query-level confidence model over ranking features (leader probability,
-   margin, softmax share) — this is what the API reports as ``confidence`` and
-   what is compared against the calibrated ``ok``/``review`` thresholds.
+   margin, softmax share) — this is what the API compares against the calibrated
+   ``ok``/``review`` thresholds.
+
+The display scale goes through a monotone Platt calibration fitted on a separate
+platform (human-curated query words from ``ml.lexicon.BRIDGES`` plus the model's
+own out-of-scope probes), so the number users see is a probability of a correct
+answer on traffic rather than on the harder synthetic groups; the raw confidence
+keeps deciding the status.
 
 The human-labeled set ``eval/labeled_examples.csv`` is intentionally *not* used
 for training or calibration — it stays a clean measurement set (see
@@ -24,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import random
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,11 +48,13 @@ from ml.lexicon import expand_query
 from ml.reranker import (
     FEATURE_NAMES,
     GROUP_FEATURE_NAMES,
+    Calibration,
     ConfidenceModel,
     LogisticReranker,
     RankedCandidate,
     extract_features,
     extract_group_features,
+    logit,
 )
 
 SEED = 1875
@@ -656,6 +665,264 @@ def calibrate_thresholds(
     return round(min(threshold_ok, 0.99), 3), round(threshold_review, 3)
 
 
+# --- Display calibration platform (C1) ---------------------------------------
+# The number shown as ``confidence`` must be a probability of a correct answer
+# on *real* queries. The synthetic validation groups are too hard for that job
+# (their accuracy at a given raw score is ~0.3 lower than on real traffic), so
+# the display map is fitted on a separate platform assembled from sources that
+# are already part of the model's knowledge and are disjoint from
+# ``eval/labeled_examples.csv``:
+#
+#   * everyday words from ``ml.lexicon.BRIDGES`` — human-curated "user word →
+#     canonical catalog position" pairs — with neutral modifiers;
+#   * out-of-scope probes (``make_negative_queries``): the model must stay
+#     silent, so any answered row is a wrong answer.
+#
+# Every query is scored through a faithful copy of the API's catalog pipeline
+# (retrieval shortlist → reranker → confidence model); ``api/tests/
+# test_calibration.py`` pins that copy against the real classifier.
+CALIBRATION_MODIFIERS = (
+    "демисезонные",
+    "спортивные",
+    "домашние",
+    "зимние",
+    "утепленные",
+    "специализированные",
+    "дачные",
+)
+# Gentlest-slope policy: the map must reach the ECE target on the platform
+# (with margin under the 0.15 acceptance goal) without saturating the scale.
+PLATFORM_ECE_TARGET = 0.12
+CALIBRATION_SLOPE_GRID = tuple(round(1.0 + 0.05 * step, 2) for step in range(0, 61))
+_CALIBRATION_TOKEN_RE = re.compile(r"[a-zа-яё0-9]+", re.IGNORECASE)
+# Must mirror api/app/services/classifier._RETRIEVAL_SHORTLIST.
+RETRIEVAL_SHORTLIST = 25
+
+
+def calibration_tokens(text: str) -> list[str]:
+    """Tokenization as the API does it (tokens of length > 1)."""
+    return [token for token in _CALIBRATION_TOKEN_RE.findall(text.lower()) if len(token) > 1]
+
+
+def calibration_index(catalog: list[dict]) -> list[dict]:
+    """Catalog rows in the shape ``CatalogClassifier`` keeps them (deduplicated)."""
+    from ml.features import prepare_candidate
+
+    by_key: dict[tuple[str, str], dict] = {}
+    for item in catalog:
+        name = (item.get("name") or "").strip()
+        if not name:
+            continue
+        key = (item.get("pp_code") or "", name)
+        if key in by_key:
+            continue
+        by_key[key] = {
+            "okpd2": item.get("pp_code") or "",
+            "name": name,
+            "tokens": calibration_tokens(name),
+            "prepared": prepare_candidate(name),
+        }
+    return list(by_key.values())
+
+
+def calibration_confidence(
+    reranker: LogisticReranker, index: list[dict], query: str
+) -> tuple[float, str, str | None]:
+    """Score one query exactly as the API's catalog backend does.
+
+    Returns ``(raw_confidence, status, predicted_code)``. ``status ==
+    "not_found"`` corresponds to the API's zeroed confidence.
+    """
+    from ml.features import lexical_score_prepared, prepare_candidate
+
+    prepared_query = prepare_candidate(expand_query(query))
+    query_tokens = set(calibration_tokens(query))
+    if not query_tokens:
+        return 0.0, "not_found", None
+    scored: list[tuple[float, dict]] = []
+    for row in index:
+        score = lexical_score_prepared(prepared_query, row["prepared"])
+        if score <= 0.0:
+            # The API keeps a substring-tolerance pass as a safety net.
+            matched = sum(
+                1
+                for token in query_tokens
+                if token in row["name"].casefold()
+                or any(token in other or other in token for other in row["tokens"])
+            )
+            score = 0.2 * matched / len(query_tokens) if matched else 0.0
+        if score > 0.0:
+            scored.append((score, row))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    shortlist = [row for _score, row in scored[:RETRIEVAL_SHORTLIST]]
+    if not shortlist:
+        return 0.0, "not_found", None
+    # The API hands the reranker retrieval_score=0.0 for every candidate; the
+    # group features of the confidence model therefore see the same value here.
+    candidates = [
+        RankedCandidate(
+            code=row["okpd2"] or None,
+            title=row["name"],
+            clause_ref=None,
+            retrieval_score=0.0,
+            payload={"record_id": ""},
+        )
+        for row in shortlist
+    ]
+    ranked = reranker.rerank(query, candidates)
+    raw_confidence, status = reranker.evaluate(query, ranked)
+    return min(max(raw_confidence, 0.0), 1.0), status, ranked[0].code
+
+
+def code_matches(predicted: str | None, expected: str) -> bool:
+    """Same code comparison as ``eval/run_eval.py`` (segment-wise prefixes)."""
+    if not predicted or not expected:
+        return False
+    predicted, expected = predicted.strip(), expected.strip()
+    return (
+        predicted == expected
+        or predicted.startswith(expected + ".")
+        or expected.startswith(predicted + ".")
+    )
+
+
+def build_calibration_cases(catalog: list[dict], rng: random.Random) -> list[tuple[str, str]]:
+    """``(query, expected_code)`` pairs of the calibration platform.
+
+    An empty expected code marks an out-of-scope probe: the correct behaviour is
+    silence, so any answered row counts as a miss.
+    """
+    code_by_title = {item["name"]: (item.get("pp_code") or "") for item in catalog}
+    cases: list[tuple[str, str]] = []
+    for title, sources in sorted(bridge_sources_by_name(catalog).items()):
+        code = code_by_title.get(title, "")
+        if not code:
+            continue
+        for source in sources:
+            cases.append((source, code))
+            cases.append((f"{source} {rng.choice(CALIBRATION_MODIFIERS)}", code))
+            cases.append((f"{rng.choice(CALIBRATION_MODIFIERS)} {source}", code))
+    known_stems = build_known_stems([item["name"] for item in catalog])
+    cases.extend((query, "") for query in make_negative_queries(rng, known_stems))
+    return cases
+
+
+def fit_display_calibration(
+    reranker: LogisticReranker, catalog: list[dict], rng: random.Random
+) -> tuple[Calibration, dict]:
+    """Fit the display map on the calibration platform; returns (map, stats).
+
+    Only *answered* rows take part — silent answers report confidence 0 by the
+    API contract and are measured separately (``correct_silence`` in the eval).
+    """
+    index = calibration_index(catalog)
+    cases = build_calibration_cases(catalog, rng)
+    confidences: list[float] = []
+    labels: list[int] = []
+    for query, expected in cases:
+        raw_confidence, status, code = calibration_confidence(reranker, index, query)
+        if status == "not_found":
+            continue
+        confidences.append(raw_confidence)
+        labels.append(1 if expected and code_matches(code, expected) else 0)
+    calibration = fit_bounded_platt_calibration(confidences, labels)
+    calibrated = [calibration.calibrate(value) for value in confidences]
+    stats = {
+        "queries": len(cases),
+        "answered": len(confidences),
+        "correct": sum(labels),
+        "slope": round(calibration.a, 4),
+        "ece_raw": round(expected_calibration_error(confidences, labels), 4),
+        "ece_calibrated": round(expected_calibration_error(calibrated, labels), 4),
+    }
+    return calibration, stats
+
+
+def expected_calibration_error(
+    probabilities: list[float], labels: list[int], *, bins: int = 10
+) -> float:
+    """Confidence-weighted |accuracy − mean confidence| over equal-width bins."""
+    if not probabilities:
+        return 0.0
+    total = len(probabilities)
+    error = 0.0
+    for index in range(bins):
+        low, high = index / bins, (index + 1) / bins
+        members = [
+            (probability, label)
+            for probability, label in zip(probabilities, labels, strict=True)
+            if (low <= probability < high) or (index == bins - 1 and probability == 1.0)
+        ]
+        if not members:
+            continue
+        mean_confidence = sum(probability for probability, _ in members) / len(members)
+        accuracy = sum(label for _probability, label in members) / len(members)
+        error += len(members) / total * abs(accuracy - mean_confidence)
+    return error
+
+
+def fit_platt_calibration(
+    raw_probabilities: list[float],
+    labels: list[int],
+    *,
+    epochs: int = 500,
+    learning_rate: float = 0.5,
+    l2: float = 1e-4,
+    fixed_slope: float | None = None,
+) -> Calibration:
+    """Fit ``sigmoid(a * logit(p) + b)`` by log-loss (Platt scaling).
+
+    With ``fixed_slope`` only the intercept is optimized — the slope-bounded
+    search below needs that. A non-positive slope would reverse the order of the
+    confidences, so it falls back to the identity map (statuses are decided by
+    the raw probability either way).
+    """
+    if len(raw_probabilities) < 2 or len(set(labels)) < 2:
+        return Calibration()
+    import numpy as np
+
+    features = np.asarray([logit(probability) for probability in raw_probabilities], dtype=float)
+    target = np.asarray(labels, dtype=float)
+    slope, intercept = (float(fixed_slope), 0.0) if fixed_slope else (1.0, 0.0)
+    for _epoch in range(epochs):
+        predictions = 1.0 / (1.0 + np.exp(-(slope * features + intercept)))
+        errors = predictions - target
+        if fixed_slope is None:
+            slope -= learning_rate * (float((errors * features).mean()) + l2 * slope)
+        intercept -= learning_rate * float(errors.mean())
+    if slope <= 0 or not (abs(slope) < 1e3 and abs(intercept) < 1e3):
+        return Calibration()
+    return Calibration("platt", slope, intercept)
+
+
+def fit_bounded_platt_calibration(
+    raw_probabilities: list[float],
+    labels: list[int],
+    *,
+    target_ece: float = PLATFORM_ECE_TARGET,
+    slope_grid: tuple[float, ...] = CALIBRATION_SLOPE_GRID,
+) -> Calibration:
+    """Gentlest Platt map whose ECE on the platform stays within ``target_ece``.
+
+    A maximum-likelihood fit on a finite platform drives the slope up (its top
+    bins are 100% correct while real traffic is not) and the displayed scale
+    saturates at 1.0. The gentlest map that still hits the target keeps the
+    resolution of the scale — and understates rather than overstates certainty.
+    """
+    fallback: Calibration | None = None
+    for slope in slope_grid:
+        calibration = fit_platt_calibration(raw_probabilities, labels, fixed_slope=slope)
+        if calibration.kind == "identity":
+            continue
+        error = expected_calibration_error(
+            [calibration.calibrate(probability) for probability in raw_probabilities], labels
+        )
+        if error <= target_ece:
+            return calibration
+        fallback = calibration
+    return fallback or fit_platt_calibration(raw_probabilities, labels)
+
+
 def _groups(pairs: list[TrainingPair]) -> dict[str, list[TrainingPair]]:
     by_query: dict[str, list[TrainingPair]] = {}
     for pair in pairs:
@@ -765,6 +1032,21 @@ def train(
     confidence_model.threshold_review = conf_review
     reranker.confidence_model = confidence_model
 
+    # Post-calibration of the display scale (C1): raw confidence stays the
+    # decision variable (the thresholds above are calibrated in that space), the
+    # calibrated one is what users see. The map is fitted on the calibration
+    # platform — human-curated query words plus the model's own out-of-scope
+    # probes — so it reflects traffic, not the harder synthetic validation
+    # groups; eval/labeled_examples.csv stays a pure measurement set.
+    platform_rng = random.Random(seed + 1)
+    calibration, platform_stats = fit_display_calibration(reranker, catalog, platform_rng)
+    confidence_model.calibration = calibration
+
+    group_labels_int = [int(y) for y in group_labels]
+    calibrated_groups = [calibration.calibrate(probability) for probability in confidences]
+    ece_raw = expected_calibration_error(confidences, group_labels_int)
+    ece_calibrated = expected_calibration_error(calibrated_groups, group_labels_int)
+
     ok_decisions = [
         is_correct
         for probability, is_correct in zip(
@@ -778,6 +1060,12 @@ def train(
         "validation_queries": len(by_query),
         "pair_thresholds": {"ok": pair_threshold_ok, "review": pair_threshold_review},
         "confidence_thresholds": {"ok": conf_ok, "review": conf_review},
+        "confidence_calibration": calibration.to_payload(),
+        "calibration_platform": platform_stats,
+        "validation_ece": {
+            "raw": round(ece_raw, 4),
+            "calibrated": round(ece_calibrated, 4),
+        },
         "confidence_ok_precision": round(sum(ok_decisions) / len(ok_decisions), 4)
         if ok_decisions
         else None,
@@ -791,6 +1079,12 @@ def train(
     print(f"  pair thresholds: ok={pair_threshold_ok} review={pair_threshold_review}")
     print(f"  confidence thresholds: ok={conf_ok} review={conf_review}")
     print(f"  confidence ok-precision={reranker.meta['confidence_ok_precision']}")
+    print(f"  calibration={calibration.to_payload()}")
+    print(
+        "  calibration platform: {queries} queries, {answered} answered, "
+        "ECE raw={ece_raw} -> calibrated={ece_calibrated}".format(**platform_stats)
+    )
+    print(f"  validation ECE (hard synthetic groups): raw={ece_raw:.4f} -> {ece_calibrated:.4f}")
     print(f"  pair weights={ {name: round(reranker.weights[name], 3) for name in FEATURE_NAMES} }")
     print(
         "  confidence weights="
