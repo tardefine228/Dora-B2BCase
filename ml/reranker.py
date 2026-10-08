@@ -25,16 +25,20 @@ from typing import Protocol
 
 from ml.config import MODELS_DIR
 from ml.features import (
+    LOW_SIGNAL_STEMS,
     best_match_weight,
     char_ngrams,
+    content_stems,
     cosine_sparse,
     coverage,
     idf_coverage,
+    idf_precision,
     is_latin_word,
     jaccard_digits,
     lexical_score,
     normalize,
     oov_cyr_share,
+    query_head,
     stem,
     stems,
     tokens,
@@ -43,18 +47,21 @@ from ml.features import (
 logger = logging.getLogger("dora.ml.reranker")
 
 RERANKER_ARTIFACT_NAME = "reranker.json"
-ARTIFACT_VERSION = 1
+ARTIFACT_VERSION = 2
 
 FEATURE_NAMES: tuple[str, ...] = (
     "lexical_score",
     "idf_coverage",
     "known_coverage",
     "candidate_precision",
+    "idf_precision",
     "char_cosine",
     "phrase_match",
     "full_cover",
     "bridge_cover",
+    "bridge_canonical",
     "title_head_match",
+    "query_head_match",
     "digit_overlap",
     "oov_cyr_share",
     "code_match",
@@ -69,6 +76,7 @@ GROUP_FEATURE_NAMES: tuple[str, ...] = (
     "softmax_share",
     "top_idf_coverage",
     "top_known_coverage",
+    "top_query_head_match",
     "retrieval_margin",
 )
 SOFTMAX_TEMPERATURE = 0.15
@@ -103,25 +111,39 @@ def extract_features(
     rare, decisive ones ("чайник"). Product words are bridged to catalog
     category words first (see ``ml.lexicon``).
     """
-    from ml.lexicon import expand_query
+    from ml.lexicon import CANONICAL_CODES, bridged_targets, substitute_query
+
+    # The candidate is the canonical position of a bridged product word
+    # ("сапоги" → "Обувь" 15.2, not "Обувь ортопедическая детская").
+    bridge_canonical = 0.0
+    if candidate_code:
+        for target in set(bridged_targets(query).values()):
+            canonical = CANONICAL_CODES.get(target)
+            if canonical and (
+                candidate_code == canonical or candidate_code.startswith(canonical + ".")
+            ):
+                bridge_canonical = 1.0
+                break
 
     original_stems = set(stems(query))
-    query = expand_query(query)
+    candidate_stems = stems(candidate_title)
+    # Bridged product words are *replaced* by their category words so that
+    # "костюм" is not an unknown Russian word penalizing the match (a product
+    # word the candidate itself mentions is kept).
+    query = substitute_query(query, set(candidate_stems))
     query_stems = stems(query)
     added_stems = set(query_stems) - original_stems
     bridge_cover = 0.0
     if added_stems:
-        bridge_cover = max(
-            best_match_weight(added, set(stems(candidate_title))) for added in added_stems
-        )
-    candidate_stems = stems(candidate_title)
+        bridge_cover = max(best_match_weight(added, set(candidate_stems)) for added in added_stems)
     query_cover, candidate_precision = coverage(query, candidate_title)
     if known_stems is not None and query_stems:
         known_query = [
             stem
-            for stem in query_stems
-            # Latin unknowns are brands/model indices; Cyrillic unknowns stay.
-            if stem in known_stems or not is_latin_word(stem)
+            for stem in content_stems(set(query_stems))
+            # Latin unknowns are brands/model indices and unknown low-signal
+            # modifiers ("женский") describe a variant; Cyrillic unknowns stay.
+            if stem in known_stems or not (is_latin_word(stem) or stem in LOW_SIGNAL_STEMS)
         ]
         if known_query:
             known_hits = sum(best_match_weight(stem, set(candidate_stems)) for stem in known_query)
@@ -143,7 +165,8 @@ def extract_features(
     full_cover = 0.0
     if query_stems:
         covered = [
-            best_match_weight(stem_value, set(candidate_stems)) for stem_value in query_stems
+            best_match_weight(stem_value, set(candidate_stems))
+            for stem_value in content_stems(set(query_stems))
         ]
         full_cover = float(all(weight >= 0.7 for weight in covered))
 
@@ -151,6 +174,14 @@ def extract_features(
     candidate_tokens = tokens(candidate_title)
     if candidate_tokens:
         title_head_match = best_match_weight(stem(candidate_tokens[0]), set(query_stems))
+
+    # Russian product names lead with the head noun ("Мышь компьютерная"): a
+    # candidate that matches only the modifiers ("Томограф компьютерный") is a
+    # different product even when coverage looks decent.
+    query_head_match = 0.0
+    head = query_head(query)
+    if head is not None:
+        query_head_match = best_match_weight(head, set(candidate_stems))
 
     code_match = 0.0
     normalized_code = normalize(candidate_code or "")
@@ -164,11 +195,14 @@ def extract_features(
         "idf_coverage": idf_coverage(query, candidate_title, idf) if idf else query_cover,
         "known_coverage": known_coverage,
         "candidate_precision": candidate_precision,
+        "idf_precision": idf_precision(query, candidate_title, idf) if idf else candidate_precision,
         "char_cosine": cosine_sparse(char_ngrams(query), char_ngrams(candidate_title)),
         "phrase_match": phrase_match,
         "full_cover": full_cover,
         "bridge_cover": bridge_cover,
+        "bridge_canonical": bridge_canonical,
         "title_head_match": title_head_match,
+        "query_head_match": query_head_match,
         "digit_overlap": jaccard_digits(query, candidate_title),
         "oov_cyr_share": oov_cyr_share(set(query_stems), idf) if idf else 0.0,
         "code_match": code_match,
@@ -216,6 +250,7 @@ def extract_group_features(query: str, ranked: list[RankedCandidate]) -> dict[st
         "softmax_share": softmax_share,
         "top_idf_coverage": top.features.get("idf_coverage", 0.0),
         "top_known_coverage": top.features.get("known_coverage", 0.0),
+        "top_query_head_match": top.features.get("query_head_match", 0.0),
         "retrieval_margin": retrieval_scores[0] - second_retrieval,
     }
 
@@ -365,6 +400,14 @@ class LogisticReranker:
         payload = json.loads(path.read_text(encoding="utf-8"))
         if payload.get("model") != "logistic":
             raise ValueError(f"Неизвестный формат артефакта реранкера: {path}")
+        if payload.get("version") != ARTIFACT_VERSION:
+            logger.warning(
+                "Артефакт реранкера %s версии %s, код ожидает %s — новые признаки получат "
+                "нулевой вес; пересоберите модель (python scripts/build_model.py)",
+                path,
+                payload.get("version"),
+                ARTIFACT_VERSION,
+            )
         thresholds = payload.get("thresholds", {})
         known = payload.get("known_stems")
         confidence_payload = payload.get("confidence_model")

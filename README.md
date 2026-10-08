@@ -75,8 +75,11 @@ curl -X POST localhost:8000/admin/reindex -H "X-Admin-API-Key: <секрет>"
 
 - Размеченный набор: `eval/labeled_examples.csv` (89 запросов, включая
   «нет в перечне» и спорные позиции).
-- Прогон: `python eval/run_eval.py` → `eval/eval_report.md` (top-1/top-3,
-  доля верного `not_found`, разбор ошибок).
+- Прогон: `PYTHONPATH=api python eval/run_eval.py [--sweep]` → `eval/eval_report.md`
+  (top-1/top-3, доля верного `not_found`, регрессия на точных названиях
+  каталога, калибровка уверенности ECE, свип порога `review`, разбор ошибок).
+- CI-гейт качества: job `quality` в `.github/workflows/lint.yml` пересобирает
+  модель и падает, если метрики ниже порогов `--min-top1/--min-top3/--min-silence/--min-exact`.
 - Эксперименты и выводы: `eval/experiments.md`.
 - Нагрузочный замер: `eval/api-load-test.md`, `scripts/load_test.py`.
 

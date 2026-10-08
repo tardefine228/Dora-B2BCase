@@ -70,6 +70,38 @@ def _not_found(query: str) -> ClassifyResponse:
     )
 
 
+_MAX_ALTERNATIVES = 3
+
+
+def _distinct_alternatives(ranked, status: str, threshold_review: float) -> list[Alternative]:
+    """Up to ``_MAX_ALTERNATIVES`` runner-up positions with distinct codes.
+
+    The same position is often listed in several appendices (and Qdrant stores
+    one point per appendix row), so the raw ranking contains duplicates that
+    would otherwise crowd out genuinely different suggestions. For ``not_found``
+    answers only candidates above the review threshold are kept.
+    """
+    alternatives: list[Alternative] = []
+    seen_codes = {ranked[0].code}
+    for candidate in ranked[1:]:
+        if candidate.code in seen_codes:
+            continue
+        if status == "not_found" and candidate.probability < threshold_review:
+            continue
+        seen_codes.add(candidate.code)
+        alternatives.append(
+            Alternative(
+                code=candidate.code,
+                title=candidate.title,
+                confidence=round(min(max(candidate.probability, 0.0), 1.0), 4),
+                clause_ref=candidate.clause_ref,
+            )
+        )
+        if len(alternatives) == _MAX_ALTERNATIVES:
+            break
+    return alternatives
+
+
 def _load_reranker():
     """Return the trained reranker, or a lexical fallback when artifacts are absent."""
     try:
@@ -262,25 +294,8 @@ class CatalogClassifier:
             confidence_raw, status = best.probability, "review"
         confidence = round(min(max(confidence_raw, 0.0), 1.0), 4)
 
-        alternatives: list[Alternative] = []
-        seen_codes = {best.code}
         threshold_review = getattr(self._reranker, "threshold_review", 0.45)
-        for candidate in ranked[1:]:
-            if candidate.code in seen_codes:
-                continue
-            if status == "not_found" and candidate.probability < threshold_review:
-                continue
-            seen_codes.add(candidate.code)
-            alternatives.append(
-                Alternative(
-                    code=candidate.code,
-                    title=candidate.title,
-                    confidence=round(min(max(candidate.probability, 0.0), 1.0), 4),
-                    clause_ref=candidate.clause_ref,
-                )
-            )
-            if len(alternatives) == 3:
-                break
+        alternatives = _distinct_alternatives(ranked, status, threshold_review)
 
         if status == "not_found":
             # Too weak to suggest a position: report "не найдено" and keep at most
@@ -381,16 +396,7 @@ class QdrantClassifier:
                 confidence_raw, status = self._reranker.evaluate(query, ranked)
                 confidence = round(min(max(confidence_raw, 0.0), 1.0), 4)
                 threshold_review = getattr(self._reranker, "threshold_review", 0.45)
-                alternatives = [
-                    Alternative(
-                        code=candidate.code,
-                        title=candidate.title,
-                        confidence=round(min(max(candidate.probability, 0.0), 1.0), 4),
-                        clause_ref=candidate.clause_ref,
-                    )
-                    for candidate in ranked[1:3]
-                    if status != "not_found" or candidate.probability >= threshold_review
-                ]
+                alternatives = _distinct_alternatives(ranked, status, threshold_review)
                 clause_ref = best.clause_ref
                 code, title = best.code, best.title
                 if status == "not_found":

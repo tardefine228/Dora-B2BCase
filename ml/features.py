@@ -200,8 +200,18 @@ COMPOUND_PREFIXES = frozenset(
 )
 
 
+# Derivational suffixes between a noun stem and its relational adjective:
+# "металл" ~ "металлическ", "двер" ~ "дверн", "кож" ~ "кожан". Only applied to
+# stems of 4+ characters so that "газ"/"газов" style collisions stay out.
+DERIVATIONAL_SUFFIXES = frozenset(
+    {"ическ", "еск", "ск", "ов", "ев", "ан", "ян", "н", "ин", "енн", "онн", "ист", "ат"}
+)
+DERIVATIONAL_WEIGHT = 0.8
+MIN_DERIVATIONAL_STEM = 4
+
+
 def match_weight(query_stem: str, candidate_stem: str) -> float:
-    """1.0 for the same stem, 0.7 for a compound-word hit, 0.0 otherwise."""
+    """1.0 for the same stem, 0.8 for noun/adjective derivation, 0.7 for a compound hit."""
     if query_stem == candidate_stem:
         return 1.0
     longer, shorter = (
@@ -211,6 +221,12 @@ def match_weight(query_stem: str, candidate_stem: str) -> float:
     )
     if not shorter or shorter not in longer:
         return 0.0
+    if (
+        longer.startswith(shorter)
+        and len(shorter) >= MIN_DERIVATIONAL_STEM
+        and longer[len(shorter) :] in DERIVATIONAL_SUFFIXES
+    ):
+        return DERIVATIONAL_WEIGHT
     remainder = longer.replace(shorter, "", 1)
     if remainder in COMPOUND_PREFIXES:
         return 0.7
@@ -225,15 +241,150 @@ def best_match_weight(query_stem: str, candidate_stems: set[str]) -> float:
     return max(match_weight(query_stem, candidate_stem) for candidate_stem in candidate_stems)
 
 
+# Function words and catalog boilerplate that must not count as "unmatched
+# candidate content" — "Одежда, кроме одежды из меха" is a 2-word position.
+STOPWORDS = frozenset(
+    {
+        "из",
+        "или",
+        "для",
+        "не",
+        "на",
+        "по",
+        "от",
+        "до",
+        "при",
+        "без",
+        "под",
+        "над",
+        "их",
+        "его",
+        "ее",
+        "том",
+        "числе",
+        "кроме",
+        "включая",
+        "такие",
+        "как",
+        "так",
+        "же",
+        "прочие",
+        "проч",
+        "другие",
+        "друг",
+        "группировки",
+        "группировк",
+        "включенные",
+        "включенн",
+        "аналогичные",
+        "аналогичн",
+        "массой",
+        "масс",
+        "более",
+        "бол",
+        "менее",
+        "мен",
+        "только",
+        "тольк",
+        "виде",
+        "вид",
+        "части",
+        "част",
+    }
+)
+
+
+STOPWORD_STEMS = frozenset(STOPWORDS | {stem(word) for word in STOPWORDS})
+
+
+def content_stems(stem_values: set[str]) -> set[str]:
+    """Drop stopwords/boilerplate; fall back to the full set if nothing is left."""
+    kept = {value for value in stem_values if value not in STOPWORD_STEMS}
+    return kept or set(stem_values)
+
+
+# Query modifiers that describe a variant of a product, never the product
+# itself: gender/season/material adjectives and measurement words. When such a
+# word is missing from the catalog vocabulary it must not be treated as "an
+# unknown product word" (see OOV_CYRILLIC_WEIGHT).
+LOW_SIGNAL_WORDS = frozenset(
+    {
+        "мужской",
+        "женский",
+        "зимний",
+        "летний",
+        "демисезонный",
+        "рабочий",
+        "повседневный",
+        "спортивный",
+        "хлопковый",
+        "кожаный",
+        "шерстяной",
+        "синтетический",
+        "тканевый",
+        "утепленный",
+        "новый",
+        "большой",
+        "маленький",
+        "белый",
+        "черный",
+        "цветной",
+        "домашний",
+        "школьный",
+        "универсальный",
+        "классический",
+        "современный",
+        "стандартный",
+        "обычный",
+        "качественный",
+        "недорогой",
+        "мобильный",
+        "кнопочный",
+        "сенсорный",
+        "сотовый",
+        "настенный",
+        "напольный",
+        "настольный",
+        "потолочный",
+        "ручной",
+        "переносной",
+        "диагональ",
+        "дюйм",
+        "см",
+        "мм",
+        "метр",
+        "кг",
+        "грамм",
+        "литр",
+        "ватт",
+        "вольт",
+        "шт",
+        "штука",
+        "упаковка",
+        "размер",
+        "цвет",
+        "вес",
+        "объем",
+        "мощность",
+        "модель",
+        "артикул",
+    }
+)
+LOW_SIGNAL_STEMS = frozenset(stem(word) for word in LOW_SIGNAL_WORDS)
+LOW_SIGNAL_WEIGHT = 0.5
+
+
 def coverage(query: str, candidate: str) -> tuple[float, float]:
-    """Return (query stem coverage in candidate, candidate stem precision)."""
+    """Return (query stem coverage in candidate, candidate content-stem precision)."""
     query_stems = stem_set(query)
     candidate_stems = stem_set(candidate)
     if not query_stems or not candidate_stems:
         return 0.0, 0.0
-    query_hits = sum(best_match_weight(stem, candidate_stems) for stem in query_stems)
-    candidate_hits = sum(best_match_weight(stem, query_stems) for stem in candidate_stems)
-    return query_hits / len(query_stems), candidate_hits / len(candidate_stems)
+    query_content = content_stems(query_stems)
+    candidate_content = content_stems(candidate_stems)
+    query_hits = sum(best_match_weight(stem, candidate_stems) for stem in query_content)
+    candidate_hits = sum(best_match_weight(stem, query_stems) for stem in candidate_content)
+    return query_hits / len(query_content), candidate_hits / len(candidate_content)
 
 
 def idf_table(names: list[str]) -> dict[str, float]:
@@ -290,7 +441,7 @@ def idf_coverage(query: str, candidate: str, table: dict[str, float]) -> float:
     candidate_stems = stem_set(candidate)
     if not query_stems or not table:
         return 0.0
-    weights = query_stem_weights(query_stems, table)
+    weights = query_stem_weights(query_stems, table, head=query_head(query))
     total_weight = 0.0
     hit_weight = 0.0
     for stem, weight in weights.items():
@@ -302,21 +453,67 @@ def idf_coverage(query: str, candidate: str, table: dict[str, float]) -> float:
 OOV_CYRILLIC_WEIGHT = 3.0
 
 
-def query_stem_weights(query_stems: set[str], table: dict[str, float]) -> dict[str, float]:
+def idf_precision(query: str, candidate: str, table: dict[str, float]) -> float:
+    """IDF-weighted share of candidate content words explained by the query.
+
+    Distinguishes "Обувь" from "Обувь ортопедическая детская" for the query
+    "обувь детская": the narrower position carries a rare unmatched word.
+    """
+    query_stems = stem_set(query)
+    candidate_content = content_stems(stem_set(candidate))
+    if not query_stems or not candidate_content or not table:
+        return 0.0
+    total = 0.0
+    hit = 0.0
+    for stem_value in candidate_content:
+        weight = table.get(stem_value, 1.0)
+        total += weight
+        hit += weight * best_match_weight(stem_value, query_stems)
+    return hit / total if total else 0.0
+
+
+# Russian product names lead with the head noun ("Покрышка грузовая", "Мышь
+# компьютерная"); it decides the category far more than the modifiers.
+HEAD_WEIGHT_FACTOR = 2.0
+
+
+def query_head(query: str) -> str | None:
+    """First content stem of the query (the head noun in product names).
+
+    Low-signal modifiers are skipped: in "мобильный телефон" the head is
+    "телефон".
+    """
+    for stem_value in stems(query):
+        if stem_value not in STOPWORD_STEMS and stem_value not in LOW_SIGNAL_STEMS:
+            return stem_value
+    return None
+
+
+def query_stem_weights(
+    query_stems: set[str], table: dict[str, float], head: str | None = None
+) -> dict[str, float]:
     """Weights of query stems for coverage features.
 
     In-vocabulary stems use their idf. Latin unknowns (brands, model indices)
-    are ignored entirely. Cyrillic unknowns keep a moderate fixed weight: a
-    Russian product word missing from the catalog is a signal that the product
-    itself may not be listed ("Мышь компьютерная"), but unmatched modifiers
-    ("мужские", "бытовой") must not crush the score either.
+    are ignored entirely. Low-signal modifiers ("женский", "дюйм", "мобильный")
+    get a small fixed weight. Other Cyrillic unknowns keep a
+    moderate fixed weight: a Russian product word missing from the catalog is a
+    signal that the product itself may not be listed ("Мышь компьютерная"), but
+    unmatched modifiers ("мужские", "бытовой") must not crush the score either.
+    The head noun (``head``) weighs ``HEAD_WEIGHT_FACTOR`` times more.
     """
     weights: dict[str, float] = {}
-    for stem in query_stems:
-        if stem in table:
+    for stem in content_stems(query_stems):
+        if stem in LOW_SIGNAL_STEMS:
+            # A modifier stays a modifier even when the catalog uses the word
+            # ("мобильный", "настольный").
+            weights[stem] = LOW_SIGNAL_WEIGHT
+        elif stem in table:
             weights[stem] = table[stem]
         elif not is_latin_word(stem):
             weights[stem] = OOV_CYRILLIC_WEIGHT
+    if head is not None and head in weights:
+        weights[head] *= HEAD_WEIGHT_FACTOR
     return weights
 
 
@@ -392,8 +589,9 @@ def lexical_score_prepared(query: PreparedText, candidate: PreparedText) -> floa
         # Character similarity still catches typos/transliterations.
         return 0.35 * cosine_sparse(query.chars, candidate.chars)
 
-    candidate_hits = sum(best_match_weight(stem, query_stems) for stem in candidate_stems)
-    precision = candidate_hits / len(candidate_stems) if candidate_stems else 0.0
+    candidate_content = content_stems(candidate_stems)
+    candidate_hits = sum(best_match_weight(stem, query_stems) for stem in candidate_content)
+    precision = candidate_hits / len(candidate_content) if candidate_content else 0.0
     phrase_bonus = 0.0
     if query.normalized in candidate.normalized or candidate.normalized in query.normalized:
         phrase_bonus = 0.2
