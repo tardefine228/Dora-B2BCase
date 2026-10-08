@@ -1,45 +1,51 @@
-from typing import Literal
+"""Public request/response contracts; exposed automatically in OpenAPI.
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+The classification result format is the team-agreed contract v1.0 (see
+``docs/api-contract.md``): new optional fields may be added, existing fields are
+never renamed or removed within a major version.
+"""
+
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+
+CONTRACT_VERSION = "1.0"
 
 
 class APIModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+
+ProductName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=500),
+]
 
 
 class ClassifyRequest(APIModel):
-    name: str = Field(min_length=1, max_length=500)
-
-    @field_validator("name", mode="before")
-    @classmethod
-    def strip_name(cls, value: object) -> object:
-        return value.strip() if isinstance(value, str) else value
+    name: ProductName = Field(
+        description="Название товара или код ОКПД2; от 1 до 500 символов.",
+        examples=["Ноутбук Lenovo IdeaPad"],
+    )
 
 
 class BatchClassifyRequest(APIModel):
-    items: list[str] = Field(min_length=1, max_length=100)
-
-    @field_validator("items", mode="before")
-    @classmethod
-    def strip_items(cls, value: object) -> object:
-        if isinstance(value, list):
-            return [item.strip() if isinstance(item, str) else item for item in value]
-        return value
-
-    @field_validator("items")
-    @classmethod
-    def validate_items(cls, value: list[str]) -> list[str]:
-        if any(not item for item in value):
-            raise ValueError("Название каждого товара должно быть непустым")
-        if any(len(item) > 500 for item in value):
-            raise ValueError("Название товара не должно быть длиннее 500 символов")
-        return value
+    items: list[ProductName] = Field(
+        min_length=1,
+        max_length=100,
+        description="От 1 до 100 названий товаров, каждое — до 500 символов.",
+        examples=[["Ноутбук Lenovo", "Мышь компьютерная"]],
+    )
 
 
 class Alternative(APIModel):
-    code: str
+    code: str | None = None
     title: str | None = None
     confidence: float = Field(ge=0, le=1)
+    clause_ref: str | None = Field(
+        default=None,
+        description="Ссылка на позицию перечня (приложение, позиция), если известна.",
+    )
 
 
 class ClassifyResponse(APIModel):
@@ -52,6 +58,10 @@ class ClassifyResponse(APIModel):
     clause_url: str | None = None
     alternatives: list[Alternative] = Field(default_factory=list)
     latency_ms: float = Field(ge=0)
+    contract_version: str = Field(
+        default=CONTRACT_VERSION,
+        description="Версия формата результата (командный контракт, см. docs/api-contract.md).",
+    )
 
 
 class BatchJobAccepted(APIModel):
@@ -69,3 +79,48 @@ class BatchJobStatusResponse(APIModel):
     progress_percent: float = Field(ge=0, le=100)
     results: list[ClassifyResponse] = Field(default_factory=list)
     error: str | None = None
+
+
+class ReindexJobAccepted(APIModel):
+    job_id: str
+    status: Literal["queued"]
+    status_url: str
+
+
+class ReindexJobStatusResponse(APIModel):
+    job_id: str
+    status: Literal["queued", "running", "completed", "failed"]
+    total: int | None = Field(default=None, ge=0)
+    indexed: int = Field(ge=0)
+    error: str | None = None
+
+
+class CatalogIssue(APIModel):
+    row: int | None = Field(
+        default=None, description="Номер строки файла (1-based), если применимо."
+    )
+    field: str | None = None
+    message: str
+    severity: Literal["error", "warning"]
+
+
+class CatalogInfo(APIModel):
+    rows: int = Field(ge=0)
+    columns: list[str] = Field(default_factory=list)
+    sha256: str
+    modified_at: str | None = None
+    source_files: list[str] = Field(default_factory=list)
+
+
+class CatalogUploadResponse(APIModel):
+    dry_run: bool
+    applied: bool
+    rows_total: int = Field(ge=0)
+    rows_valid: int = Field(ge=0)
+    errors: list[CatalogIssue] = Field(default_factory=list)
+    warnings: list[CatalogIssue] = Field(default_factory=list)
+    catalog: CatalogInfo | None = None
+    reindex_required: bool = Field(
+        default=False,
+        description="true, если после загрузки нужно выполнить POST /admin/reindex.",
+    )

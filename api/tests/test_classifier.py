@@ -1,6 +1,9 @@
 from pathlib import Path
 
+from app.core.config import settings
+from app.schemas import ClassifyResponse
 from app.services.classifier import (
+    CachedClassifier,
     CatalogClassifier,
     MockClassifier,
     build_classifier,
@@ -10,10 +13,10 @@ from app.services.classifier import (
 
 
 def _catalog_path() -> Path:
-    # api/tests/test_classifier.py -> parents[2] == корень репозитория
-    p = Path(__file__).resolve().parents[2] / "data" / "data.csv"
-    assert p.exists(), p
-    return p
+    # api/tests/test_classifier.py -> parents[2] is the repository root.
+    path = Path(__file__).resolve().parents[2] / "data" / "data.csv"
+    assert path.exists(), path
+    return path
 
 
 def test_mock_classifier_contract() -> None:
@@ -50,11 +53,29 @@ def test_catalog_alternatives_present() -> None:
     assert isinstance(result.alternatives, list)
 
 
-def test_build_classifier_default_is_catalog() -> None:
-    reset_classifier()
-    classifier = build_classifier("catalog")
-    assert isinstance(classifier, CatalogClassifier)
-    reset_classifier()
+def test_response_cache_normalizes_whitespace_and_case() -> None:
+    class CountingClassifier:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def classify(self, query: str) -> ClassifyResponse:
+            self.calls += 1
+            return MockClassifier().classify(query)
+
+    inner = CountingClassifier()
+    cached = CachedClassifier(inner, max_entries=2)
+
+    first = cached.classify("  Ноутбук  ")
+    second = cached.classify("ноутбук")
+
+    assert inner.calls == 1
+    assert first.query == "  Ноутбук  "
+    assert second.query == "ноутбук"
+
+
+def test_build_classifier_default_is_catalog(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "catalog_path", str(_catalog_path()))
+    assert isinstance(build_classifier("catalog"), CatalogClassifier)
 
 
 def test_get_classifier_singleton() -> None:

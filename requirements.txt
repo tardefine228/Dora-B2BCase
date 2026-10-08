@@ -1,18 +1,3 @@
-# ML
-torch
-sentence-transformers
-qdrant-client
-numpy
-
-# API
-fastapi
-uvicorn
-
-# Utilities
-python-multipart
-pymorphy3
-python-dotenv
-
-# Dev (optional)
-ruff
-pre-commit
+# Full development environment, including tests/lint and the optional ML model stack.
+-r api/requirements-dev.txt
+-r api/requirements-ml.txt
