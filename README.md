@@ -128,6 +128,8 @@ curl -X POST localhost:8000/admin/reindex -H "X-Admin-API-Key: <секрет>"
   модель и падает, если метрики ниже порогов `--min-top1/--min-top3/--min-silence/--min-exact`.
 - Эксперименты и выводы: `eval/experiments.md`.
 - Нагрузочный замер: `eval/api-load-test.md`, `scripts/load_test.py`.
+- План следующих работ (мерж, часть D на целевой машине, известное
+  train/serve-расхождение): `docs/next-steps.md`.
 
 ## Эндпоинты (кратко)
 
