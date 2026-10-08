@@ -1,272 +1,127 @@
 # Dora B2BCase — Backend API
 
-Бэкенд на **FastAPI** для классификации товаров по Постановлению Правительства РФ № 1875.
-API описывает запросы и ответы через Pydantic; интерактивная OpenAPI-документация доступна
-в `/docs` и `/redoc`.
+Бэкенд на **FastAPI** для классификации товаров по **Постановлению
+Правительства РФ № 1875** (национальный режим в закупках): по названию товара
+сервис находит вероятную позицию перечня и код ОКПД2, показывает уверенность и
+альтернативы. Результат — **подсказка для специалиста**, не юридическая проверка.
 
-> Результат классификации — подсказка для проверки специалистом, а не юридическое заключение.
-
-## Что работает сейчас
-
-- `POST /classify` — классификация одного товара.
-- `POST /classify/batch` — фоновая обработка до 100 товаров; статус и результаты доступны
-  через `GET /classify/batch/{job_id}`.
-- `/health` (liveness), `/health/ready` (готовность классификатора) и `/metrics`.
-- Docker Compose поднимает API и Qdrant с постоянным именованным volume.
-- По умолчанию используется автономный облегчённый классификатор по `data/data.csv`.
-- ML-классификатор, кэш ответов, ограничение параллельного инференса и защищённая задача
-  переиндексации в Qdrant подключаются отдельно.
-
-## Быстрый запуск без Docker
-
-Требуется Python 3.10+ (в CI используется Python 3.12).
+## Быстрый старт (локально)
 
 ```bash
-python -m venv .venv
-# Linux/macOS
-. .venv/bin/activate
-# Windows PowerShell: .venv\\Scripts\\Activate.ps1
-python -m pip install --upgrade pip
 python -m pip install -r api/requirements-dev.txt
-PYTHONPATH=api python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python scripts/build_model.py          # лёгкие ML-артефакты в models/ (секунды)
+PYTHONPATH=api uvicorn app.main:app --reload --port 8000
 ```
 
-Каталоговый режим не требует Qdrant, скачивания модели или доступа к интернету после установки
-зависимостей. Проверить сервис:
+- Демо-UI:  http://localhost:8000/ui/   (корень `/` ведёт туда же)
+- API:      http://localhost:8000
+- Swagger:  http://localhost:8000/docs
+- Health:   http://localhost:8000/health
+
+## Запуск через Docker (рекомендуемый)
 
 ```bash
-curl http://localhost:8000/health
-curl http://localhost:8000/health/ready
-curl -X POST http://localhost:8000/classify \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"Ноутбук Lenovo IdeaPad"}'
+docker compose up --build
 ```
 
-При запуске из Windows вместо `PYTHONPATH=api` используйте PowerShell:
+- UI/API:  http://localhost:8000/ui/
+- Qdrant:  http://localhost:6333 (данные в volume `qdrant_data`, каталог — в `catalog_data`)
 
-```powershell
-$env:PYTHONPATH = "api"
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
+Проверка стека на целевой машине: `bash scripts/docker_smoke.sh --build`
+(чек-лист: `eval/docker-target-checklist.md` — в песочнице разработки Docker
+отсутствовал, образы проверяются этим скриптом на месте).
 
-## Запуск через Docker Compose
+## Режимы классификации (`CLASSIFIER_BACKEND`)
 
-Docker Engine и Compose v2 должны быть установлены. Compose читает переменные из `.env`:
+| Значение | Что делает | Когда использовать |
+| --- | --- | --- |
+| `catalog` | реальный каталог `data/data.csv`: лексическая выдача + обученный реранкер + откалиброванные пороги (**по умолчанию**) | демо, работа без весов ML |
+| `qdrant` | семантический поиск в Qdrant (`ml/`), тот же реранкер и пороги | когда в `models/` лежит модель (например `bge-m3`) |
+| `mock` | детерминированная заглушка `MOCK-001` | разработка фронтенда |
+
+**Выбор режима для демо:** каталоговый гибрид работает офлайн и даёт
+top-1 ≈ 73% на размеченном наборе (`eval/eval_report.md`); семантический режим
+закрывает абстрактные категории («костюм» → «Одежда, кроме одежды из меха») и
+включается без изменений API. Реранкер, пороги `ok`/`review` и формат ответа
+общие для обоих режимов — контракт v1.0 (`docs/api-contract.md`).
+
+## ML-модель и переиндексация
 
 ```bash
-cp .env.example .env
-# При необходимости измените порты, лимиты памяти и другие настройки в .env
-docker compose up --build -d
-docker compose ps
-curl http://localhost:8000/health/ready
+# лёгкие артефакты (tfidf-эмбеддер + калиброванный реранкер) — без интернета
+python scripts/build_model.py
+
+# полный семантический режим: положите SentenceTransformers-модель в models/
+INSTALL_ML=true CLASSIFIER_BACKEND=qdrant MODEL_NAME=./models/bge-m3 \
+  ADMIN_API_KEY=<секрет> docker compose up --build
+curl -X POST localhost:8000/admin/reindex -H "X-Admin-API-Key: <секрет>"
 ```
 
-Полезные адреса:
+`/admin/reindex` переиндексирует каталог в Qdrant фоном и атомарно переключает
+алиас (поиск не прерывается, повторная переиндексация не оставляет мусор).
+Пороговое ПО ML устанавливается только при `INSTALL_ML=true`; без модели
+работает `EMBEDDER_BACKEND=tfidf` (офлайн-фолбэк, проверен сквозными тестами
+`api/tests/test_ml_e2e.py`).
 
-- API: `http://localhost:8000`
-- Swagger: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-- Qdrant HTTP: `http://localhost:6333` (порт привязан к `127.0.0.1` по умолчанию)
+## Обновление каталога перечня
 
-Данные Qdrant сохраняются в named volume `qdrant_data` между пересозданиями контейнеров.
-Обычный `docker compose down` volume не удаляет; `docker compose down -v` удалит его и все
-данные индекса.
+Регламент — `docs/catalog-update.md`. Коротко: `POST /admin/catalog`
+(`dry_run=true` — проверка без установки) принимает CSV/JSON, валидирует
+строки и атомарно заменяет `data.csv` + `data.json`; затем
+`POST /admin/reindex` (или `auto_reindex=true`). Для проверки файла без API:
+`python scripts/validate_catalog.py new_catalog.csv`.
 
-Compose по умолчанию ограничивает API до 1 GiB RAM / 2 CPU, Qdrant — до 768 MiB / 1 CPU.
-Значения можно изменить через `API_MEMORY_LIMIT`, `API_CPUS`, `QDRANT_MEMORY_LIMIT` и
-`QDRANT_CPUS`. Для ML-модели может потребоваться больше памяти.
+## Качество и оценка
 
-Логи контейнера:
+- Размеченный набор: `eval/labeled_examples.csv` (89 запросов, включая
+  «нет в перечне» и спорные позиции).
+- Прогон: `python eval/run_eval.py` → `eval/eval_report.md` (top-1/top-3,
+  доля верного `not_found`, разбор ошибок).
+- Эксперименты и выводы: `eval/experiments.md`.
+- Нагрузочный замер: `eval/api-load-test.md`, `scripts/load_test.py`.
 
-```bash
-docker compose logs -f api
-```
+## Эндпоинты (кратко)
 
-## API-контракт
+| Метод | Путь | Назначение |
+| --- | --- | --- |
+| POST | `/classify` | один товар → `ClassifyResponse` (контракт v1.0) |
+| POST | `/classify/batch` | до 100 товаров → фоновая задача с прогрессом |
+| GET | `/classify/batch/{job_id}` | статус/результат задачи |
+| GET | `/health`, `/health/ready`, `/metrics` | liveness/readiness/метрики |
+| GET/POST | `/admin/catalog` | сведения о каталоге / загрузка нового (ключ `X-Admin-API-Key`) |
+| POST | `/admin/reindex` | переиндексация Qdrant (ключ `X-Admin-API-Key`) |
 
-### `POST /classify`
+Полный контракт результата — `docs/api-contract.md`; он закреплён
+`api/tests/test_contract.py` и используется фронтендом `frontend/`.
 
-Запрос:
-
-```json
-{"name":"Ноутбук Lenovo"}
-```
-
-Ответ:
-
-```json
-{
-  "query": "Ноутбук Lenovo IdeaPad",
-  "code": "26.20.11",
-  "title": "Компьютеры портативные массой не более 10 кг, такие как ноутбуки, ...",
-  "confidence": 0.5,
-  "status": "ok",
-  "clause_ref": "Приложение 2",
-  "clause_url": null,
-  "alternatives": [],
-  "latency_ms": 1.2
-}
-```
-
-`status` имеет значения `ok`, `review` или `not_found`; код, заголовок и ссылка могут быть
-`null`, если совпадение не найдено. Эвристическая уверенность не является вероятностью
-юридической корректности.
-
-### `POST /classify/batch`
-
-В теле передаётся `{"items":["Ноутбук Lenovo","Мышь компьютерная"]}`. Допускается от 1
-до 100 элементов, длина каждого названия — от 1 до 500 символов. Пустые строки обрезаются и
-отклоняются. Тело запроса ограничено 1 MiB (`MAX_REQUEST_BODY_BYTES`). Запрос возвращает HTTP
-`202` и `job_id`; клиент опрашивает `status_url`:
-
-```json
-{
-  "job_id": "<uuid>",
-  "status": "queued",
-  "total": 2,
-  "status_url": "/classify/batch/<uuid>"
-}
-```
-
-Статусы задачи: `queued`, `running`, `completed`, `failed`. Пока задача выполняется, ответ
-содержит число обработанных элементов, процент и готовые результаты.
-
-### Ошибки и ограничения
-
-- `422 Unprocessable Entity` — некорректный JSON, неизвестные поля или нарушение правил
-  Pydantic-валидации (в том числе пустое название, более 500 символов, больше 100 товаров).
-  Это стандартный FastAPI-код для синтаксически корректного, но невалидного запроса.
-- `404` — неизвестный или истёкший `job_id`.
-- `429` — достигнут лимит параллельных фоновых задач; повторите позже (`Retry-After`).
-- `503` — классификатор или административная возможность не готова.
-- `500` — неожиданная ошибка; детали исключения не выдаются клиенту, но сохраняются в логах.
-
-Фоновые задачи и кэш хранятся в памяти процесса: перезапуск API удаляет незавершённые
-задачи и результаты кэша. Для этого прототипа включён один worker. Для нескольких реплик,
-гарантированной доставки и переживания рестартов подключите Redis/очередь задач и общее
-хранилище статусов.
-
-## Классификаторы
-
-Значение задаётся переменной `CLASSIFIER_BACKEND`:
-
-| Значение | Поведение |
-| --- | --- |
-| `catalog` | По умолчанию. Быстрое автономное сопоставление с `data/data.csv`; нет семантического поиска. |
-| `mock` | Детерминированный ответ `MOCK-001` для фронтенда и интеграционных тестов. |
-| `qdrant` | Семантический поиск с SentenceTransformers и Qdrant; требует дополнительных зависимостей, локальной модели и индекса. |
-
-Каталоговый режим не выдаёт фиктивный ответ при отсутствии файла: готовность станет `503`,
-а причина попадёт в лог. Исходные строки каталога хранятся в Git; пользовательские модели и
-векторные данные в Git не добавляются.
-
-### Необязательный ML/Qdrant-режим и работа офлайн
-
-В репозитории **нет весов модели**: их размер и лицензия зависят от выбранной модели. Поэтому
-образ по умолчанию не скачивает модель и остаётся сравнительно небольшим; runtime не должен
-загружать веса автоматически, если включён `MODEL_LOCAL_ONLY=true`.
-
-1. Поместите полностью подготовленную модель SentenceTransformers в `./models/bge-m3`.
-   Каталог `models/` смонтирован в API-контейнер как `/app/models` и исключён из Git.
-2. В `.env` укажите:
-
-   ```dotenv
-   INSTALL_ML=true
-   CLASSIFIER_BACKEND=qdrant
-   MODEL_NAME=./models/bge-m3
-   MODEL_LOCAL_ONLY=true
-   MODEL_DEVICE=cpu
-   ADMIN_API_KEY=<длинный-случайный-секрет>
-   ```
-
-3. Пересоберите API и запустите сервисы: `docker compose up --build -d`.
-4. Сначала проверьте `docker compose logs -f api`. Для первичной индексации используйте
-   защищённый endpoint ниже; пока коллекция не создана, `/health/ready` вернёт `503`, но
-   liveness `/health` и административный endpoint останутся доступны.
-
-`INSTALL_ML=true` устанавливает тяжёлые ML-зависимости во время сборки, включая CPU-only
-PyTorch, чтобы не добавлять CUDA-библиотеки в образ. Это **не** копирует веса модели в
-Docker-образ: их нужно подготовить локально и сохранить в `models/`. Первый
-`docker compose up --build` всё ещё требует доступа к реестрам для скачивания базовых образов
-и Python-пакетов. После успешной сборки, при локальной модели и сохранённом Qdrant volume,
-работа классификатора не требует интернета. Для абсолютного офлайн-развёртывания заранее
-сохраните Docker-образы и пакетные артефакты на машине жюри.
-
-### `POST /admin/reindex`
-
-Включён только когда заданы `ADMIN_API_KEY` и `INSTALL_ML=true` (последний параметр также
-включает runtime-флаг `ML_ENABLED`). Endpoint требует заголовок
-`X-Admin-API-Key: <секрет>` и запускает фоновую задачу:
-
-```bash
-curl -X POST http://localhost:8000/admin/reindex \
-  -H "X-Admin-API-Key: $ADMIN_API_KEY"
-```
-
-В ответе возвращаются `job_id` и `status_url`; статус можно получить через
-`GET /admin/reindex/{job_id}` с тем же заголовком. Переиндексация строит отдельную staging-
-коллекцию и переключает alias после успешной загрузки, чтобы не удалять текущий индекс до
-готовности нового. Путь JSON-каталога по умолчанию — `/app/data/data.json` в контейнере;
-для локального запуска — `data/data.json`.
-
-## Логи, метрики, кэш и производительность
-
-- Логи идут в stdout/stderr (так их собирает Docker); запись в контейнерный файл не требуется.
-  В каждой записи есть request ID, HTTP-статус, время и размер запроса, если он указан клиентом.
-  Для batch отдельно логируется число товаров.
-- Запросы возвращают `X-Request-ID` и `X-Process-Time-Ms`. Клиент может передать свой безопасный
-  `X-Request-ID` длиной до 128 символов.
-- `GET /metrics` показывает число запросов, статусы, среднюю задержку и счётчики по шаблону
-  маршрута (без бесконечного роста от случайных `job_id`). Метрики локальны для процесса.
-- LRU-кэш ответов ограничен `CLASSIFICATION_CACHE_SIZE` (по умолчанию 512 записей); число
-  одновременных инференсов ограничено `MAX_CONCURRENT_INFERENCES` (по умолчанию 1).
-- Batch классифицируется блоками; ML-адаптер кодирует запросы пачкой, а не загружает модель
-  заново на каждый товар. Старт приложения загружает настроенную модель один раз.
-- `/health` — liveness, `/health/ready` — готовность выбранного классификатора. Docker
-  healthcheck использует readiness.
-
-## Тестирование и нагрузочный прогон
+## Тесты
 
 ```bash
 python -m pip install -r api/requirements-dev.txt
 PYTHONPATH=api python -m pytest api/tests -q
-ruff check .
-ruff format --check .
 ```
 
-Для локальной оценки batch API (по умолчанию 10 одновременных запросов по 100 товаров):
+## Структура
 
-```bash
-python scripts/load_test.py --base-url http://127.0.0.1:8000
+```
+api/
+  app/
+    main.py            # FastAPI: роуты, admin-каталог, lifespan, статика /ui
+    schemas.py         # контракт v1.0 (Pydantic)
+    job_store.py       # in-memory фоновые задачи
+    core/              # config, logging, correlation id, metrics
+    middleware/        # observe + ограничение размера тела
+    services/          # classifier (catalog/mock/qdrant), catalog_io
+  tests/               # API, классификатор, контракт, ML E2E, compose
+frontend/              # демо-UI (статика, без сборки)
+ml/                    # эмбеддеры (tfidf/sentence-transformers), индексация,
+                       # поиск, реранкер, лексические мосты, обучение
+models/                # артефакты (генерируются: scripts/build_model.py)
+data/                  # каталог ПП № 1875 (data.csv + data.json)
+eval/                  # размеченный набор, метрики, эксперименты, чек-листы
+docs/                  # api-contract.md, catalog-update.md
+scripts/               # build_model, validate_catalog, load_test, docker_smoke
 ```
 
-Скрипт измеряет задержку принятия запросов, полное время, число обработанных товаров и
-метрики API. Чтобы дополнительно получить пиковый RSS API-процесса на Linux, передайте его
-PID: `python scripts/load_test.py --pid <PID>`. Фактические RAM и latency нужно измерить на
-целевой машине: числа зависят от CPU, модели, Docker и состава каталога. Один локальный
-smoke-замер (без ML и Docker) записан в [`eval/api-load-test.md`](eval/api-load-test.md).
-
-## Переменные окружения
-
-Полный шаблон — `.env.example`. Важные настройки: `API_PORT`, `LOG_LEVEL`,
-`CLASSIFIER_BACKEND`, `INSTALL_ML`, `DATA_DIR`, `CATALOG_PATH`, `QDRANT_URL`,
-`QDRANT_COLLECTION`, `MODEL_NAME`, `MODEL_LOCAL_ONLY`, `ADMIN_API_KEY`,
-`MAX_REQUEST_BODY_BYTES`, `MAX_CONCURRENT_INFERENCES`, `CLASSIFICATION_CACHE_SIZE`, лимиты памяти и CPU.
-
-## Структура проекта
-
-```text
-api/app/
-  main.py                 # FastAPI routes, lifespan, фоновые задачи
-  schemas.py              # Pydantic / OpenAPI контракты
-  job_store.py            # bounded in-memory job store
-  core/                   # settings, logging, request metrics
-  middleware/             # correlation ID, timing, safe error response
-  services/classifier.py  # catalog / mock / Qdrant adapters, cache
-api/tests/                # API and classifier tests
-api/Dockerfile            # small default API image, optional ML build arg
-ml/                       # embedding, catalog indexing and Qdrant search
-scripts/load_test.py      # async batch load smoke test
-data/                     # checked-in PP-1875 catalog
-docker-compose.yml        # API + Qdrant + persistent qdrant_data volume
-```
+> Фоновые задачи хранятся в памяти API — при перезапуске незавершённые
+> пропадают. Для прод-режима нужен общий стор (Redis/DB).

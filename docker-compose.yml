@@ -28,6 +28,8 @@ services:
     volumes:
       # Place a complete local SentenceTransformers model under ./models to run offline.
       - "${MODEL_HOST_DIR:-./models}:/app/models:ro"
+      # Uploaded catalogs survive restarts; the first mount seeds it from the image.
+      - "catalog_data:/app/data"
     depends_on:
       qdrant:
         condition: service_healthy
@@ -67,3 +69,4 @@ services:
 
 volumes:
   qdrant_data:
+  catalog_data:

@@ -1,13 +1,26 @@
-"""Dora B2BCase API — product classification for Russian Decree No. 1875."""
+"""Dora B2BCase API — product classification for Russian Government Decree No. 1875."""
 
 import importlib.util
 import logging
 import secrets
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Annotated
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Header,
+    HTTPException,
+    Query,
+    UploadFile,
+)
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.log_config import configure_logging
@@ -29,12 +42,22 @@ from app.schemas import (
     BatchClassifyRequest,
     BatchJobAccepted,
     BatchJobStatusResponse,
+    CatalogInfo,
+    CatalogUploadResponse,
     ClassifyRequest,
     ClassifyResponse,
     ReindexJobAccepted,
     ReindexJobStatusResponse,
 )
-from app.services.classifier import CachedClassifier, get_classifier
+from app.services.catalog_io import (
+    catalog_facts,
+    normalize_rows,
+    parse_catalog_bytes,
+    resolve_data_dir,
+    validate_rows,
+    write_catalog,
+)
+from app.services.classifier import CachedClassifier, get_classifier, reset_classifier
 
 configure_logging(settings.log_level)
 logger = logging.getLogger("dora.api")
@@ -60,15 +83,27 @@ app = FastAPI(
         "API классификатора товаров по ПП № 1875. "
         "Автоматическая классификация является подсказкой и не заменяет проверку специалиста."
     ),
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 app.add_middleware(
     RequestSizeLimitMiddleware,
     max_body_bytes=settings.max_request_body_bytes,
 )
+if settings.cors_allow_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_allow_origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["*"],
+    )
 # Add the observer last so it also measures and logs requests rejected by the size limiter.
 app.add_middleware(ObserveMiddleware)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_DIR = PROJECT_ROOT / "frontend"
+if FRONTEND_DIR.is_dir():
+    app.mount("/ui", StaticFiles(directory=FRONTEND_DIR, html=True), name="ui")
 
 
 def _classifier_or_503() -> CachedClassifier:
@@ -180,10 +215,27 @@ def require_admin_key(
         )
 
 
+def _ml_dependencies_missing() -> list[str]:
+    """Only require the heavy dependencies of the currently configured embedder."""
+    missing: list[str] = []
+    if importlib.util.find_spec("qdrant_client") is None:
+        missing.append("qdrant-client")
+    try:
+        from ml.embedder import resolve_backend
+
+        if resolve_backend() == "sentence-transformers" and (
+            importlib.util.find_spec("sentence_transformers") is None
+        ):
+            missing.append("sentence-transformers")
+    except Exception:  # ml package problems surface as an unmet dependency
+        missing.append("ml")
+    return missing
+
+
 @app.get("/", include_in_schema=False)
 def root() -> RedirectResponse:
-    """Make the live API preview open its interactive documentation by default."""
-    return RedirectResponse(url="/docs", status_code=307)
+    """Open the demo UI by default; API docs stay available at /docs."""
+    return RedirectResponse(url="/ui/", status_code=307)
 
 
 @app.get("/health", tags=["system"], summary="Liveness probe")
@@ -292,16 +344,14 @@ def get_batch_status(job_id: str) -> BatchJobStatusResponse:
     dependencies=[Depends(require_admin_key)],
 )
 def start_reindex(background_tasks: BackgroundTasks) -> ReindexJobAccepted:
-    missing_ml_dependency = any(
-        importlib.util.find_spec(module_name) is None
-        for module_name in ("sentence_transformers", "qdrant_client")
-    )
+    missing_ml_dependency = _ml_dependencies_missing()
     if not settings.ml_enabled or missing_ml_dependency:
         raise HTTPException(
             status_code=503,
             detail=(
                 "Переиндексация недоступна: установите ML-зависимости "
-                "(INSTALL_ML=true) и включите ML_ENABLED=true."
+                f"({', '.join(missing_ml_dependency) or 'INSTALL_ML=true'}) "
+                "и включите ML_ENABLED=true."
             ),
         )
 
@@ -338,4 +388,89 @@ def get_reindex_status(job_id: str) -> ReindexJobStatusResponse:
         total=job.total,
         indexed=job.indexed,
         error=job.error,
+    )
+
+
+@app.get(
+    "/admin/catalog",
+    response_model=CatalogInfo,
+    tags=["admin"],
+    summary="Информация об установленном каталоге",
+    dependencies=[Depends(require_admin_key)],
+)
+def get_catalog_info() -> CatalogInfo:
+    return catalog_facts(resolve_data_dir())
+
+
+@app.post(
+    "/admin/catalog",
+    response_model=CatalogUploadResponse,
+    tags=["admin"],
+    summary="Загрузить и проверить новый каталог (CSV или JSON)",
+    dependencies=[Depends(require_admin_key)],
+)
+async def upload_catalog(
+    background_tasks: BackgroundTasks,
+    file: Annotated[
+        UploadFile,
+        File(description="data.csv или data.json с перечнем ПП № 1875"),
+    ],
+    dry_run: bool = Query(
+        default=False,
+        description="Только проверить файл, не заменяя установленный каталог.",
+    ),
+    auto_reindex: bool = Query(
+        default=False,
+        description="Сразу запустить переиндексацию Qdrant (только при ML-режиме).",
+    ),
+) -> CatalogUploadResponse:
+    content = await file.read()
+    try:
+        parsed = parse_catalog_bytes(file.filename or "", content)
+        report = validate_rows(parsed)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    applied = False
+    catalog_info = None
+    reindex_required = False
+
+    if report.ok and not dry_run:
+        rows = normalize_rows(parsed)
+        catalog_info = write_catalog(rows, resolve_data_dir())
+        applied = True
+        # Drop caches so the next request sees the new catalog immediately.
+        reset_classifier()
+        try:
+            from ml.embedder import reset_encoder_cache
+
+            reset_encoder_cache()
+        except Exception:  # pragma: no cover - ML stack is optional
+            logger.exception("Не удалось сбросить кэш эмбеддера после обновления каталога")
+        reindex_required = bool(settings.ml_enabled and settings.classifier_backend == "qdrant")
+        if auto_reindex and reindex_required:
+            try:
+                job = job_store.create_reindex()
+                background_tasks.add_task(_run_reindex_job, job.job_id)
+            except (ReindexAlreadyRunningError, JobStoreCapacityError):
+                # The catalog is already installed; the operator can reindex later.
+                logger.exception("Переиндексация после загрузки каталога не запущена")
+
+    logger.info(
+        "Catalog upload finished filename=%s dry_run=%s applied=%s rows=%d errors=%d",
+        file.filename,
+        dry_run,
+        applied,
+        report.rows_total,
+        len(report.errors),
+    )
+    return CatalogUploadResponse(
+        dry_run=dry_run,
+        applied=applied,
+        rows_total=report.rows_total,
+        rows_valid=report.rows_valid,
+        errors=report.errors,
+        warnings=report.warnings,
+        catalog=catalog_info,
+        reindex_required=reindex_required,
     )

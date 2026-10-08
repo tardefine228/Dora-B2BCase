@@ -1,8 +1,15 @@
-"""Public request/response contracts; exposed automatically in OpenAPI."""
+"""Public request/response contracts; exposed automatically in OpenAPI.
+
+The classification result format is the team-agreed contract v1.0 (see
+``docs/api-contract.md``): new optional fields may be added, existing fields are
+never renamed or removed within a major version.
+"""
 
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+
+CONTRACT_VERSION = "1.0"
 
 
 class APIModel(BaseModel):
@@ -35,6 +42,10 @@ class Alternative(APIModel):
     code: str | None = None
     title: str | None = None
     confidence: float = Field(ge=0, le=1)
+    clause_ref: str | None = Field(
+        default=None,
+        description="Ссылка на позицию перечня (приложение, позиция), если известна.",
+    )
 
 
 class ClassifyResponse(APIModel):
@@ -47,6 +58,10 @@ class ClassifyResponse(APIModel):
     clause_url: str | None = None
     alternatives: list[Alternative] = Field(default_factory=list)
     latency_ms: float = Field(ge=0)
+    contract_version: str = Field(
+        default=CONTRACT_VERSION,
+        description="Версия формата результата (командный контракт, см. docs/api-contract.md).",
+    )
 
 
 class BatchJobAccepted(APIModel):
@@ -78,3 +93,34 @@ class ReindexJobStatusResponse(APIModel):
     total: int | None = Field(default=None, ge=0)
     indexed: int = Field(ge=0)
     error: str | None = None
+
+
+class CatalogIssue(APIModel):
+    row: int | None = Field(
+        default=None, description="Номер строки файла (1-based), если применимо."
+    )
+    field: str | None = None
+    message: str
+    severity: Literal["error", "warning"]
+
+
+class CatalogInfo(APIModel):
+    rows: int = Field(ge=0)
+    columns: list[str] = Field(default_factory=list)
+    sha256: str
+    modified_at: str | None = None
+    source_files: list[str] = Field(default_factory=list)
+
+
+class CatalogUploadResponse(APIModel):
+    dry_run: bool
+    applied: bool
+    rows_total: int = Field(ge=0)
+    rows_valid: int = Field(ge=0)
+    errors: list[CatalogIssue] = Field(default_factory=list)
+    warnings: list[CatalogIssue] = Field(default_factory=list)
+    catalog: CatalogInfo | None = None
+    reindex_required: bool = Field(
+        default=False,
+        description="true, если после загрузки нужно выполнить POST /admin/reindex.",
+    )

@@ -1,8 +1,17 @@
 """Classifiers for products covered by Russian Government Decree No. 1875.
 
-The catalog implementation is deliberately lightweight and works offline. The
-optional Qdrant implementation uses the ML package and a model that must already
-be available locally when offline mode is enabled.
+Three backends share one response contract:
+
+* ``catalog`` — offline matching against the checked-in ``data/data.csv``:
+  lexical retrieval shortlist + calibrated reranker (default, demo mode);
+* ``qdrant`` — semantic search in a prebuilt Qdrant collection (``ml`` package),
+  reranked with the same calibrated reranker;
+* ``mock`` — deterministic placeholder for frontend development.
+
+Both real backends return the reranker's match probability as ``confidence`` and
+map it to ``ok`` / ``review`` / ``not_found`` with the calibrated thresholds from
+``models/reranker.json``. Results are suggestions for a specialist, not a legal
+determination.
 """
 
 from __future__ import annotations
@@ -25,6 +34,8 @@ logger = logging.getLogger("dora.classifier")
 OKPD2_RE = re.compile(r"^\d{2}(\.\d{1,2}){0,3}$")
 TOKEN_RE = re.compile(r"[a-zа-яё0-9]+", re.IGNORECASE)
 _INFERENCE_SEMAPHORE = BoundedSemaphore(settings.max_concurrent_inferences)
+
+_RETRIEVAL_SHORTLIST = 25
 
 
 @contextmanager
@@ -59,6 +70,20 @@ def _not_found(query: str) -> ClassifyResponse:
     )
 
 
+def _load_reranker():
+    """Return the trained reranker, or a lexical fallback when artifacts are absent."""
+    try:
+        from ml.reranker import load_reranker
+    except Exception:  # ml package must never break the offline catalog backend
+        logger.exception("ml.reranker недоступен — используется эвристический скоринг")
+        return None
+    try:
+        return load_reranker()
+    except Exception:
+        logger.exception("Не удалось загрузить реранкер — используется эвристический скоринг")
+        return None
+
+
 class Classifier(Protocol):
     def classify(self, query: str) -> ClassifyResponse: ...
 
@@ -81,21 +106,26 @@ class MockClassifier:
 
 
 class CatalogClassifier:
-    """Lightweight matching against the checked-in CSV catalog."""
+    """Matching against the checked-in CSV catalog: lexical retrieval + reranker."""
 
-    def __init__(self, catalog_path: Path) -> None:
+    def __init__(self, catalog_path: Path, reranker=None) -> None:
         self.catalog_path = Path(catalog_path)
         self.index: list[dict] = []
+        self._reranker = reranker if reranker is not None else _load_reranker()
         self._load()
         if not self.index:
             raise ValueError(f"В каталоге нет записей: {self.catalog_path}")
         logger.info(
-            "CatalogClassifier загружен: %d позиций из %s",
+            "CatalogClassifier загружен: %d позиций из %s (reranker=%s)",
             len(self.index),
             self.catalog_path,
+            type(self._reranker).__name__ if self._reranker else "none",
         )
 
     def _load(self) -> None:
+        from ml.features import prepare_candidate
+
+        by_key: dict[tuple[str, str], dict] = {}
         with self.catalog_path.open(encoding="utf-8-sig", newline="") as csv_file:
             reader = csv.DictReader(csv_file, delimiter=";")
             required_columns = {"name", "okpd2"}
@@ -105,22 +135,35 @@ class CatalogClassifier:
                 name = (row.get("name") or "").strip()
                 if not name:
                     continue
-                self.index.append(
-                    {
-                        "okpd2": (row.get("okpd2") or "").strip(),
-                        "name": name,
-                        "appendix": (row.get("appendix") or "").strip(),
-                        "tokens": set(_tokenize(name)),
-                        "text": name.casefold(),
-                    }
-                )
+                okpd2 = (row.get("okpd2") or "").strip()
+                clause_ref = self._clause_ref(row)
+                key = (okpd2, name)
+                existing = by_key.get(key)
+                if existing is not None:
+                    # The same position often appears in several appendices; keep
+                    # one entry and cite all of them so ranking margins stay sane.
+                    if clause_ref and clause_ref not in (existing["clause_ref"] or ""):
+                        existing["clause_ref"] = f"{existing['clause_ref']}; {clause_ref}"
+                    continue
+                by_key[key] = {
+                    "okpd2": okpd2,
+                    "name": name,
+                    "appendix": (row.get("appendix") or "").strip(),
+                    "clause_ref": clause_ref,
+                    # Precomputed once: retrieval scores every row per request.
+                    "prepared": prepare_candidate(name),
+                }
+        self.index = list(by_key.values())
 
     @staticmethod
-    def _token_matches(query_token: str, tokens: set[str], text: str) -> bool:
-        if query_token in tokens or query_token in text:
-            return True
-        # Tolerate simple inflections and singular/plural variants.
-        return any(token and (token in query_token or query_token in token) for token in tokens)
+    def _clause_ref(row: dict) -> str | None:
+        appendix = (row.get("appendix") or "").strip()
+        position = (row.get("position") or "").strip()
+        if appendix and position:
+            return f"Приложение {appendix}, позиция {position}"
+        if appendix:
+            return f"Приложение {appendix}"
+        return None
 
     def classify(self, query: str) -> ClassifyResponse:
         normalized_query = query.strip()
@@ -141,57 +184,126 @@ class CatalogClassifier:
                         title=row["name"],
                         confidence=1.0,
                         status="ok",
-                        clause_ref=f"Приложение {row['appendix']}" if row["appendix"] else None,
+                        clause_ref=row["clause_ref"],
                         clause_url=None,
                         alternatives=[],
                         latency_ms=0.0,
                     )
 
-        # 2. Lightweight token overlap. Treat the score as a suggestion, not a legal decision.
+        # 2. Lexical shortlist, then the calibrated reranker orders the candidates.
         query_tokens = set(_tokenize(query_lower))
         if not query_tokens:
             return _not_found(normalized_query)
 
-        scored: list[tuple[float, dict]] = []
-        for row in self.index:
-            matched = [
-                token
-                for token in query_tokens
-                if self._token_matches(token, row["tokens"], row["text"])
-            ]
-            if matched:
-                scored.append((len(matched) / len(query_tokens), row))
-
-        if not scored:
+        shortlist = self._retrieve(normalized_query, query_tokens)
+        if not shortlist:
             return _not_found(normalized_query)
 
-        # Stable ordering makes responses deterministic when scores tie.
+        return self._rank_to_response(normalized_query, shortlist)
+
+    def _retrieve(self, query: str, query_tokens: set[str]) -> list[dict]:
+        from ml.features import lexical_score_prepared, prepare_candidate
+        from ml.lexicon import expand_query
+
+        prepared_query = prepare_candidate(expand_query(query))
+        scored: list[tuple[float, dict]] = []
+        for row in self.index:
+            score = lexical_score_prepared(prepared_query, row["prepared"])
+            if score <= 0.0:
+                # Keep the historical token-substring tolerance as a safety net.
+                matched = sum(
+                    1
+                    for token in query_tokens
+                    if token in row["name"].casefold()
+                    or any(token in other or other in token for other in _tokenize(row["name"]))
+                )
+                score = 0.2 * matched / len(query_tokens) if matched else 0.0
+            if score > 0.0:
+                scored.append((score, row))
         scored.sort(key=lambda item: item[0], reverse=True)
-        best_score, best = scored[0]
-        seen_codes = {best["okpd2"]}
+        return [row for _score, row in scored[:_RETRIEVAL_SHORTLIST]]
+
+    def _rank_to_response(self, query: str, shortlist: list[dict]) -> ClassifyResponse:
+        try:
+            from ml.reranker import RankedCandidate
+        except Exception:  # pragma: no cover - fallback path
+            logger.exception("ml.reranker недоступен — отдаём лучший lexical-кандидат")
+            best = shortlist[0]
+            return ClassifyResponse(
+                query=query,
+                code=best["okpd2"] or None,
+                title=best["name"],
+                confidence=0.5,
+                status="review",
+                clause_ref=best["clause_ref"],
+                clause_url=None,
+                alternatives=[],
+                latency_ms=0.0,
+            )
+
+        candidates = [
+            RankedCandidate(
+                code=row["okpd2"] or None,
+                title=row["name"],
+                clause_ref=row["clause_ref"],
+                retrieval_score=0.0,
+            )
+            for row in shortlist
+        ]
+        if self._reranker is not None:
+            ranked = self._reranker.rerank(query, candidates)
+        else:  # pragma: no cover - only when ml import failed
+            ranked = candidates
+
+        best = ranked[0]
+        if self._reranker is not None:
+            confidence_raw, status = self._reranker.evaluate(query, ranked)
+        else:  # pragma: no cover
+            confidence_raw, status = best.probability, "review"
+        confidence = round(min(max(confidence_raw, 0.0), 1.0), 4)
+
         alternatives: list[Alternative] = []
-        for score, row in scored[1:]:
-            if row["okpd2"] in seen_codes:
+        seen_codes = {best.code}
+        threshold_review = getattr(self._reranker, "threshold_review", 0.45)
+        for candidate in ranked[1:]:
+            if candidate.code in seen_codes:
                 continue
-            seen_codes.add(row["okpd2"])
+            if status == "not_found" and candidate.probability < threshold_review:
+                continue
+            seen_codes.add(candidate.code)
             alternatives.append(
                 Alternative(
-                    code=row["okpd2"] or None,
-                    title=row["name"],
-                    confidence=round(min(score, 1.0), 4),
+                    code=candidate.code,
+                    title=candidate.title,
+                    confidence=round(min(max(candidate.probability, 0.0), 1.0), 4),
+                    clause_ref=candidate.clause_ref,
                 )
             )
             if len(alternatives) == 3:
                 break
 
-        confidence = round(min(best_score, 1.0), 4)
+        if status == "not_found":
+            # Too weak to suggest a position: report "не найдено" and keep at most
+            # plausible near-misses in alternatives for the specialist.
+            return ClassifyResponse(
+                query=query,
+                code=None,
+                title=None,
+                confidence=0.0,
+                status="not_found",
+                clause_ref=None,
+                clause_url=None,
+                alternatives=alternatives,
+                latency_ms=0.0,
+            )
+
         return ClassifyResponse(
-            query=normalized_query,
-            code=best["okpd2"] or None,
-            title=best["name"],
+            query=query,
+            code=best.code,
+            title=best.title,
             confidence=confidence,
-            status="ok" if confidence >= 0.5 else "review",
-            clause_ref=f"Приложение {best['appendix']}" if best["appendix"] else None,
+            status=status,
+            clause_ref=best.clause_ref,
             clause_url=None,
             alternatives=alternatives,
             latency_ms=0.0,
@@ -202,7 +314,7 @@ class CatalogClassifier:
 
 
 class QdrantClassifier:
-    """Adapter to semantic search in a prebuilt Qdrant collection."""
+    """Semantic search in a prebuilt Qdrant collection + shared calibrated reranker."""
 
     def __init__(self) -> None:
         if not settings.ml_enabled:
@@ -212,14 +324,14 @@ class QdrantClassifier:
             )
         try:
             from ml.config import QDRANT_COLLECTION
-            from ml.embedder import get_model
+            from ml.embedder import get_encoder
             from ml.indexer import get_qdrant_client
             from ml.search import search_many
         except Exception as exc:  # optional, heavyweight dependencies
             raise RuntimeError(f"ML/Qdrant backend недоступен: {exc}") from exc
 
         # Load once at startup, then reuse the model and Qdrant client for requests.
-        get_model()
+        get_encoder()
         client = get_qdrant_client()
         if not client.collection_exists(QDRANT_COLLECTION):
             raise RuntimeError(
@@ -227,6 +339,7 @@ class QdrantClassifier:
                 "сначала выполните POST /admin/reindex."
             )
         self._search_many = search_many
+        self._reranker = _load_reranker()
 
     def classify(self, query: str) -> ClassifyResponse:
         return self.classify_many([query])[0]
@@ -237,10 +350,15 @@ class QdrantClassifier:
             return []
 
         try:
-            hit_groups = self._search_many(normalized_queries, top_k=3)
+            hit_groups = self._search_many(normalized_queries, top_k=10)
         except Exception:
             logger.exception("Qdrant batch search failed")
             raise
+
+        try:
+            from ml.reranker import RankedCandidate
+        except Exception:  # pragma: no cover
+            RankedCandidate = None
 
         results: list[ClassifyResponse] = []
         for query, hits in zip(normalized_queries, hit_groups, strict=True):
@@ -248,24 +366,58 @@ class QdrantClassifier:
                 results.append(_not_found(query))
                 continue
 
-            top = hits[0]
-            confidence = max(0.0, min(float(top.score), 1.0))
-            alternatives = [
-                Alternative(
-                    code=hit.pp_code or None,
-                    title=hit.name or None,
-                    confidence=max(0.0, min(float(hit.score), 1.0)),
-                )
-                for hit in hits[1:3]
-            ]
+            if RankedCandidate is not None and self._reranker is not None:
+                candidates = [
+                    RankedCandidate(
+                        code=hit.pp_code or None,
+                        title=hit.name or "",
+                        clause_ref=hit.position or hit.group or None,
+                        retrieval_score=float(hit.score),
+                    )
+                    for hit in hits
+                ]
+                ranked = self._reranker.rerank(query, candidates)
+                best = ranked[0]
+                confidence_raw, status = self._reranker.evaluate(query, ranked)
+                confidence = round(min(max(confidence_raw, 0.0), 1.0), 4)
+                threshold_review = getattr(self._reranker, "threshold_review", 0.45)
+                alternatives = [
+                    Alternative(
+                        code=candidate.code,
+                        title=candidate.title,
+                        confidence=round(min(max(candidate.probability, 0.0), 1.0), 4),
+                        clause_ref=candidate.clause_ref,
+                    )
+                    for candidate in ranked[1:3]
+                    if status != "not_found" or candidate.probability >= threshold_review
+                ]
+                clause_ref = best.clause_ref
+                code, title = best.code, best.title
+                if status == "not_found":
+                    code, title, clause_ref, confidence = None, None, None, 0.0
+            else:  # pragma: no cover - fallback when the reranker is unavailable
+                top = hits[0]
+                confidence = max(0.0, min(float(top.score), 1.0))
+                status = "ok" if confidence >= 0.75 else "review"
+                alternatives = [
+                    Alternative(
+                        code=hit.pp_code or None,
+                        title=hit.name or None,
+                        confidence=max(0.0, min(float(hit.score), 1.0)),
+                    )
+                    for hit in hits[1:3]
+                ]
+                clause_ref = top.position or top.group or None
+                code, title = top.pp_code or None, top.name or None
+
             results.append(
                 ClassifyResponse(
                     query=query,
-                    code=top.pp_code or None,
-                    title=top.name or None,
-                    confidence=round(confidence, 4),
-                    status="ok" if confidence >= 0.75 else "review",
-                    clause_ref=top.position or top.group or None,
+                    code=code,
+                    title=title,
+                    confidence=confidence,
+                    status=status,
+                    clause_ref=clause_ref,
                     # pp_link currently contains a human-readable source citation, not a URL.
                     clause_url=None,
                     alternatives=alternatives,
