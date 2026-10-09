@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -47,7 +48,7 @@ from ml.features import (
 logger = logging.getLogger("dora.ml.reranker")
 
 RERANKER_ARTIFACT_NAME = "reranker.json"
-ARTIFACT_VERSION = 2
+ARTIFACT_VERSION = 3
 
 FEATURE_NAMES: tuple[str, ...] = (
     "lexical_score",
@@ -255,6 +256,66 @@ def extract_group_features(query: str, ranked: list[RankedCandidate]) -> dict[st
     }
 
 
+def logit(probability: float) -> float:
+    clamped = min(max(float(probability), 1e-6), 1 - 1e-6)
+    return math.log(clamped / (1.0 - clamped))
+
+
+class Calibration:
+    """Monotone Platt scaling of the raw confidence scale.
+
+    The raw probability is what decides ``ok``/``review``/``not_found`` (the
+    thresholds are calibrated in that space). ``a * logit(p) + b`` is fitted at
+    build time on the calibration platform (``ml/train_reranker.py``) so that
+    the number reported as ``confidence`` can be read as a probability of a
+    correct answer on real queries; its monotonicity (``a > 0``) guarantees the
+    statuses never move. ``type="identity"`` is the no-op used by artifacts that
+    predate the calibration (``a = 1``, ``b = 0``).
+    """
+
+    TYPES = ("identity", "platt")
+
+    def __init__(self, kind: str = "identity", a: float = 1.0, b: float = 0.0) -> None:
+        if kind not in self.TYPES:
+            raise ValueError(f"Неизвестный тип калибровки: {kind!r}")
+        self.kind = kind
+        # A non-positive slope would reverse the order and could flip statuses,
+        # so such an artifact degrades to a no-op calibration instead.
+        if kind == "platt" and float(a) <= 0:
+            self.kind = "identity"
+        if self.kind == "platt":
+            self.a = float(a)
+            self.b = float(b)
+        else:
+            self.a, self.b = 1.0, 0.0
+
+    def calibrate(self, probability: float) -> float:
+        """Map a raw confidence to the calibrated scale (never changes statuses)."""
+        if self.kind != "platt":
+            return min(max(float(probability), 0.0), 1.0)
+        return min(max(_sigmoid(self.a * logit(probability) + self.b), 0.0), 1.0)
+
+    def is_increasing(self) -> bool:
+        return self.kind == "identity" or self.a > 0
+
+    def to_payload(self) -> dict:
+        return {"type": self.kind, "a": round(self.a, 6), "b": round(self.b, 6)}
+
+    @classmethod
+    def from_payload(cls, payload: dict | None) -> Calibration:
+        if not payload:
+            return cls()
+        try:
+            return cls(
+                kind=str(payload.get("type", "identity")),
+                a=float(payload.get("a", 1.0)),
+                b=float(payload.get("b", 0.0)),
+            )
+        except (TypeError, ValueError):
+            logger.warning("Некорректная калибровка в артефакте — используется identity")
+            return cls()
+
+
 class ConfidenceModel:
     """Logistic model over GROUP_FEATURE_NAMES; calibrated in train_reranker."""
 
@@ -264,6 +325,7 @@ class ConfidenceModel:
         intercept: float,
         threshold_ok: float,
         threshold_review: float,
+        calibration: Calibration | None = None,
     ) -> None:
         unknown = set(weights) - set(GROUP_FEATURE_NAMES)
         if unknown:
@@ -272,12 +334,29 @@ class ConfidenceModel:
         self.intercept = float(intercept)
         self.threshold_ok = float(threshold_ok)
         self.threshold_review = float(threshold_review)
+        self.calibration = calibration or Calibration()
 
     def probability(self, features: dict[str, float]) -> float:
+        """Raw probability; the decision thresholds live in this space."""
         linear = self.intercept + sum(
             self.weights[name] * features[name] for name in GROUP_FEATURE_NAMES
         )
         return _sigmoid(linear)
+
+    def calibrated_probability(self, features: dict[str, float]) -> float:
+        """Probability on the display scale (monotone in the raw one)."""
+        return self.calibration.calibrate(self.probability(features))
+
+    def calibrate(self, raw_probability: float) -> float:
+        return self.calibration.calibrate(raw_probability)
+
+    def status_for(self, raw_probability: float) -> str:
+        """Status decision always uses the raw probability (see Calibration)."""
+        if raw_probability >= self.threshold_ok:
+            return "ok"
+        if raw_probability >= self.threshold_review:
+            return "review"
+        return "not_found"
 
     def to_payload(self) -> dict:
         return {
@@ -287,6 +366,7 @@ class ConfidenceModel:
                 "ok": round(self.threshold_ok, 4),
                 "review": round(self.threshold_review, 4),
             },
+            "calibration": self.calibration.to_payload(),
         }
 
     @classmethod
@@ -297,6 +377,7 @@ class ConfidenceModel:
             intercept=float(payload.get("intercept", 0.0)),
             threshold_ok=float(thresholds.get("ok", 0.75)),
             threshold_review=float(thresholds.get("review", 0.45)),
+            calibration=Calibration.from_payload(payload.get("calibration")),
         )
 
 
@@ -346,7 +427,11 @@ class LogisticReranker:
         return candidates
 
     def evaluate(self, query: str, ranked: list[RankedCandidate]) -> tuple[float, str]:
-        """Return (confidence, status) for a whole query after reranking."""
+        """Return (raw confidence, status) for a whole query after reranking.
+
+        The raw confidence is what the calibrated ``ok``/``review`` thresholds
+        cut; use :meth:`display_confidence` for the number shown to users.
+        """
         if not ranked:
             return 0.0, "not_found"
         if self.confidence_model is None:
@@ -354,13 +439,14 @@ class LogisticReranker:
             return confidence, self.status_for(ranked[0].probability)
         features = extract_group_features(query, ranked)
         confidence = self.confidence_model.probability(features)
-        if confidence >= self.confidence_model.threshold_ok:
-            status = "ok"
-        elif confidence >= self.confidence_model.threshold_review:
-            status = "review"
-        else:
-            status = "not_found"
+        status = self.confidence_model.status_for(confidence)
         return min(max(confidence, 0.0), 1.0), status
+
+    def display_confidence(self, raw_confidence: float) -> float:
+        """Map raw confidence to the calibrated display scale (monotone)."""
+        if self.confidence_model is None:
+            return min(max(raw_confidence, 0.0), 1.0)
+        return self.confidence_model.calibrate(raw_confidence)
 
     def status_for(self, probability: float) -> str:
         if probability >= self.threshold_ok:

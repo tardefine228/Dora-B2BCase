@@ -6,8 +6,12 @@
 
 ## Команда
 
+> **Rate limit:** нагрузочный скрипт дергает API чаще, чем лимит по умолчанию,
+> поэтому целевой API запускается с `RATE_LIMIT_ENABLED=false` (иначе скрипт
+> остановится с понятным сообщением на первом же 429).
+
 ```bash
-PYTHONPATH=api python scripts/load_test.py \
+RATE_LIMIT_ENABLED=false PYTHONPATH=api python scripts/load_test.py \
   --base-url http://127.0.0.1:8000 \
   --concurrency 10 \
   --items 100 \

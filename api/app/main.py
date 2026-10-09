@@ -1,6 +1,10 @@
 """Dora B2BCase API — product classification for Russian Government Decree No. 1875."""
 
+import asyncio
+import csv
 import importlib.util
+import io
+import json
 import logging
 import secrets
 import time
@@ -16,10 +20,11 @@ from fastapi import (
     Header,
     HTTPException,
     Query,
+    Response,
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
@@ -30,13 +35,18 @@ from app.job_store import (
     JobStoreCapacityError,
     ReindexAlreadyRunningError,
     ReindexJob,
+    add_batch_result,
+    complete_batch,
+    complete_reindex,
     create_job,
+    create_reindex_job,
+    fail_job,
     get_job,
-)
-from app.job_store import (
-    store as job_store,
+    init_job_store,
+    start_job,
 )
 from app.middleware.observe import ObserveMiddleware
+from app.middleware.ratelimit import RateLimitMiddleware
 from app.middleware.size_limit import RequestSizeLimitMiddleware
 from app.schemas import (
     BatchClassifyRequest,
@@ -48,6 +58,7 @@ from app.schemas import (
     ClassifyResponse,
     ReindexJobAccepted,
     ReindexJobStatusResponse,
+    SourceFragment,
 )
 from app.services.catalog_io import (
     catalog_facts,
@@ -58,6 +69,11 @@ from app.services.catalog_io import (
     write_catalog,
 )
 from app.services.classifier import CachedClassifier, get_classifier, reset_classifier
+from app.services.source_lookup import (
+    SourceUnavailableError,
+    get_source_lookup,
+    reset_source_lookup,
+)
 
 configure_logging(settings.log_level)
 logger = logging.getLogger("dora.api")
@@ -66,6 +82,9 @@ logger = logging.getLogger("dora.api")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Warm the classifier once; keep liveness available if an optional ML backend fails."""
+    interrupted = init_job_store()
+    if interrupted:
+        logger.warning("После рестарта помечено failed задач: %d", interrupted)
     app.state.classifier_initialization_attempted = True
     app.state.classifier_error = None
     try:
@@ -97,7 +116,11 @@ if settings.cors_allow_origins:
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
-# Add the observer last so it also measures and logs requests rejected by the size limiter.
+# The rate limiter sits inside CORS (so browsers can read a 429) and inside the
+# observer (so rejections still get X-Request-ID, logs and metrics).
+app.add_middleware(RateLimitMiddleware)
+# Add the observer last so it also measures and logs requests rejected by the
+# rate limiter and the size limiter.
 app.add_middleware(ObserveMiddleware)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -142,10 +165,61 @@ def _batch_status(job: BatchJob) -> BatchJobStatusResponse:
     )
 
 
+# CSV export of a finished batch (matches the client-side exporter in frontend/app.js).
+CSV_COLUMNS: tuple[str, ...] = (
+    "query",
+    "code",
+    "title",
+    "status",
+    "confidence",
+    "clause_ref",
+    "clause_url",
+    "alt1_code",
+    "alt1_title",
+    "alt2_code",
+    "alt2_title",
+    "alt3_code",
+    "alt3_title",
+)
+_CSV_ALTERNATIVES = 3
+# Excel on a Russian locale expects ";" separators and a BOM in an UTF-8 file.
+BATCH_CSV_BOM = "\ufeff"
+
+# Server-sent events for batch progress (see frontend/app.js for the client).
+SSE_POLL_SECONDS = 0.25
+SSE_HEARTBEAT_SECONDS = 15.0
+
+
+def _build_batch_csv(results: list[ClassifyResponse]) -> str:
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+    writer.writerow(CSV_COLUMNS)
+    for result in results:
+        row: list[str] = [
+            result.query,
+            result.code or "",
+            result.title or "",
+            result.status,
+            f"{result.confidence:.4f}",
+            result.clause_ref or "",
+            result.clause_url or "",
+        ]
+        alternatives = result.alternatives[:_CSV_ALTERNATIVES]
+        for alternative in alternatives:
+            row.extend([alternative.code or "", alternative.title or ""])
+        row.extend([""] * (2 * (_CSV_ALTERNATIVES - len(alternatives))))
+        writer.writerow(row)
+    return BATCH_CSV_BOM + buffer.getvalue()
+
+
+def _sse_event(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
 def _run_batch_job(job_id: str) -> None:
     """Classify a batch off the event loop and publish progress in bounded chunks."""
     snapshot = get_job(job_id)
-    if not isinstance(snapshot, BatchJob) or not job_store.start(job_id):
+    if not isinstance(snapshot, BatchJob) or not start_job(job_id):
         return
 
     try:
@@ -157,21 +231,21 @@ def _run_batch_job(job_id: str) -> None:
             results = classifier.classify_many(names)
             per_item_latency = (time.perf_counter() - started) * 1000 / max(len(names), 1)
             for name, result in zip(names, results, strict=True):
-                job_store.add_batch_result(
+                add_batch_result(
                     job_id,
                     result.model_copy(
                         update={"query": name, "latency_ms": round(per_item_latency, 3)}
                     ),
                 )
-        job_store.complete_batch(job_id)
+        complete_batch(job_id)
     except Exception:
         logger.exception("Batch job failed: %s", job_id)
-        job_store.fail(job_id, "Не удалось обработать список товаров; проверьте логи сервиса")
+        fail_job(job_id, "Не удалось обработать список товаров; проверьте логи сервиса")
 
 
 def _run_reindex_job(job_id: str) -> None:
     snapshot = get_job(job_id)
-    if not isinstance(snapshot, ReindexJob) or not job_store.start(job_id):
+    if not isinstance(snapshot, ReindexJob) or not start_job(job_id):
         return
 
     try:
@@ -186,10 +260,10 @@ def _run_reindex_job(job_id: str) -> None:
             except Exception:
                 # The Qdrant index was published; a cache reset must not mark it failed.
                 logger.exception("Index is ready, but the classifier cache could not be cleared")
-        job_store.complete_reindex(job_id, total)
+        complete_reindex(job_id, total)
     except Exception:
         logger.exception("Reindex job failed: %s", job_id)
-        job_store.fail(job_id, "Переиндексация не выполнена; проверьте конфигурацию и логи")
+        fail_job(job_id, "Переиндексация не выполнена; проверьте конфигурацию и логи")
 
 
 def _do_reindex() -> int:
@@ -323,6 +397,35 @@ def classify_batch(
 
 
 @app.get(
+    "/classify/batch/{job_id}.csv",
+    tags=["classification"],
+    summary="Скачать результат батча в CSV",
+    response_class=Response,
+)
+def get_batch_csv(job_id: str) -> Response:
+    """CSV (``;``, UTF-8 BOM) for a finished batch; useful for large batches.
+
+    Declared before ``/classify/batch/{job_id}`` because the plain path
+    parameter would otherwise swallow the ``.csv`` suffix.
+    """
+    job = get_job(job_id)
+    if not isinstance(job, BatchJob):
+        raise HTTPException(status_code=404, detail="Задача классификации не найдена")
+    if job.status in ("queued", "running"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Задача ещё выполняется ({job.completed} из {len(job.items)})",
+        )
+    return Response(
+        content=_build_batch_csv(job.results).encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="batch-{job.job_id}.csv"',
+        },
+    )
+
+
+@app.get(
     "/classify/batch/{job_id}",
     response_model=BatchJobStatusResponse,
     tags=["classification"],
@@ -333,6 +436,97 @@ def get_batch_status(job_id: str) -> BatchJobStatusResponse:
     if not isinstance(job, BatchJob):
         raise HTTPException(status_code=404, detail="Задача классификации не найдена")
     return _batch_status(job)
+
+
+@app.get(
+    "/classify/batch/{job_id}/events",
+    tags=["classification"],
+    summary="Прогресс батча Server-Sent Events",
+    response_class=StreamingResponse,
+)
+def stream_batch_events(job_id: str) -> StreamingResponse:
+    """``text/event-stream`` with ``progress`` events and a final ``done`` event.
+
+    The store — not process memory — is the source of truth (a job may have been
+    created by another worker of the same store), so the stream polls it and
+    closes as soon as the job is finished.
+    """
+    job = get_job(job_id)
+    if not isinstance(job, BatchJob):
+        raise HTTPException(status_code=404, detail="Задача классификации не найдена")
+
+    async def event_stream():
+        last_completed = -1
+        idle_seconds = 0.0
+        while True:
+            current = get_job(job_id)
+            if not isinstance(current, BatchJob):
+                yield _sse_event("error", {"detail": "Задача классификации не найдена"})
+                return
+            total = len(current.items)
+            if current.completed != last_completed:
+                last_completed = current.completed
+                idle_seconds = 0.0
+                yield _sse_event(
+                    "progress",
+                    {
+                        "job_id": job_id,
+                        "status": current.status,
+                        "completed": current.completed,
+                        "total": total,
+                        "progress_percent": round(current.completed * 100 / total, 1)
+                        if total
+                        else 0.0,
+                    },
+                )
+            if current.status in ("completed", "failed"):
+                yield _sse_event(
+                    "done",
+                    _batch_status(current).model_dump(mode="json"),
+                )
+                return
+            await asyncio.sleep(SSE_POLL_SECONDS)
+            idle_seconds += SSE_POLL_SECONDS
+            if idle_seconds >= SSE_HEARTBEAT_SECONDS:
+                idle_seconds = 0.0
+                yield ": keep-alive\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # Tell nginx and friends not to buffer the stream.
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get(
+    "/source/{record_id}",
+    response_model=SourceFragment,
+    tags=["sources"],
+    summary="Фрагмент текста ПП № 1875 по позиции каталога",
+)
+def get_source_fragment(record_id: str, response: Response) -> SourceFragment:
+    """Human-readable source of record behind ``clause_url`` of a classification.
+
+    ``pp_link`` in the catalog is a citation, not a URL, so the service serves the
+    pages of ``data/source_text.txt`` recorded in ``pdf_page_start``/``pdf_page_end``
+    for the row ``record_id``.
+    """
+    try:
+        fragment = get_source_lookup().fragment(record_id)
+    except SourceUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if fragment is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Позиция каталога с таким record_id не найдена",
+        )
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return fragment
 
 
 @app.post(
@@ -356,7 +550,7 @@ def start_reindex(background_tasks: BackgroundTasks) -> ReindexJobAccepted:
         )
 
     try:
-        job = job_store.create_reindex()
+        job = create_reindex_job()
     except ReindexAlreadyRunningError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except JobStoreCapacityError as exc:
@@ -441,6 +635,7 @@ async def upload_catalog(
         applied = True
         # Drop caches so the next request sees the new catalog immediately.
         reset_classifier()
+        reset_source_lookup()
         try:
             from ml.embedder import reset_encoder_cache
 
@@ -450,7 +645,7 @@ async def upload_catalog(
         reindex_required = bool(settings.ml_enabled and settings.classifier_backend == "qdrant")
         if auto_reindex and reindex_required:
             try:
-                job = job_store.create_reindex()
+                job = create_reindex_job()
                 background_tasks.add_task(_run_reindex_job, job.job_id)
             except (ReindexAlreadyRunningError, JobStoreCapacityError):
                 # The catalog is already installed; the operator can reindex later.

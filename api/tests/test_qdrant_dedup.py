@@ -19,8 +19,17 @@ from app.services.classifier import (
 from ml.reranker import RankedCandidate
 
 
-def _hit(code: str, name: str, score: float, position: str = "") -> SimpleNamespace:
-    return SimpleNamespace(pp_code=code, name=name, score=score, position=position, group=None)
+def _hit(
+    code: str, name: str, score: float, position: str = "", record_id: str = ""
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        pp_code=code,
+        name=name,
+        score=score,
+        position=position,
+        group=None,
+        record_id=record_id,
+    )
 
 
 class _StubReranker:
@@ -48,10 +57,10 @@ def _qdrant_classifier(hits: list[SimpleNamespace]) -> QdrantClassifier:
 
 def test_qdrant_alternatives_have_distinct_codes() -> None:
     hits = [
-        _hit("26.20.11", "Компьютеры портативные", 0.9, "Приложение 2"),
+        _hit("26.20.11", "Компьютеры портативные", 0.9, "Приложение 2", "2-195-01"),
         _hit("26.20.11", "Компьютеры портативные", 0.89, "Приложение 3"),
         _hit("26.20.11", "Компьютеры портативные", 0.88, "Приложение 1"),
-        _hit("26.20.14", "Машины вычислительные электронные цифровые", 0.5),
+        _hit("26.20.14", "Машины вычислительные электронные цифровые", 0.5, "", "2-196-01"),
         _hit("26.20.14", "Машины вычислительные электронные цифровые", 0.49),
         _hit("26.20.17", "Мониторы и проекторы", 0.4),
         _hit("26.30.22", "Аппараты телефонные", 0.3),
@@ -64,6 +73,12 @@ def test_qdrant_alternatives_have_distinct_codes() -> None:
     assert codes == ["26.20.14", "26.20.17", "26.30.22"]
     assert len(codes) == len(set(codes))
     assert response.code not in codes
+    assert response.clause_url == "/source/2-195-01"
+    assert [alternative.clause_url for alternative in response.alternatives] == [
+        "/source/2-196-01",
+        None,
+        None,
+    ]
 
 
 def test_qdrant_not_found_keeps_only_candidates_above_review() -> None:
