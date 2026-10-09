@@ -248,7 +248,8 @@ class CatalogClassifier:
 
         return self._rank_to_response(normalized_query, shortlist)
 
-    def _retrieve(self, query: str, query_tokens: set[str]) -> list[dict]:
+    def _retrieve(self, query: str, query_tokens: set[str]) -> list[tuple[float, dict]]:
+        """Lexical shortlist as ``(retrieval_score, row)`` pairs, best first."""
         from ml.features import lexical_score_prepared, prepare_candidate
         from ml.lexicon import expand_query
 
@@ -268,14 +269,16 @@ class CatalogClassifier:
             if score > 0.0:
                 scored.append((score, row))
         scored.sort(key=lambda item: item[0], reverse=True)
-        return [row for _score, row in scored[:_RETRIEVAL_SHORTLIST]]
+        return scored[:_RETRIEVAL_SHORTLIST]
 
-    def _rank_to_response(self, query: str, shortlist: list[dict]) -> ClassifyResponse:
+    def _rank_to_response(
+        self, query: str, shortlist: list[tuple[float, dict]]
+    ) -> ClassifyResponse:
         try:
             from ml.reranker import RankedCandidate
         except Exception:  # pragma: no cover - fallback path
             logger.exception("ml.reranker недоступен — отдаём лучший lexical-кандидат")
-            best = shortlist[0]
+            best = shortlist[0][1]
             return ClassifyResponse(
                 query=query,
                 code=best["okpd2"] or None,
@@ -288,15 +291,17 @@ class CatalogClassifier:
                 latency_ms=0.0,
             )
 
+        # The reranker's retrieval_margin feature is trained on the lexical
+        # shortlist scores, so the same scores must reach it at inference.
         candidates = [
             RankedCandidate(
                 code=row["okpd2"] or None,
                 title=row["name"],
                 clause_ref=row["clause_ref"],
-                retrieval_score=0.0,
+                retrieval_score=float(score),
                 payload={"record_id": row.get("record_id") or ""},
             )
-            for row in shortlist
+            for score, row in shortlist
         ]
         if self._reranker is not None:
             ranked = self._reranker.rerank(query, candidates)
