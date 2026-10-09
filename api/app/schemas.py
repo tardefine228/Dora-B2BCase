@@ -46,6 +46,10 @@ class Alternative(APIModel):
         default=None,
         description="Ссылка на позицию перечня (приложение, позиция), если известна.",
     )
+    clause_url: str | None = Field(
+        default=None,
+        description="URL фрагмента источника (GET /source/{record_id}), если известен.",
+    )
 
 
 class ClassifyResponse(APIModel):
@@ -53,9 +57,21 @@ class ClassifyResponse(APIModel):
     code: str | None = None
     title: str | None = None
     confidence: float = Field(ge=0, le=1)
+    confidence_raw: float | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description=(
+            "Уверенность до калибровки шкалы; именно по ней принимается решение "
+            "ok/review/not_found (confidence — та же величина на калиброванной шкале)."
+        ),
+    )
     status: Literal["ok", "review", "not_found"]
     clause_ref: str | None = None
-    clause_url: str | None = None
+    clause_url: str | None = Field(
+        default=None,
+        description="URL фрагмента источника (GET /source/{record_id}); null, если неизвестен.",
+    )
     alternatives: list[Alternative] = Field(default_factory=list)
     latency_ms: float = Field(ge=0)
     contract_version: str = Field(
@@ -93,6 +109,30 @@ class ReindexJobStatusResponse(APIModel):
     total: int | None = Field(default=None, ge=0)
     indexed: int = Field(ge=0)
     error: str | None = None
+
+
+class SourcePages(APIModel):
+    """Inclusive page range of the decree text the position was parsed from."""
+
+    start: int | None = Field(default=None, ge=1)
+    end: int | None = Field(default=None, ge=1)
+
+
+class SourceFragment(APIModel):
+    """Fragment of the decree text behind a catalog position (``GET /source/{id}``)."""
+
+    record_id: str
+    name: str | None = None
+    okpd2: str | None = None
+    clause_ref: str | None = None
+    pages: SourcePages = Field(default_factory=SourcePages)
+    text: str
+    truncated: bool = Field(
+        default=False,
+        description="true, если текст обрезан по лимиту MAX_FRAGMENT_CHARS.",
+    )
+    source_file: str
+    clause_url: str | None = None
 
 
 class CatalogIssue(APIModel):

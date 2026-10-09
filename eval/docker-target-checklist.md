@@ -52,3 +52,51 @@ Swagger) и проверьте `GET /admin/reindex/{job_id}` до статуса
 - [ ] размеры образов и потребление RAM записаны в таблицу выше;
 - [ ] ML-режим: `/admin/reindex` → `completed`, классификация работает, повторная
       переиндексация не оставляет «висящих» коллекций.
+
+## Семантический режим: отдельный свип порога
+
+Пороги `ok`/`review` откалиброваны на лексических скорах каталогового режима и
+для семантических скоров не годятся — после первого запуска с моделью (bge-m3)
+свип нужно переснять и зафиксировать в `eval/experiments.md`:
+
+```bash
+# 1) проиндексировать каталог моделью (Docker, INSTALL_ML=true)
+CLASSIFIER_BACKEND=qdrant MODEL_NAME=./models/bge-m3 docker compose up --build
+curl -X POST localhost:8000/admin/reindex -H "X-Admin-API-Key: $ADMIN_API_KEY"
+
+# 2) переснять свип и метрики уже на семантическом реранкере
+PYTHONPATH=api CLASSIFIER_BACKEND=qdrant python eval/run_eval.py --sweep
+
+# 3) сравнить с каталоговым режимом и, если плато то же (0.16–0.18), оставить
+#    REVIEW_CONFIDENCE_FLOOR = 0.165, иначе — пересобрать модель с новым floor
+```
+
+Отдельно стоит прогнать синтетический бенчмарк на семантическом режиме
+(`PYTHONPATH=api CLASSIFIER_BACKEND=qdrant python eval/synthetic_eval.py`) — он
+показывает, закрывает ли модель лексически нерешаемые кейсы из
+`eval/experiments.md` («Настольная лампа», «Смарт-часы», «Компьютер настольный»).
+
+## Вердикт специалиста по спорным строкам
+
+17 строк помечены в `eval/labeled_examples.csv` как `disputed=1` — это места, где
+разметку должен подтвердить человек по нацрежиму. Список с текущими ответами
+модели печатает таблица «Ошибки и спорные случаи» в `eval/eval_report.md`;
+получить только спорные строки:
+
+```bash
+python - <<'HELPER'
+import csv
+rows = [r for r in csv.DictReader(open('eval/labeled_examples.csv', encoding='utf-8-sig'), delimiter=';') if r['disputed'] == '1']
+print(len(rows), 'спорных строк')
+for r in rows:
+    print(f"- {r['query']}: ожидается {r['expected_okpd2'] or '(нет в перечне)'} — {r['notes']}")
+HELPER
+```
+
+| Запрос | Ожидалось | Ответ модели | Вердикт специалиста | Комментарий |
+| --- | --- | --- | --- | --- |
+| заполняется по колонкам из `eval/eval_report.md` | | | | |
+
+Решения переносятся в `eval/labeled_examples.csv`: `disputed` → `0`, при
+необходимости правится `expected_okpd2` и заметка. После правок — повторный
+прогон `eval/run_eval.py --sweep` (метрики и, возможно, порог `review` меняются).

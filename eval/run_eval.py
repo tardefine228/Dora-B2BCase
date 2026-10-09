@@ -98,6 +98,9 @@ def evaluate_exact_names(classifier, names: list[tuple[str, str]]) -> list[dict]
                 "predicted": response.code or "(not_found)",
                 "status": response.status,
                 "confidence": response.confidence,
+                "confidence_raw": response.confidence_raw
+                if response.confidence_raw is not None
+                else response.confidence,
                 "correct_top1": same_name or codes_match(response.code, code),
             }
         )
@@ -163,6 +166,9 @@ def _classify_rows(classifier, rows: list[dict]) -> list[dict]:
                 "predicted": response.code or "(not_found)",
                 "status": response.status,
                 "confidence": response.confidence,
+                "confidence_raw": response.confidence_raw
+                if response.confidence_raw is not None
+                else response.confidence,
                 "correct_top1": correct_top1,
                 "correct_top3": correct_top3,
                 "disputed": disputed,
@@ -173,7 +179,7 @@ def _classify_rows(classifier, rows: list[dict]) -> list[dict]:
     return results
 
 
-def calibration(results: list[dict], bins: int = ECE_BINS) -> dict:
+def calibration(results: list[dict], bins: int = ECE_BINS, key: str = "confidence") -> dict:
     """Reliability of ``confidence`` as P(top-1 correct) over answered queries.
 
     ``not_found`` answers report confidence 0 and are excluded: their
@@ -188,14 +194,12 @@ def calibration(results: list[dict], bins: int = ECE_BINS) -> dict:
     for index in range(bins):
         low, high = index / bins, (index + 1) / bins
         members = [
-            r
-            for r in answered
-            if (low <= r["confidence"] < high) or (index == bins - 1 and r["confidence"] == 1.0)
+            r for r in answered if (low <= r[key] < high) or (index == bins - 1 and r[key] == 1.0)
         ]
         if not members:
             table.append({"range": (low, high), "count": 0, "confidence": 0.0, "accuracy": 0.0})
             continue
-        mean_confidence = sum(r["confidence"] for r in members) / len(members)
+        mean_confidence = sum(r[key] for r in members) / len(members)
         accuracy = sum(1 for r in members if r["correct_top1"]) / len(members)
         ece += len(members) / len(answered) * abs(accuracy - mean_confidence)
         table.append(
@@ -233,6 +237,7 @@ def summarize(report: dict) -> dict:
     summary["exact_rows"] = len(exact)
     summary["exact_top1"] = rate(exact, "correct_top1")
     summary["ece"] = calibration(results)["ece"]
+    summary["ece_raw"] = calibration(results, key="confidence_raw")["ece"]
     return summary
 
 
@@ -258,7 +263,8 @@ def render_markdown(report: dict) -> str:
         f"| Top-1 по спорным | {summary['disputed_top1']}% |",
         f"| Точные названия каталога, top-1 ({summary['exact_rows']} шт.) "
         f"| {summary['exact_top1']}% |",
-        f"| ECE уверенности (отвеченные запросы) | {summary['ece']:.3f} |",
+        f"| ECE уверенности, калиброванная шкала (отвеченные запросы) | {summary['ece']:.3f} |",
+        f"| ECE сырой уверенности (до калибровки, для сравнения) | {summary['ece_raw']:.3f} |",
         "",
         f"Распределение статусов: `{summary['status_distribution']}`",
         "",
@@ -319,8 +325,10 @@ def render_markdown(report: dict) -> str:
 
 def _render_calibration(results: list[dict]) -> list[str]:
     info = calibration(results)
+    raw = calibration(results, key="confidence_raw")
     lines = [
-        f"## Калибровка уверенности (ECE = {info['ece']:.3f}, отвечено: {info['answered']})",
+        f"## Калибровка уверенности (ECE = {info['ece']:.3f}, "
+        f"сырая шкала = {raw['ece']:.3f}, отвечено: {info['answered']})",
         "",
         "| Диапазон | Запросов | Средняя уверенность | Доля верных top-1 |",
         "| --- | ---: | ---: | ---: |",
@@ -388,7 +396,7 @@ def main() -> int:
     print(f"  верный not_found: {summary['correct_silence']}%")
     print(f"  top-1 всего:      {summary['top1_all']}%")
     print(f"  точные названия:  {summary['exact_top1']}% ({summary['exact_rows']} шт.)")
-    print(f"  ECE:              {summary['ece']:.3f}")
+    print(f"  ECE (калибровка): {summary['ece']:.3f} (сырая шкала {summary['ece_raw']:.3f})")
     if report["sweep"]:
         print("  свип порога review:")
         for point in report["sweep"]:

@@ -46,6 +46,15 @@ def test_catalog_data_has_a_named_volume(compose) -> None:
     assert "catalog_data" in (compose.get("volumes") or {})
 
 
+def test_job_store_survives_restart(compose) -> None:
+    api = compose["services"]["api"]
+    assert api["environment"]["JOB_STORE"] == "${JOB_STORE:-sqlite}"
+    assert api["environment"]["JOB_STORE_PATH"].endswith("jobs.sqlite")
+    api_volumes = " ".join(api.get("volumes") or [])
+    assert "jobs_data" in api_volumes
+    assert "jobs_data" in (compose.get("volumes") or {})
+
+
 def test_install_ml_flag_controls_ml_stack(compose) -> None:
     api = compose["services"]["api"]
     build_args = (api.get("build") or {}).get("args") or {}

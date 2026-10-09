@@ -52,7 +52,13 @@
     </section>
 
     <section class="card">
-      <h2>Результаты</h2>
+      <div class="row space-between">
+        <h2>Результаты</h2>
+        <div class="row">
+          <button id="csv-btn" class="secondary hidden" type="button">Скачать CSV</button>
+          <a id="csv-server-link" class="muted small hidden" href="#" download>или с сервера</a>
+        </div>
+      </div>
       <div id="results"></div>
       <p id="empty-hint" class="muted">Здесь появятся подсказки по позициям перечня.</p>
     </section>
@@ -63,7 +69,8 @@
         <span class="badge review">review</span> — требуется проверка специалистом;
         <span class="badge not_found">not_found</span> — надёжного совпадения нет.
         Уверенность — откалиброванная оценка модели, она не равна вероятности
-        юридической применимости ограничения.
+        юридической применимости ограничения. Ссылка «источник» открывает страницы
+        постановления, из которых извлечена позиция перечня.
       </p>
       <p>
         Документация API: <a href="/docs" target="_blank" rel="noopener">/docs</a> ·
