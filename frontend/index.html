@@ -35,6 +35,20 @@
                   placeholder="Ноутбук Lenovo&#10;Мышь компьютерная&#10;Светодиодная лампа E27"></textarea>
       </label>
 
+      <div class="field">
+        <span>Или загрузите файл со списком товаров</span>
+        <div id="dropzone" class="dropzone" tabindex="0" role="button"
+             aria-label="Выбрать файл со списком товаров">
+          <input id="file-input" type="file" class="hidden"
+                 accept=".txt,.md,.csv,.tsv,.json,.xlsx,.xlsm,.docx,.pdf" />
+          <strong>Перетащите файл сюда</strong> или нажмите, чтобы выбрать
+          <div class="muted small">TXT, CSV/TSV, JSON, XLSX, DOCX, PDF · до 10 МБ ·
+            столбец «Наименование» находится автоматически · до 100 позиций</div>
+          <div id="file-name" class="file-name"></div>
+        </div>
+        <div id="file-summary" class="file-summary hidden"></div>
+      </div>
+
       <div class="row space-between">
         <button id="batch-btn" class="primary">Классифицировать список</button>
         <div class="api-config">

@@ -11,20 +11,31 @@ class _RequestBodyTooLarge(Exception):
 class RequestSizeLimitMiddleware:
     """Limit HTTP request bodies without buffering them in application memory."""
 
-    def __init__(self, app: ASGIApp, max_body_bytes: int = 1_000_000) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        max_body_bytes: int = 1_000_000,
+        path_limits: dict[str, int] | None = None,
+    ) -> None:
         self.app = app
         self.max_body_bytes = max_body_bytes
+        # Exact-path overrides, e.g. file uploads need more than JSON endpoints.
+        self.path_limits = dict(path_limits or {})
+
+    def _limit_for(self, scope: Scope) -> int:
+        return self.path_limits.get(scope.get("path", ""), self.max_body_bytes)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
+        limit = self._limit_for(scope)
         headers = dict(scope.get("headers", []))
         content_length = headers.get(b"content-length")
         if content_length:
             try:
-                if int(content_length) > self.max_body_bytes:
+                if int(content_length) > limit:
                     await self._reject(scope, receive, send)
                     return
             except ValueError:
@@ -35,19 +46,14 @@ class RequestSizeLimitMiddleware:
         body_too_large = False
         response_started = False
         rejection_body_sent = False
-        rejection = JSONResponse(
-            status_code=413,
-            content={
-                "detail": f"Размер тела запроса не должен превышать {self.max_body_bytes} байт"
-            },
-        )
+        rejection = self._rejection(limit)
 
         async def receive_limited() -> Message:
             nonlocal received_bytes, body_too_large
             message = await receive()
             if message["type"] == "http.request":
                 received_bytes += len(message.get("body", b""))
-                if received_bytes > self.max_body_bytes:
+                if received_bytes > limit:
                     body_too_large = True
                     raise _RequestBodyTooLarge
             return message
@@ -87,11 +93,12 @@ class RequestSizeLimitMiddleware:
             if not response_started:
                 await self._reject(scope, receive, send)
 
-    async def _reject(self, scope: Scope, receive: Receive, send: Send) -> None:
-        response = JSONResponse(
+    @staticmethod
+    def _rejection(limit: int) -> JSONResponse:
+        return JSONResponse(
             status_code=413,
-            content={
-                "detail": f"Размер тела запроса не должен превышать {self.max_body_bytes} байт"
-            },
+            content={"detail": f"Размер тела запроса не должен превышать {limit} байт"},
         )
-        await response(scope, receive, send)
+
+    async def _reject(self, scope: Scope, receive: Receive, send: Send) -> None:
+        await self._rejection(self._limit_for(scope))(scope, receive, send)
