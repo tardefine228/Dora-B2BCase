@@ -65,6 +65,46 @@ def _display_confidence(reranker, raw_confidence: float) -> float:
     return min(max(float(calibrate(raw_confidence)), 0.0), 1.0)
 
 
+def _apply_semantic_floors(reranker):
+    """Retune the decision floors of a loaded reranker for semantic scores.
+
+    The artifacts carry the point measured on the lexical backend (эксп. 14). The
+    semantic backend answers on a compressed part of the same raw scale, so its
+    ``review`` floor has to be measured separately (эксп. 16). Only the thresholds
+    move: the weights and the Platt map are shared, ``status`` is decided on the
+    raw scale, and the lexical path never goes through this function.
+    """
+    model = getattr(reranker, "confidence_model", None)
+    if model is None:
+        return reranker
+    original = {"ok": model.threshold_ok, "review": model.threshold_review}
+    floors = {
+        "ok": settings.semantic_ok_floor,
+        "review": settings.semantic_review_floor,
+    }
+    for name, floor in floors.items():
+        if floor is not None:
+            setattr(model, f"threshold_{name}", float(floor))
+    if model.threshold_ok <= model.threshold_review:
+        # A bad pair would make `ok` unreachable and silently break the contract.
+        model.threshold_ok = original["ok"]
+        model.threshold_review = original["review"]
+        logger.warning(
+            "Semantic floors ignored (ok %s <= review %s); artifact thresholds kept",
+            floors["ok"],
+            floors["review"],
+        )
+    elif (model.threshold_ok, model.threshold_review) != (original["ok"], original["review"]):
+        logger.info(
+            "Semantic floors applied: ok %s -> %s, review %s -> %s",
+            original["ok"],
+            model.threshold_ok,
+            original["review"],
+            model.threshold_review,
+        )
+    return reranker
+
+
 def _not_found(query: str) -> ClassifyResponse:
     return ClassifyResponse(
         query=query,
@@ -378,7 +418,7 @@ class QdrantClassifier:
                 "сначала выполните POST /admin/reindex."
             )
         self._search_many = search_many
-        self._reranker = _load_reranker()
+        self._reranker = _apply_semantic_floors(_load_reranker())
 
     def classify(self, query: str) -> ClassifyResponse:
         return self.classify_many([query])[0]
