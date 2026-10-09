@@ -47,4 +47,6 @@ models_cache/
 models/*
 !models/.gitkeep
 qdrant_storage/
+qdrant_storage_eval/
 *.onnx
+eval_report_ci.md

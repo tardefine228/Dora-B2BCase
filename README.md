@@ -43,9 +43,12 @@ docker compose up --build
 | `mock` | детерминированная заглушка `MOCK-001` | разработка фронтенда |
 
 **Выбор режима для демо:** каталоговый гибрид работает офлайн и даёт
-top-1 83.7% (top-3 89.2%) на размеченном наборе из 214 строк (`eval/eval_report.md`); семантический режим
-закрывает абстрактные категории («костюм» → «Одежда, кроме одежды из меха») и
-включается без изменений API. Реранкер, пороги `ok`/`review` и формат ответа
+top-1 83.7% (top-3 89.2%) на размеченном наборе из 274 строк (`eval/eval_report.md`).
+Семантический режим измерен на том же наборе (эксп. 15, `eval/backend_comparison.md`):
+он закрывает часть абстрактных категорий («свитер», «игрушка детская»), но проигрывает
+лексике по top-1 — 79.5% против 83.7% — и стоит вчетверо дороже по латентности
+(p50 182 мс против 44 мс), поэтому **по умолчанию остаётся `catalog`**, а `qdrant`
+включается флагом как второй режим. Реранкер, пороги `ok`/`review` и формат ответа
 общие для обоих режимов — контракт v1.0 (`docs/api-contract.md`).
 
 ## Ограничение частоты запросов
@@ -115,7 +118,7 @@ curl -X POST localhost:8000/admin/reindex -H "X-Admin-API-Key: <секрет>"
 
 ## Качество и оценка
 
-- Размеченный набор: `eval/labeled_examples.csv` (214 запросов: 166 с кодом, 48
+- Размеченный набор: `eval/labeled_examples.csv` (274 запроса: 166 с кодом, 108
   «вне перечня» — товар проверен по `data/data.csv`, 17 спорных помечены
   `disputed=1`).
 - Прогон: `PYTHONPATH=api python eval/run_eval.py [--sweep]` → `eval/eval_report.md`
@@ -125,6 +128,12 @@ curl -X POST localhost:8000/admin/reindex -H "X-Admin-API-Key: <секрет>"
 - Синтетический бенчмарк без разметки: `PYTHONPATH=api python eval/synthetic_eval.py`
 - Абляция расхождений обучения и API (шортлист, fallback): `PYTHONPATH=api python eval/serving_ablation.py`
   → `eval/synthetic_report.md` (информационный, CI-гейт его не проверяет).
+- Сравнение режимов `catalog` и `qdrant` на одном наборе:
+  `PYTHONPATH=api python eval/backend_comparison.py --markdown eval/backend_comparison.md`
+  → `eval/backend_comparison.csv` + отчёт; семантический прогон со свипом —
+  `eval/run_eval.py --backend qdrant --output eval/eval_report_qdrant.md`.
+  Итог эксп. 15: лексика 83.7% top-1 против 79.5% у семантики при ×4 латентности,
+  поэтому режим по умолчанию — `catalog` (`eval/experiments.md`).
 - CI-гейт качества: job `quality` в `.github/workflows/lint.yml` пересобирает
   модель и падает, если метрики ниже порогов `--min-top1/--min-top3/--min-silence/--min-exact`.
 - Эксперименты и выводы: `eval/experiments.md`.
