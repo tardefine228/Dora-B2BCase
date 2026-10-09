@@ -609,6 +609,12 @@ def fit_logistic_named(
 # sweep after every model change — the scale moves. Calibration only picks
 # threshold_ok (precision-targeted).
 REVIEW_CONFIDENCE_FLOOR = 0.165
+# Minimum confidence for the ``ok`` status (no second look needed). Set in
+# eval/experiments.md, эксп. 13–14: the calibrated threshold alone (0.745) let
+# two wrong answers through on the labeled set; 0.77 keeps one of them out of
+# ``ok`` and demotes nine correct answers to ``review``. A floor, not a
+# precision guarantee: the calibrated value is kept when it is higher.
+OK_CONFIDENCE_FLOOR = 0.77
 
 
 def calibrate_thresholds(
@@ -1023,6 +1029,7 @@ def train(
         for row in group_rows
     ]
     conf_ok, _conf_review = calibrate_thresholds(confidences, [bool(y) for y in group_labels])
+    conf_ok = max(conf_ok, OK_CONFIDENCE_FLOOR)
     conf_review = REVIEW_CONFIDENCE_FLOOR
 
     reranker.threshold_ok = pair_threshold_ok
