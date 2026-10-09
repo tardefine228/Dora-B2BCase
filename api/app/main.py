@@ -134,10 +134,23 @@ app.add_middleware(RateLimitMiddleware)
 # rate limiter and the size limiter.
 app.add_middleware(ObserveMiddleware)
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-FRONTEND_DIR = PROJECT_ROOT / "frontend"
-if FRONTEND_DIR.is_dir():
+def _resolve_frontend_dir(module_file: Path) -> Path | None:
+    resolved_file = Path(module_file).resolve()
+
+    for root in (resolved_file.parents[2], resolved_file.parents[1]):
+        frontend_dir = root / "frontend"
+        if frontend_dir.is_dir():
+            return frontend_dir
+
+    return None
+
+
+FRONTEND_DIR = _resolve_frontend_dir(Path(__file__))
+
+if FRONTEND_DIR is not None:
     app.mount("/ui", StaticFiles(directory=FRONTEND_DIR, html=True), name="ui")
+else:
+    logger.warning("Статические файлы UI не найдены; маршрут /ui не смонтирован")
 
 
 def _classifier_or_503() -> CachedClassifier:
