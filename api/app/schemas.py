@@ -87,6 +87,20 @@ class BatchJobAccepted(APIModel):
     status_url: str
 
 
+class FileBatchJobAccepted(BatchJobAccepted):
+    """Batch job created from an uploaded file plus what the parser extracted."""
+
+    filename: str
+    format: str
+    items: list[str]
+    total_found: int = Field(ge=0)
+    duplicates: int = Field(ge=0)
+    skipped: int = Field(ge=0)
+    truncated: bool
+    source_column: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
 class BatchJobStatusResponse(APIModel):
     job_id: str
     status: Literal["queued", "running", "completed", "failed"]

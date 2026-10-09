@@ -81,6 +81,8 @@ class Settings:
         self.max_concurrent_inferences = _positive_int("MAX_CONCURRENT_INFERENCES", 1)
         self.classification_cache_size = _positive_int("CLASSIFICATION_CACHE_SIZE", 512)
         self.max_request_body_bytes = _positive_int("MAX_REQUEST_BODY_BYTES", 1_000_000)
+        # Upload of a goods list file on the main page (POST /classify/file).
+        self.max_upload_bytes = _positive_int("MAX_UPLOAD_BYTES", 10_000_000)
 
         # Per-client rate limiting (token bucket); probes, metrics and /ui are exempt.
         self.rate_limit_enabled = _bool("RATE_LIMIT_ENABLED", default=True)
