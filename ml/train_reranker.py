@@ -754,20 +754,19 @@ def calibration_confidence(
         if score > 0.0:
             scored.append((score, row))
     scored.sort(key=lambda item: item[0], reverse=True)
-    shortlist = [row for _score, row in scored[:RETRIEVAL_SHORTLIST]]
+    shortlist = scored[:RETRIEVAL_SHORTLIST]
     if not shortlist:
         return 0.0, "not_found", None
-    # The API hands the reranker retrieval_score=0.0 for every candidate; the
-    # group features of the confidence model therefore see the same value here.
+    # Same retrieval scores the API hands the reranker (retrieval_margin).
     candidates = [
         RankedCandidate(
             code=row["okpd2"] or None,
             title=row["name"],
             clause_ref=None,
-            retrieval_score=0.0,
+            retrieval_score=float(score),
             payload={"record_id": ""},
         )
-        for row in shortlist
+        for score, row in shortlist
     ]
     ranked = reranker.rerank(query, candidates)
     raw_confidence, status = reranker.evaluate(query, ranked)
