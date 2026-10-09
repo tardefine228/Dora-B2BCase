@@ -123,6 +123,7 @@ curl -X POST localhost:8000/admin/reindex -H "X-Admin-API-Key: <секрет>"
   каталога, обе шкалы уверенности `confidence_raw`/`confidence` и ECE, свип
   порога `review`, разбор ошибок).
 - Синтетический бенчмарк без разметки: `PYTHONPATH=api python eval/synthetic_eval.py`
+- Абляция расхождений обучения и API (шортлист, fallback): `PYTHONPATH=api python eval/serving_ablation.py`
   → `eval/synthetic_report.md` (информационный, CI-гейт его не проверяет).
 - CI-гейт качества: job `quality` в `.github/workflows/lint.yml` пересобирает
   модель и падает, если метрики ниже порогов `--min-top1/--min-top3/--min-silence/--min-exact`.

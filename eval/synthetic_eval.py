@@ -107,7 +107,26 @@ def summarize(rows: list[dict]) -> dict:
         "top3_answered": _rate(answered, "correct_top3"),
         "top1_all": _rate(rows, "correct_top1"),
         "status_distribution": dict(Counter(row["status"] for row in rows)),
+        "by_status": _by_status(rows),
     }
+
+
+def _by_status(rows: list[dict]) -> dict:
+    """Top-1 accuracy inside each answered status bucket (``ok`` / ``review``).
+
+    ``ok`` is the bucket a specialist is told to trust without a second look, so
+    its precision matters more than the overall top-1. Keep the bucket precision
+    separate from the overall number (see ``eval/experiments.md``, эксп. 13).
+    """
+    buckets: dict[str, dict] = {}
+    for status in ("ok", "review"):
+        bucket = [row for row in rows if row["status"] == status]
+        buckets[status] = {
+            "count": len(bucket),
+            "correct": sum(1 for row in bucket if row["correct_top1"]),
+            "precision": _rate(bucket, "correct_top1"),
+        }
+    return buckets
 
 
 def render_markdown(summary: dict, *, step: int, variants: int, backend: str) -> str:
@@ -130,6 +149,22 @@ def render_markdown(summary: dict, *, step: int, variants: int, backend: str) ->
         f"| Top-1 по всем запросам | {summary['top1_all']}% |",
         "",
         f"Распределение статусов: `{summary['status_distribution']}`",
+        "",
+        "**Точность по корзинам статусов** (top-1 внутри корзины):",
+        "",
+        "| Статус | Запросов | Верных | Точность |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for status, bucket in summary["by_status"].items():
+        lines.append(
+            f"| `{status}` | {bucket['count']} | {bucket['correct']} | {bucket['precision']}% |"
+        )
+    lines += [
+        "",
+        "Корзина `ok` на этом бенчмарке вероятно завышена: запрос — это буквально",
+        "название позиции (или его обрезка), поэтому высокая точность не говорит о",
+        "точности `ok` на живых запросах. Размеченный набор (`eval/labeled_examples.csv`)",
+        "остаётся основным измерением точности `ok`.",
         "",
         "**Как читать.** Ожидание — код исходного пункта, а не канонический ответ,",
         "поэтому промах на соседнюю позицию с другим кодом считается ошибкой, хотя",
@@ -187,6 +222,11 @@ def main() -> int:
     print(f"  top-3 отвеченных: {summary['top3_answered']}%")
     print(f"  top-1 всего:      {summary['top1_all']}%")
     print(f"  статусы:          {summary['status_distribution']}")
+    for status, bucket in summary["by_status"].items():
+        print(
+            f"  точность {status:<7}: {bucket['precision']}% "
+            f"({bucket['correct']}/{bucket['count']})"
+        )
     print(f"Report: {args.output}")
     print("CI-гейт качества этот бенчмарк не проверяет (отчёт информационный).")
     return 0
