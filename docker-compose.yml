@@ -37,8 +37,11 @@ services:
       # Batch/reindex job state (sqlite WAL) also survives restarts.
       - "jobs_data:/app/jobs"
     depends_on:
+      # The official Qdrant image is intentionally minimal and has no curl/wget
+      # binary for an in-container healthcheck. Its endpoint is checked from the
+      # host by the smoke script; API readiness probes Qdrant when that backend is selected.
       qdrant:
-        condition: service_healthy
+        condition: service_started
     mem_limit: "${API_MEMORY_LIMIT:-1g}"
     cpus: "${API_CPUS:-2.0}"
     healthcheck:
@@ -61,16 +64,6 @@ services:
       - qdrant_data:/qdrant/storage
     mem_limit: "${QDRANT_MEMORY_LIMIT:-768m}"
     cpus: "${QDRANT_CPUS:-1.0}"
-    healthcheck:
-      test:
-        - CMD
-        - curl
-        - -f
-        - http://localhost:6333/healthz
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
     restart: unless-stopped
 
 volumes:

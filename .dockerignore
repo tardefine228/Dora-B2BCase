@@ -5,11 +5,11 @@ venv
 __pycache__
 *.pyc
 node_modules
-frontend
 eval
 data/*
 !data/data.csv
 !data/data.json
+!data/source_text.txt
 models
 models_cache
 qdrant_storage
