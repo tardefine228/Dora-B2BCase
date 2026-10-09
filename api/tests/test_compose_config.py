@@ -22,14 +22,21 @@ def compose() -> dict:
     return yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
 
 
-def test_compose_defines_api_and_qdrant_with_healthchecks(compose) -> None:
+def test_compose_healthchecks_api_and_starts_minimal_qdrant(compose) -> None:
     services = compose["services"]
     assert {"api", "qdrant"} <= set(services)
-    for name in ("api", "qdrant"):
-        healthcheck = services[name].get("healthcheck") or {}
-        assert healthcheck.get("test"), f"{name}: healthcheck.test отсутствует"
-        assert healthcheck.get("interval")
-        assert healthcheck.get("retries")
+
+    api_healthcheck = services["api"].get("healthcheck") or {}
+    assert api_healthcheck.get("test"), "api: healthcheck.test отсутствует"
+    assert api_healthcheck.get("interval")
+    assert api_healthcheck.get("retries")
+
+    # The official Qdrant image has no curl/wget binary, so don't define an
+    # in-container HTTP healthcheck that will always fail. Check its HTTP endpoint
+    # from the host, and only require that Qdrant has started before launching API.
+    assert "healthcheck" not in services["qdrant"]
+    dependency = services["api"]["depends_on"]["qdrant"]
+    assert dependency["condition"] == "service_started"
 
 
 def test_qdrant_data_survives_restart(compose) -> None:
@@ -68,3 +75,20 @@ def test_dockerfile_installs_ml_only_on_request() -> None:
     assert "requirements-ml.txt" in dockerfile
     assert "COPY --chown=app:app frontend" in dockerfile or "frontend" in dockerfile
     assert "USER app" in dockerfile
+
+
+def test_docker_build_context_keeps_ui_and_source_assets() -> None:
+    dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+    dockerfile = (ROOT / "api" / "Dockerfile").read_text(encoding="utf-8")
+
+    # Docker cannot COPY a file that the build context has excluded.
+    assert "frontend" not in dockerignore
+    assert "!data/source_text.txt" in dockerignore
+    assert "COPY --chown=app:app frontend ./frontend" in dockerfile
+    assert "data/source_text.txt" in dockerfile
+
+
+def test_sqlite_job_volume_has_a_writable_mount_point() -> None:
+    dockerfile = (ROOT / "api" / "Dockerfile").read_text(encoding="utf-8")
+    assert "mkdir -p /app/jobs" in dockerfile
+    assert "chown app:app /app/jobs" in dockerfile

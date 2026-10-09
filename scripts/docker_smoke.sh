@@ -19,10 +19,16 @@ else
   $COMPOSE up -d
 fi
 
-log "3. Ожидание healthcheck (до 90 сек)"
+log "3. Ожидание API и Qdrant (до 90 сек)"
+# The official Qdrant image is minimal and does not include curl. Check its
+# /healthz endpoint from the host rather than via an in-container healthcheck.
 for _ in $(seq 1 45); do
   api_health=$(docker inspect --format='{{.State.Health.Status}}' "$(docker ps -qf name=api | head -1)" 2>/dev/null || echo unknown)
-  qdrant_health=$(docker inspect --format='{{.State.Health.Status}}' "$(docker ps -qf name=qdrant | head -1)" 2>/dev/null || echo unknown)
+  if curl -fsS "http://localhost:${QDRANT_PORT:-6333}/healthz" >/dev/null 2>&1; then
+    qdrant_health=healthy
+  else
+    qdrant_health=starting
+  fi
   [[ "$api_health" == "healthy" && "$qdrant_health" == "healthy" ]] && break
   sleep 2
 done
