@@ -1,0 +1,17 @@
+# Семантический режим (CLASSIFIER_BACKEND=qdrant): тяжёлый ML-стек.
+# Ставится ПОВЕРХ окружения из api/requirements-dev.txt:
+#   python -m pip install -r api/requirements-dev.txt
+#   python -m pip install -r eval/requirements-ml.txt
+# Версии зафиксированы по фактической среде, в которой снят эксперимент 15
+# (Windows, Python 3.14, CPU) — см. eval/experiments.md.
+# Модель (bge-m3) — это данные, а не pip-зависимость: каталог/кэш HuggingFace
+# готовятся отдельно (MODEL_NAME + MODEL_LOCAL_ONLY=true).
+torch==2.14.1
+sentence-transformers==6.1.0
+transformers==5.19.0
+tokenizers==0.23.2
+huggingface-hub==1.33.0
+qdrant-client==1.19.1
+numpy==2.5.3
+scikit-learn==1.9.1
+safetensors==0.8.0
