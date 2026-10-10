@@ -28,6 +28,14 @@ def _bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _optional_float(name: str, default: float | None = None) -> float | None:
+    """Float setting with an explicit "unset" state (empty string means unset)."""
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    return float(value)
+
+
 class Settings:
     """Small dependency-free settings object; values are read once at process start."""
 
@@ -58,11 +66,23 @@ class Settings:
         self.model_device = os.getenv("MODEL_DEVICE", "cpu").strip() or "cpu"
         self.model_local_only = _bool("MODEL_LOCAL_ONLY", default=False)
 
+        # Decision floors for the semantic backend. The artifact ships the point
+        # measured on the lexical backend, but the semantic raw scale is compressed,
+        # so its `review` floor is measured separately: 0.25 lifts the precision of
+        # an honest `not_found` from 89.8% to 97.2% (eval/experiments.md, эксп. 16).
+        # `ok` is aligned with the lexical floor (0.77) — it does not move any
+        # measured metric, only how many answers are labelled confidently.
+        # Empty string means "keep the artifact value".
+        self.semantic_ok_floor = _optional_float("QDRANT_OK_FLOOR", 0.77)
+        self.semantic_review_floor = _optional_float("QDRANT_REVIEW_FLOOR", 0.25)
+
         # Reindexing is disabled unless dependencies are installed; protect it with a key.
         self.admin_api_key = os.getenv("ADMIN_API_KEY", "")
         self.max_concurrent_inferences = _positive_int("MAX_CONCURRENT_INFERENCES", 1)
         self.classification_cache_size = _positive_int("CLASSIFICATION_CACHE_SIZE", 512)
         self.max_request_body_bytes = _positive_int("MAX_REQUEST_BODY_BYTES", 1_000_000)
+        # Upload of a goods list file on the main page (POST /classify/file).
+        self.max_upload_bytes = _positive_int("MAX_UPLOAD_BYTES", 10_000_000)
 
         # Per-client rate limiting (token bucket); probes, metrics and /ui are exempt.
         self.rate_limit_enabled = _bool("RATE_LIMIT_ENABLED", default=True)

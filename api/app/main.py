@@ -56,6 +56,7 @@ from app.schemas import (
     CatalogUploadResponse,
     ClassifyRequest,
     ClassifyResponse,
+    FileBatchJobAccepted,
     ReindexJobAccepted,
     ReindexJobStatusResponse,
     SourceFragment,
@@ -69,6 +70,12 @@ from app.services.catalog_io import (
     write_catalog,
 )
 from app.services.classifier import CachedClassifier, get_classifier, reset_classifier
+from app.services.file_items import (
+    SUPPORTED_EXTENSIONS,
+    FileParseError,
+    UnsupportedFileError,
+    extract_items,
+)
 from app.services.source_lookup import (
     SourceUnavailableError,
     get_source_lookup,
@@ -108,6 +115,10 @@ app = FastAPI(
 app.add_middleware(
     RequestSizeLimitMiddleware,
     max_body_bytes=settings.max_request_body_bytes,
+    path_limits={
+        "/classify/file": settings.max_upload_bytes,
+        "/admin/catalog": max(settings.max_request_body_bytes, settings.max_upload_bytes),
+    },
 )
 if settings.cors_allow_origins:
     app.add_middleware(
@@ -123,10 +134,33 @@ app.add_middleware(RateLimitMiddleware)
 # rate limiter and the size limiter.
 app.add_middleware(ObserveMiddleware)
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-FRONTEND_DIR = PROJECT_ROOT / "frontend"
-if FRONTEND_DIR.is_dir():
+def _resolve_frontend_dir(module_file: str | Path = __file__) -> Path | None:
+    """Find static UI files in both the source tree and the Docker image.
+
+    In the source tree, ``main.py`` lives at ``<repo>/api/app/main.py`` and
+    the UI is at ``<repo>/frontend`` (built output: ``<repo>/frontend/dist``).
+    The image copies the app to ``/app/app/main.py`` and the built UI
+    (``dist``) to ``/app/frontend``.
+    """
+    module_path = Path(module_file).resolve()
+    candidates = (
+        module_path.parents[1] / "frontend",  # /app/frontend in the image (built dist)
+        module_path.parents[2] / "frontend" / "dist",  # <repo>/frontend/dist after npm run build
+        module_path.parents[2] / "frontend",  # <repo>/frontend (unbuilt sources, dev fallback)
+    )
+    return next((candidate for candidate in candidates if candidate.is_dir()), None)
+
+
+FRONTEND_DIR = _resolve_frontend_dir()
+if FRONTEND_DIR is not None:
+    if (FRONTEND_DIR / "src" / "main.tsx").is_file():
+        logger.warning(
+            "/ui serves UNBUILT frontend sources from %s; run `npm run build` in frontend/",
+            FRONTEND_DIR,
+        )
     app.mount("/ui", StaticFiles(directory=FRONTEND_DIR, html=True), name="ui")
+else:
+    logger.warning("Frontend directory not found; /ui will not be mounted")
 
 
 def _classifier_or_503() -> CachedClassifier:
@@ -393,6 +427,65 @@ def classify_batch(
         status="queued",
         total=len(job.items),
         status_url=f"/classify/batch/{job.job_id}",
+    )
+
+
+@app.post(
+    "/classify/file",
+    response_model=FileBatchJobAccepted,
+    status_code=202,
+    tags=["classification"],
+    summary="Загрузить файл со списком товаров и классифицировать каждую позицию",
+)
+async def classify_file(
+    background_tasks: BackgroundTasks,
+    file: Annotated[
+        UploadFile,
+        File(description="Список товаров: " + ", ".join(sorted(SUPPORTED_EXTENSIONS))),
+    ],
+) -> FileBatchJobAccepted:
+    """Parse the file, extract product names and start a regular batch job.
+
+    Progress/results are served by the usual ``/classify/batch/{job_id}`` endpoints.
+    """
+    _classifier_or_503()
+    filename = file.filename or ""
+    content = await file.read()
+    try:
+        extracted = extract_items(filename, content, max_items=100)
+    except UnsupportedFileError as exc:
+        raise HTTPException(status_code=415, detail=str(exc)) from exc
+    except FileParseError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    try:
+        job = create_job(extracted.items)
+    except JobStoreCapacityError as exc:
+        raise HTTPException(status_code=429, detail=str(exc), headers={"Retry-After": "5"}) from exc
+
+    logger.info(
+        "File batch accepted job_id=%s filename=%s format=%s items=%d found=%d",
+        job.job_id,
+        filename,
+        extracted.format,
+        len(job.items),
+        extracted.total_found,
+    )
+    background_tasks.add_task(_run_batch_job, job.job_id)
+    return FileBatchJobAccepted(
+        job_id=job.job_id,
+        status="queued",
+        total=len(job.items),
+        status_url=f"/classify/batch/{job.job_id}",
+        filename=filename,
+        format=extracted.format,
+        items=extracted.items,
+        total_found=extracted.total_found,
+        duplicates=extracted.duplicates,
+        skipped=extracted.skipped,
+        truncated=extracted.truncated,
+        source_column=extracted.source_column,
+        warnings=extracted.warnings,
     )
 
 

@@ -18,7 +18,7 @@ bash scripts/docker_smoke.sh --build   # сборка + все проверки 
 | 2 | Сборка образа API | `docker compose build` | сборка проходит; время/размер записать | |
 | 3 | Запуск стека | `docker compose up -d` | оба сервиса подняты | |
 | 4 | Healthcheck API | `docker compose ps` | `api` → `healthy` ≤ 90 с | |
-| 5 | Healthcheck Qdrant | `docker compose ps` | `qdrant` → `healthy` | |
+| 5 | Qdrant readiness | `curl -fsS localhost:6333/healthz` | HTTP 200; у официального образа нет curl внутри контейнера | |
 | 6 | Живой ответ | `curl -s localhost:8000/health` | `{"status":"ok"…}` | |
 | 7 | Классификация | `curl -s -X POST localhost:8000/classify -H 'Content-Type: application/json' -d '{"name":"Электрочайники"}'` | код `27.51.24.110` | |
 | 8 | Перезапуск Qdrant | `docker compose restart qdrant` → `curl localhost:6333/healthz` | данные volume `qdrant_data` сохранены (коллекция доступна) | |

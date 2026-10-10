@@ -43,10 +43,15 @@ docker compose up --build
 | `mock` | детерминированная заглушка `MOCK-001` | разработка фронтенда |
 
 **Выбор режима для демо:** каталоговый гибрид работает офлайн и даёт
-top-1 83.7% (top-3 89.2%) на размеченном наборе из 214 строк (`eval/eval_report.md`); семантический режим
-закрывает абстрактные категории («костюм» → «Одежда, кроме одежды из меха») и
-включается без изменений API. Реранкер, пороги `ok`/`review` и формат ответа
-общие для обоих режимов — контракт v1.0 (`docs/api-contract.md`).
+top-1 83.7% (top-3 89.2%) на размеченном наборе из 274 строк (`eval/eval_report.md`).
+Семантический режим измерен на том же наборе и настроен отдельно (эксп. 15–16,
+`eval/backend_comparison.md`): на своей рабочей точке (`review = 0.25`) он почти не
+выдумывает подсказок там, где товара нет в перечне — 97.2% против 88.0% у лексики, — но
+отвечает реже (82.5% против 91.6% покрытия) и хуже по top-1, и стоит вчетверо дороже
+(p50 ~171 мс против ~39 мс). Поэтому **по умолчанию остаётся `catalog`**, а `qdrant`
+включается флагом как второй режим с другим компромиссом. Реранкер, формат ответа и
+шкала уверенности общие; пороги решения — свои у каждого режима
+(`QDRANT_OK_FLOOR`/`QDRANT_REVIEW_FLOOR`), контракт v1.0 (`docs/api-contract.md`).
 
 ## Ограничение частоты запросов
 
@@ -96,6 +101,7 @@ curl -X POST localhost:8000/admin/reindex -H "X-Admin-API-Key: <секрет>"
 | `DATA_DIR` | `data` | каталог `data.csv`/`data.json` и `source_text.txt` |
 | `CATALOG_PATH` | — | явный путь к `data.csv` (перебивает `DATA_DIR`) |
 | `MODELS_DIR` | `models` | артефакты модели (`reranker.json`, `tfidf_embedder.json`) |
+| `QDRANT_OK_FLOOR` / `QDRANT_REVIEW_FLOOR` | `0.77` / `0.25` | пороги решения для семантического режима; пусто — взять из артефакта (эксп. 16) |
 | `JOB_STORE` | `sqlite` | хранилище фоновых задач: `sqlite` (переживает рестарт) или `memory` |
 | `JOB_STORE_PATH` | `data/jobs.sqlite` | файл sqlite-хранилища (в Docker — volume `jobs_data`) |
 | `JOB_TTL_HOURS` | `24` | сколько хранить завершённые задачи до очистки |
@@ -115,7 +121,7 @@ curl -X POST localhost:8000/admin/reindex -H "X-Admin-API-Key: <секрет>"
 
 ## Качество и оценка
 
-- Размеченный набор: `eval/labeled_examples.csv` (214 запросов: 166 с кодом, 48
+- Размеченный набор: `eval/labeled_examples.csv` (274 запроса: 166 с кодом, 108
   «вне перечня» — товар проверен по `data/data.csv`, 17 спорных помечены
   `disputed=1`).
 - Прогон: `PYTHONPATH=api python eval/run_eval.py [--sweep]` → `eval/eval_report.md`
@@ -125,6 +131,17 @@ curl -X POST localhost:8000/admin/reindex -H "X-Admin-API-Key: <секрет>"
 - Синтетический бенчмарк без разметки: `PYTHONPATH=api python eval/synthetic_eval.py`
 - Абляция расхождений обучения и API (шортлист, fallback): `PYTHONPATH=api python eval/serving_ablation.py`
   → `eval/synthetic_report.md` (информационный, CI-гейт его не проверяет).
+- Сравнение режимов `catalog` и `qdrant` на одном наборе:
+  `PYTHONPATH=api python eval/backend_comparison.py --markdown eval/backend_comparison.md`
+  → `eval/backend_comparison.csv` + отчёт; семантический прогон со свипом —
+  `eval/run_eval.py --backend qdrant --output eval/eval_report_qdrant.md`.
+  Итог эксп. 15: лексика 83.7% top-1 против 79.5% у семантики при ×4 латентности,
+  поэтому режим по умолчанию — `catalog` (`eval/experiments.md`).
+- Пороги под семантическую шкалу (эксп. 16): `PYTHONPATH=api python eval/threshold_sweep.py
+  --backend qdrant --output eval/threshold_sweep_qdrant.csv` — снимает сырые уверенности
+  за один проход и считает сетку порогов мгновенно. Выбранная точка `review = 0.25`
+  поднимает точность честного `not_found` с 89.8% до 97.2% (ложных подсказок 13 → 3 из 108)
+  ценой 15 верных подсказок; применяется через `QDRANT_REVIEW_FLOOR`/`QDRANT_OK_FLOOR`.
 - CI-гейт качества: job `quality` в `.github/workflows/lint.yml` пересобирает
   модель и падает, если метрики ниже порогов `--min-top1/--min-top3/--min-silence/--min-exact`.
 - Эксперименты и выводы: `eval/experiments.md`.
@@ -213,7 +230,7 @@ api/
     middleware/        # observe, ограничение размера тела, rate limit
     services/          # classifier (catalog/mock/qdrant), catalog_io, source_lookup
   tests/               # API, классификатор, контракт, ML E2E, compose
-frontend/              # демо-UI (статика, без сборки)
+frontend/              # демо-UI (React + Vite; собирается в frontend/dist и отдаётся на /ui/)
 ml/                    # эмбеддеры (tfidf/sentence-transformers), индексация,
                        # поиск, реранкер, лексические мосты, обучение
 models/                # артефакты (генерируются: scripts/build_model.py)

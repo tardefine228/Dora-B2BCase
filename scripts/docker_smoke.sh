@@ -19,10 +19,16 @@ else
   $COMPOSE up -d
 fi
 
-log "3. Ожидание healthcheck (до 90 сек)"
+log "3. Ожидание API и Qdrant (до 90 сек)"
+# The official Qdrant image is minimal and does not include curl. Check its
+# /healthz endpoint from the host rather than via an in-container healthcheck.
 for _ in $(seq 1 45); do
   api_health=$(docker inspect --format='{{.State.Health.Status}}' "$(docker ps -qf name=api | head -1)" 2>/dev/null || echo unknown)
-  qdrant_health=$(docker inspect --format='{{.State.Health.Status}}' "$(docker ps -qf name=qdrant | head -1)" 2>/dev/null || echo unknown)
+  if curl -fsS "http://localhost:${QDRANT_PORT:-6333}/healthz" >/dev/null 2>&1; then
+    qdrant_health=healthy
+  else
+    qdrant_health=starting
+  fi
   [[ "$api_health" == "healthy" && "$qdrant_health" == "healthy" ]] && break
   sleep 2
 done
@@ -34,6 +40,17 @@ curl -fsS "http://localhost:${API_PORT:-8000}/health" | head -c 300; echo
 curl -fsS -X POST "http://localhost:${API_PORT:-8000}/classify" \
   -H 'Content-Type: application/json' \
   -d '{"name":"Электрочайники"}' | head -c 400; echo
+ui_html=$(curl -fsS "http://localhost:${API_PORT:-8000}/ui/")
+grep -q 'id="root"' <<<"$ui_html" || {
+  echo "FAIL: the demo UI was not served from /ui/"
+  exit 1
+}
+# The page must reference the compiled bundle, not the TypeScript sources.
+ui_script=$(grep -o 'src="/ui/assets/[^"]*\.js"' <<<"$ui_html" | head -1 | sed 's/^src="//; s/"$//' || true)
+[[ -n "$ui_script" ]] || { echo "FAIL: /ui/ does not reference a built bundle (src=/ui/assets/*.js)"; exit 1; }
+ui_type=$(curl -fsS -o /dev/null -w '%{content_type}' "http://localhost:${API_PORT:-8000}${ui_script}")
+grep -qi 'javascript' <<<"$ui_type" || { echo "FAIL: ${ui_script} served as '${ui_type}'"; exit 1; }
+echo "demo UI OK (${ui_script}, ${ui_type})"
 
 log "5. Данные Qdrant переживают перезапуск"
 $COMPOSE restart qdrant >/dev/null

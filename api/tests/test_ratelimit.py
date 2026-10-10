@@ -87,7 +87,7 @@ def test_health_metrics_and_ui_are_exempt(monkeypatch) -> None:
         assert client.get("/health/ready", headers=headers).status_code == 200
         assert client.get("/metrics", headers=headers).status_code == 200
         assert client.get("/ui/", headers=headers).status_code == 200
-        assert client.get("/ui/app.js", headers=headers).status_code == 200
+        assert client.get("/ui/index.html", headers=headers).status_code == 200
 
 
 def test_limits_are_per_client(monkeypatch) -> None:

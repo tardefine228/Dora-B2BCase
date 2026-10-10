@@ -3,6 +3,7 @@
  * Uses only the public API contract v1.0 (docs/api-contract.md):
  *   POST /classify                        {name}    -> ClassifyResponse
  *   POST /classify/batch                  {items[]} -> {job_id, status_url, ...}
+ *   POST /classify/file                   multipart -> {job_id, status_url, items[], ...}
  *   GET  /classify/batch/{id}                       -> {status, progress_percent, results[]}
  *   GET  /classify/batch/{id}/events                -> text/event-stream (progress/done)
  *   GET  /classify/batch/{id}.csv                   -> CSV (; + UTF-8 BOM)
@@ -308,25 +309,13 @@ async function classifySingle() {
   }
 }
 
-async function classifyBatch() {
-  const items = collectBatchItems();
-  if (!items.length) {
-    setStatus("Добавьте хотя бы один товар в список.");
-    return;
-  }
-  if (items.length > 100) {
-    setStatus("Слишком много позиций: максимум 100 за запрос.");
-    return;
-  }
-  setStatus(`Принято позиций: ${items.length}. Запускаю задачу…`);
+/* Start a batch (via `start()` returning BatchJobAccepted) and render progress. */
+async function runBatch(start) {
   $("progress-wrap").classList.remove("hidden");
   $("progress-bar").style.width = "0%";
   setCsvControls(null, null);
   try {
-    const accepted = await api("/classify/batch", {
-      method: "POST",
-      body: JSON.stringify({ items }),
-    });
+    const accepted = await start();
     const statusUrl = accepted.status_url;
 
     await new Promise((resolve) => {
@@ -343,7 +332,7 @@ async function classifyBatch() {
           if (state.status === "completed") {
             lastBatch = { jobId: state.job_id || accepted.job_id, results };
             setCsvControls(lastBatch.jobId, results);
-            setStatus(`Готово: ${state.total} позиций.`);
+            setStatus(`Готово: ${state.total} позиций. ${statusSummary(results)}`);
           } else {
             lastBatch = null;
             setCsvControls(null, null);
@@ -363,6 +352,118 @@ async function classifyBatch() {
     setTimeout(() => $("progress-wrap").classList.add("hidden"), 700);
   }
 }
+
+function statusSummary(results) {
+  const counts = { ok: 0, review: 0, not_found: 0 };
+  results.forEach((r) => {
+    counts[r.status] = (counts[r.status] || 0) + 1;
+  });
+  return `ok: ${counts.ok}, review: ${counts.review}, not_found: ${counts.not_found}.`;
+}
+
+async function classifyBatch() {
+  const items = collectBatchItems();
+  if (!items.length) {
+    setStatus("Добавьте хотя бы один товар в список.");
+    return;
+  }
+  if (items.length > 100) {
+    setStatus("Слишком много позиций: максимум 100 за запрос.");
+    return;
+  }
+  setStatus(`Принято позиций: ${items.length}. Запускаю задачу…`);
+  $("file-summary").classList.add("hidden");
+  await runBatch(() =>
+    api("/classify/batch", { method: "POST", body: JSON.stringify({ items }) })
+  );
+}
+
+/* --- file upload -------------------------------------------------------- */
+
+const MAX_UPLOAD_BYTES = 10_000_000;
+const FILE_EXTENSIONS = [".txt", ".md", ".csv", ".tsv", ".json", ".xlsx", ".xlsm", ".docx", ".pdf"];
+
+function renderFileSummary(accepted) {
+  const box = $("file-summary");
+  const parts = [
+    `<strong>${escapeHtml(accepted.filename)}</strong> (${escapeHtml(accepted.format)}):
+     найдено позиций — ${accepted.total_found}, отправлено на классификацию — ${accepted.total}`,
+  ];
+  if (accepted.source_column) parts.push(`источник: «${escapeHtml(accepted.source_column)}»`);
+  if (accepted.duplicates) parts.push(`дубликатов пропущено — ${accepted.duplicates}`);
+  if (accepted.skipped) parts.push(`пустых/служебных строк — ${accepted.skipped}`);
+  const warnings = (accepted.warnings || [])
+    .map((w) => `<li class="warn">${escapeHtml(w)}</li>`)
+    .join("");
+  box.innerHTML = parts.join(" · ") + (warnings ? `<ul>${warnings}</ul>` : "");
+  box.classList.remove("hidden");
+}
+
+async function uploadFile(file) {
+  if (!file) return;
+  const ext = (file.name.match(/\.[^.]+$/) || [""])[0].toLowerCase();
+  if (!FILE_EXTENSIONS.includes(ext)) {
+    setStatus(`Формат «${ext || "без расширения"}» не поддерживается.`);
+    return;
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    setStatus("Файл больше 10 МБ.");
+    return;
+  }
+  $("file-name").textContent = file.name;
+  $("file-summary").classList.add("hidden");
+  $("dropzone").classList.add("busy");
+  setStatus(`Разбираю файл «${file.name}»…`);
+  try {
+    await runBatch(async () => {
+      const form = new FormData();
+      form.append("file", file);
+      const response = await fetch(apiUrl("/classify/file"), { method: "POST", body: form });
+      let body = null;
+      try {
+        body = await response.json();
+      } catch (_err) {
+        /* non-JSON error body */
+      }
+      if (!response.ok) {
+        const detail = body && body.detail ? body.detail : response.statusText;
+        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      }
+      renderFileSummary(body);
+      setStatus(`Из файла извлечено ${body.total} позиций. Классифицирую…`);
+      return body;
+    });
+  } finally {
+    $("dropzone").classList.remove("busy");
+    $("file-input").value = "";
+  }
+}
+
+(function setupDropzone() {
+  const zone = $("dropzone");
+  const input = $("file-input");
+  zone.addEventListener("click", () => input.click());
+  zone.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      input.click();
+    }
+  });
+  input.addEventListener("change", () => uploadFile(input.files[0]));
+  ["dragenter", "dragover"].forEach((type) =>
+    zone.addEventListener(type, (event) => {
+      event.preventDefault();
+      zone.classList.add("dragover");
+    })
+  );
+  ["dragleave", "drop"].forEach((type) =>
+    zone.addEventListener(type, (event) => {
+      event.preventDefault();
+      zone.classList.remove("dragover");
+    })
+  );
+  zone.addEventListener("drop", (event) => uploadFile(event.dataTransfer.files[0]));
+})();
 
 $("single-btn").addEventListener("click", classifySingle);
 $("batch-btn").addEventListener("click", classifyBatch);
