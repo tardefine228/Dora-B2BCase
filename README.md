@@ -230,7 +230,7 @@ api/
     middleware/        # observe, ограничение размера тела, rate limit
     services/          # classifier (catalog/mock/qdrant), catalog_io, source_lookup
   tests/               # API, классификатор, контракт, ML E2E, compose
-frontend/              # демо-UI (статика, без сборки)
+frontend/              # демо-UI (React + Vite; собирается в frontend/dist и отдаётся на /ui/)
 ml/                    # эмбеддеры (tfidf/sentence-transformers), индексация,
                        # поиск, реранкер, лексические мосты, обучение
 models/                # артефакты (генерируются: scripts/build_model.py)

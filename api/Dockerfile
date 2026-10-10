@@ -1,3 +1,13 @@
+# Stage 1: build the React/Vite demo UI into static files (base path /ui/).
+# Only the compiled dist/ goes into the final image; sources and node_modules stay here.
+FROM node:22-slim AS ui-build
+WORKDIR /ui
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 2: API image.
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -25,7 +35,8 @@ RUN groupadd --system app && useradd --system --gid app --home-dir /app app \
     && chown app:app /app/jobs
 COPY --chown=app:app api/app ./app
 COPY --chown=app:app ml ./ml
-COPY --chown=app:app frontend ./frontend
+# Built UI (index.html + assets/); served by app.main at /ui/.
+COPY --chown=app:app --from=ui-build /ui/dist ./frontend
 COPY --chown=app:app data/data.csv data/data.json data/source_text.txt ./data/
 
 ENV DATA_DIR=/app/data \

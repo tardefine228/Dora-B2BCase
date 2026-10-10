@@ -138,19 +138,26 @@ def _resolve_frontend_dir(module_file: str | Path = __file__) -> Path | None:
     """Find static UI files in both the source tree and the Docker image.
 
     In the source tree, ``main.py`` lives at ``<repo>/api/app/main.py`` and
-    the UI is at ``<repo>/frontend``. The image copies the app to
-    ``/app/app/main.py`` and the UI to ``/app/frontend``.
+    the UI is at ``<repo>/frontend`` (built output: ``<repo>/frontend/dist``).
+    The image copies the app to ``/app/app/main.py`` and the built UI
+    (``dist``) to ``/app/frontend``.
     """
     module_path = Path(module_file).resolve()
     candidates = (
-        module_path.parents[1] / "frontend",  # /app/frontend in the image
-        module_path.parents[2] / "frontend",  # <repo>/frontend in source
+        module_path.parents[1] / "frontend",  # /app/frontend in the image (built dist)
+        module_path.parents[2] / "frontend" / "dist",  # <repo>/frontend/dist after npm run build
+        module_path.parents[2] / "frontend",  # <repo>/frontend (unbuilt sources, dev fallback)
     )
     return next((candidate for candidate in candidates if candidate.is_dir()), None)
 
 
 FRONTEND_DIR = _resolve_frontend_dir()
 if FRONTEND_DIR is not None:
+    if (FRONTEND_DIR / "src" / "main.tsx").is_file():
+        logger.warning(
+            "/ui serves UNBUILT frontend sources from %s; run `npm run build` in frontend/",
+            FRONTEND_DIR,
+        )
     app.mount("/ui", StaticFiles(directory=FRONTEND_DIR, html=True), name="ui")
 else:
     logger.warning("Frontend directory not found; /ui will not be mounted")

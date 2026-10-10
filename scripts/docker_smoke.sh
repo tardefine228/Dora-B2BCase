@@ -41,11 +41,16 @@ curl -fsS -X POST "http://localhost:${API_PORT:-8000}/classify" \
   -H 'Content-Type: application/json' \
   -d '{"name":"Электрочайники"}' | head -c 400; echo
 ui_html=$(curl -fsS "http://localhost:${API_PORT:-8000}/ui/")
-grep -q 'id="single-input"' <<<"$ui_html" || {
+grep -q 'id="root"' <<<"$ui_html" || {
   echo "FAIL: the demo UI was not served from /ui/"
   exit 1
 }
-echo "demo UI OK"
+# The page must reference the compiled bundle, not the TypeScript sources.
+ui_script=$(grep -o 'src="/ui/assets/[^"]*\.js"' <<<"$ui_html" | head -1 | sed 's/^src="//; s/"$//' || true)
+[[ -n "$ui_script" ]] || { echo "FAIL: /ui/ does not reference a built bundle (src=/ui/assets/*.js)"; exit 1; }
+ui_type=$(curl -fsS -o /dev/null -w '%{content_type}' "http://localhost:${API_PORT:-8000}${ui_script}")
+grep -qi 'javascript' <<<"$ui_type" || { echo "FAIL: ${ui_script} served as '${ui_type}'"; exit 1; }
+echo "demo UI OK (${ui_script}, ${ui_type})"
 
 log "5. Данные Qdrant переживают перезапуск"
 $COMPOSE restart qdrant >/dev/null
