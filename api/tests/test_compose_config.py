@@ -73,8 +73,15 @@ def test_dockerfile_installs_ml_only_on_request() -> None:
     dockerfile = (ROOT / "api" / "Dockerfile").read_text(encoding="utf-8")
     assert re.search(r"ARG INSTALL_ML", dockerfile)
     assert "requirements-ml.txt" in dockerfile
-    assert "COPY --chown=app:app frontend" in dockerfile or "frontend" in dockerfile
     assert "USER app" in dockerfile
+
+
+def test_dockerfile_builds_ui_and_ships_only_dist() -> None:
+    dockerfile = (ROOT / "api" / "Dockerfile").read_text(encoding="utf-8")
+    # Sources must not be copied raw: the browser cannot run .tsx or bare imports.
+    assert "COPY --chown=app:app frontend ./frontend" not in dockerfile
+    assert "npm run build" in dockerfile
+    assert "COPY --chown=app:app --from=ui-build /ui/dist ./frontend" in dockerfile
 
 
 def test_docker_build_context_keeps_ui_and_source_assets() -> None:
@@ -84,7 +91,9 @@ def test_docker_build_context_keeps_ui_and_source_assets() -> None:
     # Docker cannot COPY a file that the build context has excluded.
     assert "frontend" not in dockerignore
     assert "!data/source_text.txt" in dockerignore
-    assert "COPY --chown=app:app frontend ./frontend" in dockerfile
+    assert "frontend/node_modules" in dockerignore
+    assert "frontend/dist" in dockerignore
+    assert "COPY frontend/ ./" in dockerfile
     assert "data/source_text.txt" in dockerfile
 
 

@@ -229,3 +229,13 @@ def test_classify_mock_backend(monkeypatch) -> None:
     finally:
         reset_classifier()
         monkeypatch.setattr(settings, "classifier_backend", "catalog")
+
+
+def test_frontend_prefers_built_dist_in_source_tree(tmp_path) -> None:
+    repository_root = tmp_path / "repo"
+    module_file = repository_root / "api" / "app" / "main.py"
+    dist_dir = repository_root / "frontend" / "dist"
+    dist_dir.mkdir(parents=True)
+    (repository_root / "frontend" / "src").mkdir()
+
+    assert _resolve_frontend_dir(module_file) == dist_dir

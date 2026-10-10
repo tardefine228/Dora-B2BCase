@@ -91,3 +91,26 @@ jobs:
             eval_report_ci.md
             models/reranker.json
           if-no-files-found: ignore
+
+  # Demo UI must build: the Docker image ships only frontend/dist (see api/Dockerfile).
+  frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Type-check and build the UI
+        working-directory: frontend
+        run: npm run build

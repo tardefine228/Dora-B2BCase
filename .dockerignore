@@ -5,6 +5,8 @@ venv
 __pycache__
 *.pyc
 node_modules
+frontend/node_modules
+frontend/dist
 eval
 data/*
 !data/data.csv
