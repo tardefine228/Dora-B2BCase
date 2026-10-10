@@ -1,95 +1,90 @@
-"""Loads product catalog from files."""
+"""Loads the PP-1875 catalog from the parsed JSON file."""
 
 import json
-from ml.config import RAW_DATA_DIR
+
+from ml.config import DEBUG, RAW_DATA_DIR
+
+CATALOG_FILE = "data.json"
+
+# Keep only these code_role values. Empty set = keep everything.
+# Fill it in after running ml/check_catalog.py, e.g. {"Включён"}.
+ACTIVE_CODE_ROLES: set[str] = set()
 
 
 def load_catalog() -> list[dict]:
     """
-    Loads the product catalog.
-
-    First tries to read data/raw/pp1875_catalog.json.
-    If the file doesn't exist — returns dummy data for testing.
+    Loads the catalog in the unified internal format.
 
     Returns:
-        List of dicts with fields: id, name, group, description, pp_code, pp_link.
+        List of dicts with fields: id, record_id, name, group, position,
+        description, pp_code, pp_link, code_role.
+    Raises ``FileNotFoundError`` rather than silently indexing a dummy catalog.
     """
-    catalog_path = RAW_DATA_DIR / "pp1875_catalog.json"
+    path = RAW_DATA_DIR / CATALOG_FILE
+    if not path.is_file():
+        raise FileNotFoundError(f"Catalog JSON not found: {path}")
 
-    if catalog_path.exists():
-        with catalog_path.open(encoding="utf-8") as f:
-            return json.load(f)
+    with path.open(encoding="utf-8") as f:
+        rows = json.load(f)
+    if not isinstance(rows, list):
+        raise ValueError(f"Catalog JSON must contain an array: {path}")
+    return _rows_to_items(rows)
 
-    # Dummy data for testing
-    return _get_dummy_catalog()
 
+def _rows_to_items(rows: list[dict]) -> list[dict]:
+    """Maps raw parsed rows to the internal catalog format."""
+    items: list[dict] = []
+    skipped = 0
 
-def _get_dummy_catalog() -> list[dict]:
-    """Returns a toy catalog for tests."""
-    return [
-        {
-            "id": 1,
-            "name": "Электрический перфоратор Bosch GBH 2-26",
-            "group": "Электроинструмент",
-            "description": "Мощность 830 Вт, энергия удара 2.7 Дж",
-            "pp_code": "142.1",
-            "pp_link": "https://example.com/pp1875/142.1",
-        },
-        {
-            "id": 2,
-            "name": "Ударная дрель Makita HP1640",
-            "group": "Электроинструмент",
-            "description": "Мощность 680 Вт",
-            "pp_code": "142.2",
-            "pp_link": "https://example.com/pp1875/142.2",
-        },
-        {
-            "id": 3,
-            "name": "Смеситель для кухни Grohe Eurosmart",
-            "group": "Сантехника",
-            "description": "Однорычажный, с поворотным изливом",
-            "pp_code": "220.5",
-            "pp_link": "https://example.com/pp1875/220.5",
-        },
-        {
-            "id": 4,
-            "name": "Силовой медный кабель ВВГнг 3х2.5",
-            "group": "Электротовары",
-            "description": "Трёхжильный, сечение 2.5 мм²",
-            "pp_code": "305.1",
-            "pp_link": "https://example.com/pp1875/305.1",
-        },
-        {
-            "id": 5,
-            "name": "Ноутбук Lenovo ThinkPad X1 Carbon",
-            "group": "Оргтехника",
-            "description": "14 дюймов, Intel Core i7",
-            "pp_code": "410.3",
-            "pp_link": "https://example.com/pp1875/410.3",
-        },
-    ]
+    for idx, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            raise ValueError(f"Catalog row {idx} is not an object")
+        name = (row.get("name") or "").strip()
+        if not name:
+            skipped += 1
+            continue
+        if ACTIVE_CODE_ROLES and row.get("code_role") not in ACTIVE_CODE_ROLES:
+            skipped += 1
+            continue
+
+        appendix = row.get("appendix")
+        position = row.get("position")
+        okpd2 = row.get("okpd2") or ""
+
+        items.append(
+            {
+                "id": idx,
+                "record_id": row.get("record_id", ""),
+                "name": name,
+                "group": f"Приложение {appendix}",
+                "position": f"Приложение {appendix}, позиция {position}",
+                "description": f"ОКПД2: {okpd2}",
+                "pp_code": okpd2,
+                "pp_link": (
+                    f"ПП № 1875, приложение {appendix}, позиция {position}, "
+                    f"стр. {row.get('pdf_page_start')}–{row.get('pdf_page_end')}"
+                ),
+                "code_role": row.get("code_role"),
+            }
+        )
+
+    if DEBUG:
+        print(f"   Parsed {len(items)} items, skipped {skipped}")
+
+    return items
 
 
 def item_to_text(item: dict) -> str:
     """
-    Converts a product into text for vectorization.
+    Builds the text to vectorize.
 
-    Concatenates name, group and description — this gives better search quality
-    than just the name alone.
+    Name carries the semantics; OKPD2 code helps literal code queries.
+    Position numbers are kept out of the text on purpose: they add noise
+    to semantic search and already live in the payload.
     """
     parts = [item["name"]]
 
-    if item.get("group"):
-        parts.append(f"Группа: {item['group']}")
-
     if item.get("description"):
-        parts.append(f"Описание: {item['description']}")
+        parts.append(item["description"])
 
     return ". ".join(parts)
-
-
-if __name__ == "__main__":
-    catalog = load_catalog()
-    print(f"Loaded products: {len(catalog)}")
-    print("\nExample text for vectorization:")
-    print(item_to_text(catalog[0]))

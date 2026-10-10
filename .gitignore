@@ -26,6 +26,7 @@ data/*
 # Environment / secrets
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 
@@ -41,7 +42,11 @@ Thumbs.db
 .env
 .env.local
 
-# ML artefacts
+# ML artefacts (weights are user-provided and must not be committed)
 models_cache/
+models/*
+!models/.gitkeep
 qdrant_storage/
+qdrant_storage_eval/
 *.onnx
+eval_report_ci.md

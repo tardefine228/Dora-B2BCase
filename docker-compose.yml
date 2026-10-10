@@ -3,29 +3,70 @@ services:
     build:
       context: .
       dockerfile: api/Dockerfile
+      args:
+        INSTALL_ML: "${INSTALL_ML:-false}"
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "${API_BIND_ADDRESS:-0.0.0.0}:${API_PORT:-8000}:8000"
     environment:
-      QDRANT_URL: http://qdrant:6333
+      APP_NAME: "Dora B2BCase API"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      CLASSIFIER_BACKEND: "${CLASSIFIER_BACKEND:-catalog}"
+      ML_ENABLED: "${INSTALL_ML:-false}"
+      CATALOG_PATH: "${CATALOG_PATH:-}"
+      DATA_DIR: "/app/data"
+      QDRANT_URL: "${QDRANT_URL:-http://qdrant:6333}"
+      QDRANT_API_KEY: "${QDRANT_API_KEY:-}"
+      QDRANT_COLLECTION: "${QDRANT_COLLECTION:-pp1875_items}"
+      MODEL_NAME: "${MODEL_NAME:-./models/bge-m3}"
+      MODEL_DEVICE: "${MODEL_DEVICE:-cpu}"
+      MODEL_LOCAL_ONLY: "${MODEL_LOCAL_ONLY:-true}"
+      MODEL_BATCH_SIZE: "${MODEL_BATCH_SIZE:-16}"
+      ADMIN_API_KEY: "${ADMIN_API_KEY:-}"
+      MAX_CONCURRENT_INFERENCES: "${MAX_CONCURRENT_INFERENCES:-1}"
+      CLASSIFICATION_CACHE_SIZE: "${CLASSIFICATION_CACHE_SIZE:-512}"
+      MAX_REQUEST_BODY_BYTES: "${MAX_REQUEST_BODY_BYTES:-1000000}"
+      # Background jobs survive `docker compose restart` (sqlite in jobs_data).
+      JOB_STORE: "${JOB_STORE:-sqlite}"
+      JOB_STORE_PATH: "/app/jobs/jobs.sqlite"
+      JOB_TTL_HOURS: "${JOB_TTL_HOURS:-24}"
+    volumes:
+      # Place a complete local SentenceTransformers model under ./models to run offline.
+      - "${MODEL_HOST_DIR:-./models}:/app/models:ro"
+      # Uploaded catalogs survive restarts; the first mount seeds it from the image.
+      - "catalog_data:/app/data"
+      # Batch/reindex job state (sqlite WAL) also survives restarts.
+      - "jobs_data:/app/jobs"
     depends_on:
-      - qdrant
+      # The official Qdrant image is intentionally minimal and has no curl/wget
+      # binary for an in-container healthcheck. Its endpoint is checked from the
+      # host by the smoke script; API readiness probes Qdrant when that backend is selected.
+      qdrant:
+        condition: service_started
+    mem_limit: "${API_MEMORY_LIMIT:-1g}"
+    cpus: "${API_CPUS:-2.0}"
     healthcheck:
       test:
         - CMD
         - python
         - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"
       interval: 10s
       timeout: 3s
       retries: 5
-      start_period: 10s
+      start_period: 15s
+    restart: unless-stopped
 
   qdrant:
     image: qdrant/qdrant:v1.14.1
     ports:
-      - "6333:6333"
+      - "${QDRANT_BIND_ADDRESS:-127.0.0.1}:${QDRANT_PORT:-6333}:6333"
     volumes:
       - qdrant_data:/qdrant/storage
+    mem_limit: "${QDRANT_MEMORY_LIMIT:-768m}"
+    cpus: "${QDRANT_CPUS:-1.0}"
+    restart: unless-stopped
 
 volumes:
   qdrant_data:
+  catalog_data:
+  jobs_data:
