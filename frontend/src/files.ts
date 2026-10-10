@@ -40,17 +40,33 @@ export function namesFrom(table: Table, column: number): string[] {
     return name;
   });
 }
+const STATUS_TEXT = { ok: 'Уверенный результат', review: 'Требует проверки', not_found: 'Не найдено' } as const;
+
+// Относительные ссылки `/source/...` делаем абсолютными, чтобы они открывались из файла.
+function absoluteUrl(url: string | null): string {
+  if (!url) return '';
+  try { return new URL(url, window.location.origin).href; } catch { return url; }
+}
+
 export async function exportResults(results: Result[]) {
   const book = new ExcelJS.Workbook();
-  const sheet = book.addWorksheet('Демо-результаты');
-  sheet.addRow(['Товар', 'Код ОКПД2', 'Наименование', 'Уверенность (демо)', 'Ссылка', 'Режим']);
-  results.forEach(r => sheet.addRow([r.name, r.code ?? '', r.title, r.confidence ?? '', r.url ?? '', 'Демонстрационные данные']));
+  const sheet = book.addWorksheet('Результаты');
+  sheet.addRow(['Товар', 'Код ОКПД2', 'Наименование', 'Статус', 'Уверенность', 'Пункт перечня', 'Ссылка']);
+  results.forEach(r => sheet.addRow([
+    r.name,
+    r.code ?? '',
+    r.title ?? '',
+    STATUS_TEXT[r.status],
+    r.confidence ?? '',
+    r.clauseRef ?? '',
+    absoluteUrl(r.url),
+  ]));
   sheet.getRow(1).font = { bold: true };
   sheet.columns.forEach(col => { col.width = 32; });
-  sheet.getColumn(4).numFmt = '0%';
+  sheet.getColumn(5).numFmt = '0%';
   const buffer = await book.xlsx.writeBuffer();
   const blob = new Blob([buffer as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = 'classification-demo.xlsx'; a.click();
+  const a = document.createElement('a'); a.href = url; a.download = 'classification-results.xlsx'; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
