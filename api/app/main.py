@@ -123,10 +123,26 @@ app.add_middleware(RateLimitMiddleware)
 # rate limiter and the size limiter.
 app.add_middleware(ObserveMiddleware)
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-FRONTEND_DIR = PROJECT_ROOT / "frontend"
-if FRONTEND_DIR.is_dir():
+def _resolve_frontend_dir(module_file: str | Path = __file__) -> Path | None:
+    """Find static UI files in both the source tree and the Docker image.
+
+    In the source tree, ``main.py`` lives at ``<repo>/api/app/main.py`` and
+    the UI is at ``<repo>/frontend``. The image copies the app to
+    ``/app/app/main.py`` and the UI to ``/app/frontend``.
+    """
+    module_path = Path(module_file).resolve()
+    candidates = (
+        module_path.parents[1] / "frontend",  # /app/frontend in the image
+        module_path.parents[2] / "frontend",  # <repo>/frontend in source
+    )
+    return next((candidate for candidate in candidates if candidate.is_dir()), None)
+
+
+FRONTEND_DIR = _resolve_frontend_dir()
+if FRONTEND_DIR is not None:
     app.mount("/ui", StaticFiles(directory=FRONTEND_DIR, html=True), name="ui")
+else:
+    logger.warning("Frontend directory not found; /ui will not be mounted")
 
 
 def _classifier_or_503() -> CachedClassifier:

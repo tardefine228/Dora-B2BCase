@@ -34,6 +34,12 @@ curl -fsS "http://localhost:${API_PORT:-8000}/health" | head -c 300; echo
 curl -fsS -X POST "http://localhost:${API_PORT:-8000}/classify" \
   -H 'Content-Type: application/json' \
   -d '{"name":"Электрочайники"}' | head -c 400; echo
+ui_html=$(curl -fsS "http://localhost:${API_PORT:-8000}/ui/")
+grep -q 'id="single-input"' <<<"$ui_html" || {
+  echo "FAIL: the demo UI was not served from /ui/"
+  exit 1
+}
+echo "demo UI OK"
 
 log "5. Данные Qdrant переживают перезапуск"
 $COMPOSE restart qdrant >/dev/null

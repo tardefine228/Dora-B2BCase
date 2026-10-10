@@ -1,9 +1,27 @@
 from app.core.config import settings
-from app.main import app
+from app.main import _resolve_frontend_dir, app
 from app.services.classifier import reset_classifier
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
+
+
+def test_frontend_path_resolves_in_docker_image_layout(tmp_path) -> None:
+    image_root = tmp_path / "app"
+    module_file = image_root / "app" / "main.py"
+    frontend_dir = image_root / "frontend"
+    frontend_dir.mkdir(parents=True)
+
+    assert _resolve_frontend_dir(module_file) == frontend_dir
+
+
+def test_frontend_path_resolves_in_source_tree_layout(tmp_path) -> None:
+    repository_root = tmp_path / "repo"
+    module_file = repository_root / "api" / "app" / "main.py"
+    frontend_dir = repository_root / "frontend"
+    frontend_dir.mkdir(parents=True)
+
+    assert _resolve_frontend_dir(module_file) == frontend_dir
 
 
 def test_root_redirects_to_the_demo_ui() -> None:

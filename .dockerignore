@@ -5,7 +5,6 @@ venv
 __pycache__
 *.pyc
 node_modules
-frontend
 eval
 data/*
 !data/data.csv
