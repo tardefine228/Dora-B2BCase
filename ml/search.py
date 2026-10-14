@@ -2,7 +2,7 @@
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from qdrant_client.http.models import QueryRequest
 from qdrant_client.models import ScoredPoint
@@ -26,12 +26,15 @@ class SearchResult:
     score: float
     record_id: str = ""
     position: str = ""
+    excluded_codes: list[str] = field(default_factory=list)
 
 
 def _to_results(hits: list[ScoredPoint]) -> list[SearchResult]:
     results: list[SearchResult] = []
     for hit in hits:
         payload = hit.payload or {}
+        if payload.get("code_role") in {"Исключение", "Не указан"} or not payload.get("pp_code"):
+            continue
         results.append(
             SearchResult(
                 item_id=hit.id,
@@ -42,6 +45,7 @@ def _to_results(hits: list[ScoredPoint]) -> list[SearchResult]:
                 record_id=payload.get("record_id", ""),
                 position=payload.get("position", ""),
                 score=float(hit.score),
+                excluded_codes=payload.get("excluded_codes", []),
             )
         )
     return results

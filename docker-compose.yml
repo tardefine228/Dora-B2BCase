@@ -32,6 +32,8 @@ services:
     volumes:
       # Place a complete local SentenceTransformers model under ./models to run offline.
       - "${MODEL_HOST_DIR:-./models}:/app/models:ro"
+      # Writable lightweight weights: retrain after a catalog update without rebuilding the image.
+      - "reranker_data:/app/builtin_models"
       # Uploaded catalogs survive restarts; the first mount seeds it from the image.
       - "catalog_data:/app/data"
       # Batch/reindex job state (sqlite WAL) also survives restarts.
@@ -70,3 +72,4 @@ volumes:
   qdrant_data:
   catalog_data:
   jobs_data:
+  reranker_data:

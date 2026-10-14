@@ -28,11 +28,12 @@ from typing import Protocol
 from app.core.config import settings
 from app.schemas import Alternative, ClassifyResponse
 from app.services.source_lookup import clause_url_for
+from ml.preprocessing import OKPD2_PATTERN, clean_query, excluded_codes, query_hits_exclusion
 
 logger = logging.getLogger("dora.classifier")
 
 # OKPD2 examples: 14.1, 26.20.11, 26.20.11.110
-OKPD2_RE = re.compile(r"^\d{2}(\.\d{1,2}){0,3}$")
+OKPD2_RE = re.compile(OKPD2_PATTERN)
 TOKEN_RE = re.compile(r"[a-zа-яё0-9]+", re.IGNORECASE)
 _INFERENCE_SEMAPHORE = BoundedSemaphore(settings.max_concurrent_inferences)
 
@@ -206,21 +207,37 @@ class CatalogClassifier:
         )
 
     def _load(self) -> None:
+        from ml.catalog_loader import _rows_to_items, catalog_fingerprint
         from ml.features import prepare_candidate
 
-        by_key: dict[tuple[str, str], dict] = {}
+        by_key: dict[tuple[str, str, tuple[str, ...]], dict] = {}
         with self.catalog_path.open(encoding="utf-8-sig", newline="") as csv_file:
             reader = csv.DictReader(csv_file, delimiter=";")
             required_columns = {"name", "okpd2"}
             if not reader.fieldnames or not required_columns.issubset(reader.fieldnames):
                 raise ValueError(f"В каталоге должны быть колонки {sorted(required_columns)}")
-            for row in reader:
+            rows = list(reader)
+            items = _rows_to_items(rows)
+            self.catalog_rows = {item["record_id"]: item for item in items if item["record_id"]}
+            fingerprint = catalog_fingerprint(items)
+            self.model_catalog_current = (
+                getattr(self._reranker, "meta", {}).get("catalog_sha256") == fingerprint
+            )
+            exceptions = excluded_codes(rows)
+            for row in rows:
+                if row.get("code_role") in {"Исключение", "Не указан"}:
+                    continue
+                if not (row.get("okpd2") or "").strip():
+                    continue
                 name = (row.get("name") or "").strip()
                 if not name:
                     continue
                 okpd2 = (row.get("okpd2") or "").strip()
                 clause_ref = self._clause_ref(row)
-                key = (okpd2, name)
+                excluded = exceptions.get(
+                    (str(row.get("appendix", "")), str(row.get("position", ""))), []
+                )
+                key = (okpd2, name, tuple(excluded))
                 existing = by_key.get(key)
                 if existing is not None:
                     # The same position often appears in several appendices; keep
@@ -229,6 +246,7 @@ class CatalogClassifier:
                         existing["clause_ref"] = f"{existing['clause_ref']}; {clause_ref}"
                     continue
                 by_key[key] = {
+                    "excluded_codes": excluded,
                     "okpd2": okpd2,
                     "name": name,
                     "appendix": (row.get("appendix") or "").strip(),
@@ -252,7 +270,7 @@ class CatalogClassifier:
         return None
 
     def classify(self, query: str) -> ClassifyResponse:
-        normalized_query = query.strip()
+        normalized_query = clean_query(query)
         if not normalized_query:
             return _not_found(normalized_query)
 
@@ -270,12 +288,14 @@ class CatalogClassifier:
                         title=row["name"],
                         confidence=1.0,
                         confidence_raw=1.0,
+                        confidence_kind="exact",
                         status="ok",
                         clause_ref=row["clause_ref"],
                         clause_url=clause_url_for(row.get("record_id")),
                         alternatives=[],
                         latency_ms=0.0,
                     )
+            return _not_found(normalized_query)
 
         # 2. Lexical shortlist, then the calibrated reranker orders the candidates.
         query_tokens = set(_tokenize(query_lower))
@@ -296,6 +316,8 @@ class CatalogClassifier:
         prepared_query = prepare_candidate(expand_query(query))
         scored: list[tuple[float, dict]] = []
         for row in self.index:
+            if query_hits_exclusion(query, row.get("excluded_codes", [])):
+                continue
             score = lexical_score_prepared(prepared_query, row["prepared"])
             if score <= 0.0:
                 # Keep the historical token-substring tolerance as a safety net.
@@ -353,8 +375,14 @@ class CatalogClassifier:
             raw_confidence, status = self._reranker.evaluate(query, ranked)
         else:  # pragma: no cover
             raw_confidence, status = best.probability, "review"
-        raw_confidence = round(min(max(raw_confidence, 0.0), 1.0), 4)
+        raw_confidence = min(max(raw_confidence, 0.0), 1.0)
         confidence = round(_display_confidence(self._reranker, raw_confidence), 4)
+        calibrated = bool(getattr(self._reranker, "confidence_model", None))
+        calibrated = calibrated and self.model_catalog_current
+        if not calibrated:
+            confidence = round(raw_confidence, 4)
+            if status == "ok":
+                status = "review"
 
         threshold_review = getattr(self._reranker, "threshold_review", 0.45)
         alternatives = _distinct_alternatives(ranked, status, threshold_review)
@@ -381,6 +409,7 @@ class CatalogClassifier:
             title=best.title,
             confidence=confidence,
             confidence_raw=raw_confidence,
+            confidence_kind="calibrated" if calibrated else "uncalibrated",
             status=status,
             clause_ref=best.clause_ref,
             clause_url=clause_url_for(best.payload.get("record_id")),
@@ -419,12 +448,19 @@ class QdrantClassifier:
             )
         self._search_many = search_many
         self._reranker = _apply_semantic_floors(_load_reranker())
+        catalog_path = _resolve_catalog_path()
+        if catalog_path is None:
+            raise FileNotFoundError(
+                "Для проверки семантической выдачи требуется актуальный каталог."
+            )
+        self._catalog = CatalogClassifier(catalog_path, reranker=self._reranker)
+        self.model_catalog_current = self._catalog.model_catalog_current
 
     def classify(self, query: str) -> ClassifyResponse:
         return self.classify_many([query])[0]
 
     def classify_many(self, queries: list[str]) -> list[ClassifyResponse]:
-        normalized_queries = [query.strip() for query in queries]
+        normalized_queries = [clean_query(query) for query in queries]
         if not normalized_queries:
             return []
 
@@ -441,6 +477,23 @@ class QdrantClassifier:
 
         results: list[ClassifyResponse] = []
         for query, hits in zip(normalized_queries, hit_groups, strict=True):
+            catalog = getattr(self, "_catalog", None)
+            if catalog is not None:
+                if OKPD2_RE.fullmatch(query.replace(" ", "")):
+                    results.append(catalog.classify(query))
+                    continue
+                # Never trust an old index to identify the current legal position.
+                hits = [
+                    hit
+                    for hit in hits
+                    if (row := catalog.catalog_rows.get(getattr(hit, "record_id", "")))
+                    and row["pp_code"] == hit.pp_code
+                    and row["name"] == hit.name
+                    and not query_hits_exclusion(query, row["excluded_codes"])
+                ]
+            hits = [
+                h for h in hits if not query_hits_exclusion(query, getattr(h, "excluded_codes", []))
+            ]
             if not hits:
                 results.append(_not_found(query))
                 continue
@@ -459,7 +512,7 @@ class QdrantClassifier:
                 ranked = self._reranker.rerank(query, candidates)
                 best = ranked[0]
                 raw_confidence, status = self._reranker.evaluate(query, ranked)
-                raw_confidence = round(min(max(raw_confidence, 0.0), 1.0), 4)
+                raw_confidence = min(max(raw_confidence, 0.0), 1.0)
                 confidence = round(_display_confidence(self._reranker, raw_confidence), 4)
                 threshold_review = getattr(self._reranker, "threshold_review", 0.45)
                 alternatives = _distinct_alternatives(ranked, status, threshold_review)
@@ -486,6 +539,12 @@ class QdrantClassifier:
                 clause_url = clause_url_for(top.record_id)
                 code, title = top.pp_code or None, top.name or None
 
+            calibrated = bool(getattr(self._reranker, "confidence_model", None))
+            calibrated = calibrated and getattr(self, "model_catalog_current", False)
+            if not calibrated:
+                confidence = round(raw_confidence, 4)
+                if status == "ok":
+                    status = "review"
             results.append(
                 ClassifyResponse(
                     query=query,
@@ -493,6 +552,7 @@ class QdrantClassifier:
                     title=title,
                     confidence=confidence,
                     confidence_raw=raw_confidence,
+                    confidence_kind="calibrated" if calibrated else "uncalibrated",
                     status=status,
                     clause_ref=clause_ref,
                     # The source citation itself lives in clause_ref; the URL points

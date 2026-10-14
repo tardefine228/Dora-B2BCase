@@ -54,6 +54,7 @@ class Alternative(APIModel):
 
 class ClassifyResponse(APIModel):
     query: str
+    confidence_kind: Literal["calibrated", "uncalibrated", "exact"] = "uncalibrated"
     code: str | None = None
     title: str | None = None
     confidence: float = Field(ge=0, le=1)
@@ -147,6 +148,8 @@ class SourceFragment(APIModel):
     )
     source_file: str
     clause_url: str | None = None
+    edition: str | None = None
+    source_url: str | None = None
 
 
 class CatalogIssue(APIModel):

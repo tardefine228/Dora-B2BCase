@@ -1,12 +1,14 @@
 """Evaluate the classifier on the hand-labeled set eval/labeled_examples.csv.
 
-The labeled set is a *measurement* set: neither the reranker nor the thresholds
-are trained on it (see ``ml/train_reranker.py``). Match rules:
+The labeled queries are not included in weight fitting. However, historical
+operating floors were selected using this set (see ``ml/train_reranker.py``),
+so this is a development benchmark, not an independent holdout. Match rules:
 
 * an empty ``expected_okpd2`` means the expected answer is ``not_found``;
 * otherwise the predicted code may match exactly or as a prefix of the expected
   code (or vice versa) — "26.40.20" covers all television positions;
-* ``top-3`` counts the expected code among the response alternatives.
+* ``top-3`` counts the expected code among at most three displayed suggestions
+  (the primary answer plus two alternatives when a primary answer exists).
 
 Besides the labeled set the script measures:
 
@@ -74,6 +76,7 @@ def load_exact_names(path: Path, step: int = EXACT_NAME_STEP) -> list[tuple[str,
         rows = [
             ((row.get("name") or "").strip(), (row.get("okpd2") or "").strip())
             for row in csv.DictReader(handle, delimiter=";")
+            if row.get("code_role") not in {"Исключение", "Не указан"}
         ]
     rows = [(name, code) for name, code in rows if name and code]
     return rows[::step]
@@ -156,9 +159,10 @@ def _classify_rows(classifier, rows: list[dict]) -> list[dict]:
             correct_top3 = correct_top1
         else:
             correct_top1 = codes_match(response.code, expected)
-            correct_top3 = correct_top1 or any(
-                codes_match(alternative.code, expected) for alternative in response.alternatives
-            )
+            codes = ([response.code] if response.code else []) + [
+                alternative.code for alternative in response.alternatives
+            ]
+            correct_top3 = any(codes_match(code, expected) for code in codes[:3])
         results.append(
             {
                 "query": query,

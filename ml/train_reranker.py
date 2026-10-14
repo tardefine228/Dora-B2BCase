@@ -1078,6 +1078,9 @@ def train(
         "corpus_rows": len(catalog),
         "hard_negative_queries": len(negative_queries),
     }
+    from ml.catalog_loader import catalog_fingerprint
+
+    reranker.meta["catalog_sha256"] = catalog_fingerprint(catalog)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     reranker.save(output)

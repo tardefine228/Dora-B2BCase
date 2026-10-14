@@ -47,7 +47,8 @@ def test_source_endpoint_returns_decree_fragment() -> None:
     assert body["okpd2"] == "27.51.24.110"
     assert body["truncated"] is False
     assert body["clause_url"] == f"/source/{KETTLE_RECORD}"
-    assert "max-age" in response.headers["Cache-Control"]
+    # A catalog may be updated at runtime; never reuse an old-edition excerpt.
+    assert response.headers["Cache-Control"] == "no-store"
 
 
 def test_source_endpoint_returns_404_for_unknown_record() -> None:

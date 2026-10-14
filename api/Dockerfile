@@ -38,8 +38,14 @@ COPY --chown=app:app ml ./ml
 # Built UI (index.html + assets/); served by app.main at /ui/.
 COPY --chown=app:app --from=ui-build /ui/dist ./frontend
 COPY --chown=app:app data/data.csv data/data.json data/source_text.txt ./data/
+COPY --chown=app:app scripts/build_model.py ./scripts/build_model.py
+# Build deterministic lightweight weights in the image; no Python setup on the host.
+RUN python -m pip install --no-cache-dir 'numpy>=1.26,<3' \
+    && python scripts/build_model.py --models-dir /app/builtin_models \
+    && chown -R app:app /app/builtin_models
 
 ENV DATA_DIR=/app/data \
+    MODELS_DIR=/app/builtin_models \
     CLASSIFIER_BACKEND=catalog \
     ML_ENABLED=false \
     QDRANT_URL=http://qdrant:6333

@@ -24,7 +24,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
@@ -64,7 +64,6 @@ from app.schemas import (
 from app.services.catalog_io import (
     catalog_facts,
     normalize_rows,
-    parse_catalog_bytes,
     resolve_data_dir,
     validate_rows,
     write_catalog,
@@ -133,6 +132,7 @@ app.add_middleware(RateLimitMiddleware)
 # Add the observer last so it also measures and logs requests rejected by the
 # rate limiter and the size limiter.
 app.add_middleware(ObserveMiddleware)
+
 
 def _resolve_frontend_dir(module_file: str | Path = __file__) -> Path | None:
     """Find static UI files in both the source tree and the Docker image.
@@ -377,8 +377,14 @@ def readiness() -> dict:
 
     app.state.classifier_initialization_attempted = True
     app.state.classifier_error = None
+    base = get_classifier()._classifier
+    reranker = getattr(base, "_reranker", None)
     return {
         "status": "ready",
+        "model": type(reranker).__name__ if reranker is not None else None,
+        "calibrated": bool(getattr(reranker, "confidence_model", None))
+        and getattr(base, "model_catalog_current", False),
+        "model_catalog_current": getattr(base, "model_catalog_current", False),
         "service": "dora-api",
         "classifier_backend": settings.classifier_backend,
         "version": app.version,
@@ -602,7 +608,7 @@ def stream_batch_events(job_id: str) -> StreamingResponse:
     tags=["sources"],
     summary="Фрагмент текста ПП № 1875 по позиции каталога",
 )
-def get_source_fragment(record_id: str, response: Response) -> SourceFragment:
+def get_source_fragment(record_id: str, response: Response, format: str = Query(default="json")):
     """Human-readable source of record behind ``clause_url`` of a classification.
 
     ``pp_link`` in the catalog is a citation, not a URL, so the service serves the
@@ -618,7 +624,11 @@ def get_source_fragment(record_id: str, response: Response) -> SourceFragment:
             status_code=404,
             detail="Позиция каталога с таким record_id не найдена",
         )
-    response.headers["Cache-Control"] = "public, max-age=3600"
+    response.headers["Cache-Control"] = "no-store"
+    if format == "html":
+        from app.services.source_view import render_source
+
+        return HTMLResponse(render_source(fragment), headers={"Cache-Control": "no-store"})
     return fragment
 
 
@@ -690,17 +700,33 @@ def get_catalog_info() -> CatalogInfo:
 
 
 @app.post(
+    "/admin/models/reload",
+    tags=["admin"],
+    summary="Перечитать локальные артефакты модели после обучения",
+    dependencies=[Depends(require_admin_key)],
+)
+def reload_models() -> dict:
+    from app.services.classifier import exclusive_inference
+    from ml.embedder import reset_encoder_cache
+
+    with exclusive_inference():
+        reset_encoder_cache()
+        reset_classifier()
+        return readiness()
+
+
+@app.post(
     "/admin/catalog",
     response_model=CatalogUploadResponse,
     tags=["admin"],
-    summary="Загрузить и проверить новый каталог (CSV или JSON)",
+    summary="Загрузить каталог (CSV/JSON) или ZIP с каталогом и текстом источника",
     dependencies=[Depends(require_admin_key)],
 )
 async def upload_catalog(
     background_tasks: BackgroundTasks,
     file: Annotated[
         UploadFile,
-        File(description="data.csv или data.json с перечнем ПП № 1875"),
+        File(description="data.csv, data.json или ZIP с каталогом и source_text.txt"),
     ],
     dry_run: bool = Query(
         default=False,
@@ -713,7 +739,9 @@ async def upload_catalog(
 ) -> CatalogUploadResponse:
     content = await file.read()
     try:
-        parsed = parse_catalog_bytes(file.filename or "", content)
+        from app.services.catalog_bundle import unpack_catalog
+
+        parsed, source_text, source_metadata = unpack_catalog(file.filename or "", content)
         report = validate_rows(parsed)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -723,8 +751,13 @@ async def upload_catalog(
     reindex_required = False
 
     if report.ok and not dry_run:
+        from app.services.catalog_bundle import bind_source
+
         rows = normalize_rows(parsed)
+        # Fail closed before replacing a catalog: never expose stale excerpts.
+        bind_source(resolve_data_dir(), None, {})
         catalog_info = write_catalog(rows, resolve_data_dir())
+        bind_source(resolve_data_dir(), source_text, source_metadata)
         applied = True
         # Drop caches so the next request sees the new catalog immediately.
         reset_classifier()

@@ -23,7 +23,7 @@ log "3. Ожидание API и Qdrant (до 90 сек)"
 # The official Qdrant image is minimal and does not include curl. Check its
 # /healthz endpoint from the host rather than via an in-container healthcheck.
 for _ in $(seq 1 45); do
-  api_health=$(docker inspect --format='{{.State.Health.Status}}' "$(docker ps -qf name=api | head -1)" 2>/dev/null || echo unknown)
+  api_health=$(docker inspect --format='{{.State.Health.Status}}' "$($COMPOSE ps -q api)" 2>/dev/null || echo unknown)
   if curl -fsS "http://localhost:${QDRANT_PORT:-6333}/healthz" >/dev/null 2>&1; then
     qdrant_health=healthy
   else
@@ -36,6 +36,7 @@ echo "api=$api_health qdrant=$qdrant_health"
 [[ "$api_health" == "healthy" && "$qdrant_health" == "healthy" ]] || { echo "FAIL: healthcheck"; exit 1; }
 
 log "4. Ответ API"
+$COMPOSE exec -T api python -c 'import json, urllib.request; r=json.load(urllib.request.urlopen("http://127.0.0.1:8000/health/ready")); assert r.get("calibrated") and r.get("model_catalog_current"), r; print("Trained model matches catalog")'
 curl -fsS "http://localhost:${API_PORT:-8000}/health" | head -c 300; echo
 curl -fsS -X POST "http://localhost:${API_PORT:-8000}/classify" \
   -H 'Content-Type: application/json' \
@@ -56,7 +57,7 @@ log "5. Данные Qdrant переживают перезапуск"
 $COMPOSE restart qdrant >/dev/null
 sleep 5
 curl -fsS "http://localhost:${QDRANT_PORT:-6333}/healthz" >/dev/null && echo "qdrant restarted OK"
-if [[ -n "${ADMIN_API_KEY:-}" ]]; then
+if [[ -n "${ADMIN_API_KEY:-}" && "${INSTALL_ML:-false}" == "true" ]]; then
   curl -fsS -X POST "http://localhost:${API_PORT:-8000}/admin/reindex" \
     -H "X-Admin-API-Key: ${ADMIN_API_KEY}" | head -c 300; echo
 fi

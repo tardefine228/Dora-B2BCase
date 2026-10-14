@@ -1,246 +1,148 @@
-# Dora B2BCase — Backend API
+# Dora B2BCase — классификатор товаров по перечню ПП № 1875
 
-Бэкенд на **FastAPI** для классификации товаров по **Постановлению
-Правительства РФ № 1875** (национальный режим в закупках): по названию товара
-сервис находит вероятную позицию перечня и код ОКПД2, показывает уверенность и
-альтернативы. Результат — **подсказка для специалиста**, не юридическая проверка.
+React + TypeScript + FastAPI. Сервис предлагает позицию перечня и код ОКПД2 по названию товара, показывает оценку, альтернативы и распознанный фрагмент источника. Это помощник специалиста: выдача не устанавливает применимость нормы и не заменяет проверку редакции НПА.
 
-## Быстрый старт (локально)
+## Запуск
 
-```bash
-python -m pip install -r api/requirements-dev.txt
-python scripts/build_model.py          # лёгкие ML-артефакты в models/ (секунды)
-PYTHONPATH=api uvicorn app.main:app --reload --port 8000
-```
-
-- Демо-UI:  http://localhost:8000/ui/   (корень `/` ведёт туда же)
-  — экспорт батча в CSV (кнопка «Скачать CSV», те же колонки, что у
-  `/classify/batch/{id}.csv`), прогресс через SSE с автоматическим фолбэком на
-  опрос, ссылки «источник» на `GET /source/{record_id}`
-- API:      http://localhost:8000
-- Swagger:  http://localhost:8000/docs
-- Health:   http://localhost:8000/health
-
-## Запуск через Docker (рекомендуемый)
+Нужен установленный и запущенный Docker Engine / Docker Desktop с Compose.
 
 ```bash
 docker compose up --build
 ```
 
-- UI/API:  http://localhost:8000/ui/
-- Qdrant:  http://localhost:6333 (данные в volume `qdrant_data`, каталог — в `catalog_data`)
+Откройте http://localhost:8000/ui/ . Swagger: http://localhost:8000/docs .
+Первая сборка скачивает зависимости, собирает интерфейс и обучает лёгкую модель; заложите несколько минут и подключение к интернету. После сборки режим `catalog` работает без внешних AI-сервисов. Модель внутри Docker лежит в `/app/builtin_models`; пустая внешняя папка `models` больше не скрывает её.
 
-Проверка стека на целевой машине: `bash scripts/docker_smoke.sh --build`
-(чек-лист: `eval/docker-target-checklist.md` — в песочнице разработки Docker
-отсутствовал, образы проверяются этим скриптом на месте).
+Проверьте http://localhost:8000/health/ready : для штатной версии должны быть `status: ready`, `model: LogisticReranker`, `calibrated: true`, `model_catalog_current: true`.
 
-## Режимы классификации (`CLASSIFIER_BACKEND`)
+В этой среде Docker недоступен. Реальный запуск контейнеров нужно проверить на компьютере команды: `bash scripts/docker_smoke.sh --build`. Локальный API, модель, сборка React и автоматические тесты проверены; подробности в [отчёте](docs/RELEASE_NOTES.md).
 
-| Значение | Что делает | Когда использовать |
-| --- | --- | --- |
-| `catalog` | реальный каталог `data/data.csv`: лексическая выдача + обученный реранкер + откалиброванные пороги (**по умолчанию**) | демо, работа без весов ML |
-| `qdrant` | семантический поиск в Qdrant (`ml/`), тот же реранкер и пороги | когда в `models/` лежит модель (например `bge-m3`) |
-| `mock` | детерминированная заглушка `MOCK-001` | разработка фронтенда |
+### Локальный запуск без Docker
 
-**Выбор режима для демо:** каталоговый гибрид работает офлайн и даёт
-top-1 83.7% (top-3 89.2%) на размеченном наборе из 274 строк (`eval/eval_report.md`).
-Семантический режим измерен на том же наборе и настроен отдельно (эксп. 15–16,
-`eval/backend_comparison.md`): на своей рабочей точке (`review = 0.25`) он почти не
-выдумывает подсказок там, где товара нет в перечне — 97.2% против 88.0% у лексики, — но
-отвечает реже (82.5% против 91.6% покрытия) и хуже по top-1, и стоит вчетверо дороже
-(p50 ~171 мс против ~39 мс). Поэтому **по умолчанию остаётся `catalog`**, а `qdrant`
-включается флагом как второй режим с другим компромиссом. Реранкер, формат ответа и
-шкала уверенности общие; пороги решения — свои у каждого режима
-(`QDRANT_OK_FLOOR`/`QDRANT_REVIEW_FLOOR`), контракт v1.0 (`docs/api-contract.md`).
-
-## Ограничение частоты запросов
-
-Ответы 429 отдают `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`;
-клиент определяется по первому адресу `X-Forwarded-For` (за прокси) или по
-сокету. `/health*`, `/metrics` и статика `/ui` не лимитируются, у `/admin/*`
-свой строгий лимит. Счётчик отказов — в `GET /metrics`
-(`rate_limited_total`, `rate_limited_by_path`).
+Нужны Python 3.12 и Node.js 22.18+.
 
 ```bash
-# 21-й запрос подряд с одного адреса в ту же секунду (burst 20) → 429
-for i in $(seq 1 25); do
-  curl -s -o /dev/null -w "%{http_code} " -X POST localhost:8000/classify \
-    -H 'Content-Type: application/json' -H "X-Forwarded-For: 203.0.113.7" \
-    -d '{"name": "Ноутбук Lenovo"}'
-done; echo
-```
-
-Для нагрузочных прогонов (`scripts/load_test.py`, `eval/api-load-test.md`)
-лимит отключают: `RATE_LIMIT_ENABLED=false`. Скрипт сам подсказывает это,
-если получил 429.
-
-## ML-модель и переиндексация
-
-```bash
-# лёгкие артефакты (tfidf-эмбеддер + калиброванный реранкер) — без интернета
+python -m pip install -r api/requirements-dev.txt numpy
 python scripts/build_model.py
-
-# полный семантический режим: положите SentenceTransformers-модель в models/
-INSTALL_ML=true CLASSIFIER_BACKEND=qdrant MODEL_NAME=./models/bge-m3 \
-  ADMIN_API_KEY=<секрет> docker compose up --build
-curl -X POST localhost:8000/admin/reindex -H "X-Admin-API-Key: <секрет>"
+cd frontend
+npm ci
+npm run build
+cd ..
+python -m uvicorn app.main:app --app-dir api --port 8000
 ```
 
-`/admin/reindex` переиндексирует каталог в Qdrant фоном и атомарно переключает
-алиас (поиск не прерывается, повторная переиндексация не оставляет мусор).
-Пороговое ПО ML устанавливается только при `INSTALL_ML=true`; без модели
-работает `EMBEDDER_BACKEND=tfidf` (офлайн-фолбэк, проверен сквозными тестами
-`api/tests/test_ml_e2e.py`).
+Команды подходят и для PowerShell. В передаваемом архиве уже есть свежие файлы `models/reranker.json` и `models/tfidf_embedder.json`; обучение можно пропустить для первого локального запуска. Из GitHub модель воспроизводится командой выше. Не запускайте несколько API-процессов на одном каталоге: блокировки и управление фоновой обработкой рассчитаны на один процесс.
 
-## Переменные окружения (основные)
+## Что умеет интерфейс
 
-| Переменная | По умолчанию | Что делает |
-| --- | --- | --- |
-| `CLASSIFIER_BACKEND` | `catalog` | `catalog` \| `qdrant` \| `mock` (см. таблицу выше) |
-| `ML_ENABLED` | `false` | включает тяжёлый ML-стек (Qdrant-режим) |
-| `DATA_DIR` | `data` | каталог `data.csv`/`data.json` и `source_text.txt` |
-| `CATALOG_PATH` | — | явный путь к `data.csv` (перебивает `DATA_DIR`) |
-| `MODELS_DIR` | `models` | артефакты модели (`reranker.json`, `tfidf_embedder.json`) |
-| `QDRANT_OK_FLOOR` / `QDRANT_REVIEW_FLOOR` | `0.77` / `0.25` | пороги решения для семантического режима; пусто — взять из артефакта (эксп. 16) |
-| `JOB_STORE` | `sqlite` | хранилище фоновых задач: `sqlite` (переживает рестарт) или `memory` |
-| `JOB_STORE_PATH` | `data/jobs.sqlite` | файл sqlite-хранилища (в Docker — volume `jobs_data`) |
-| `JOB_TTL_HOURS` | `24` | сколько хранить завершённые задачи до очистки |
-| `ADMIN_API_KEY` | — | ключ `X-Admin-API-Key`; без него админ-эндпоинты отключены |
-| `MAX_REQUEST_BODY_BYTES` | `1000000` | ограничение размера тела запроса (413) |
-| `RATE_LIMIT_ENABLED` | `true` | включает per-client rate limit (token bucket) |
-| `RATE_LIMIT_RPS` / `RATE_LIMIT_BURST` | `10` / `20` | лимит публичных эндпоинтов (на клиента) |
-| `RATE_LIMIT_ADMIN_RPS` / `..._BURST` | `1` / `2` | отдельный строгий лимит на `/admin/*` |
+- Один товар или точный код ОКПД2; отображение исходного запроса сохраняется.
+- CSV / XLSX до 5 МБ, от 1 до 100 непустых названий, до 500 символов каждое.
+- Автовыбор столбца по заголовку или текстовым ячейкам; предпросмотр трёх названий, ручная настройка, выбор листа Excel.
+- Файлы без заголовка сохраняют первый товар. Пустые ячейки пропускаются, повторяющиеся товары остаются отдельными строками.
+- Прогресс пакетной обработки, сортировка, выгрузка Excel, альтернативные коды.
+- Читаемая страница источника с приложением, позицией, страницами и подсветкой названия.
 
-## Обновление каталога перечня
+В браузерном интерфейсе файлы разбираются локально; API получает только выбранные названия. Старый формат `.xls` нужно сохранить как `.xlsx`.
 
-Регламент — `docs/catalog-update.md`. Коротко: `POST /admin/catalog`
-(`dry_run=true` — проверка без установки) принимает CSV/JSON, валидирует
-строки и атомарно заменяет `data.csv` + `data.json`; затем
-`POST /admin/reindex` (или `auto_reindex=true`). Для проверки файла без API:
-`python scripts/validate_catalog.py new_catalog.csv`.
+## Очистка ввода
 
-## Качество и оценка
+Единая функция `ml/preprocessing.py:clean_query` используется перед классификацией одиночного товара, списка и извлечённых из файла названий. Она нормализует пробелы и Unicode, удаляет невидимые управляющие символы, маркеры списка и явные служебные префиксы.
 
-- Размеченный набор: `eval/labeled_examples.csv` (274 запроса: 166 с кодом, 108
-  «вне перечня» — товар проверен по `data/data.csv`, 17 спорных помечены
-  `disputed=1`).
-- Прогон: `PYTHONPATH=api python eval/run_eval.py [--sweep]` → `eval/eval_report.md`
-  (top-1/top-3, доля верного `not_found`, регрессия на точных названиях
-  каталога, обе шкалы уверенности `confidence_raw`/`confidence` и ECE, свип
-  порога `review`, разбор ошибок).
-- Синтетический бенчмарк без разметки: `PYTHONPATH=api python eval/synthetic_eval.py`
-- Абляция расхождений обучения и API (шортлист, fallback): `PYTHONPATH=api python eval/serving_ablation.py`
-  → `eval/synthetic_report.md` (информационный, CI-гейт его не проверяет).
-- Сравнение режимов `catalog` и `qdrant` на одном наборе:
-  `PYTHONPATH=api python eval/backend_comparison.py --markdown eval/backend_comparison.md`
-  → `eval/backend_comparison.csv` + отчёт; семантический прогон со свипом —
-  `eval/run_eval.py --backend qdrant --output eval/eval_report_qdrant.md`.
-  Итог эксп. 15: лексика 83.7% top-1 против 79.5% у семантики при ×4 латентности,
-  поэтому режим по умолчанию — `catalog` (`eval/experiments.md`).
-- Пороги под семантическую шкалу (эксп. 16): `PYTHONPATH=api python eval/threshold_sweep.py
-  --backend qdrant --output eval/threshold_sweep_qdrant.csv` — снимает сырые уверенности
-  за один проход и считает сетку порогов мгновенно. Выбранная точка `review = 0.25`
-  поднимает точность честного `not_found` с 89.8% до 97.2% (ложных подсказок 13 → 3 из 108)
-  ценой 15 верных подсказок; применяется через `QDRANT_REVIEW_FLOOR`/`QDRANT_OK_FLOOR`.
-- CI-гейт качества: job `quality` в `.github/workflows/lint.yml` пересобирает
-  модель и падает, если метрики ниже порогов `--min-top1/--min-top3/--min-silence/--min-exact`.
-- Эксперименты и выводы: `eval/experiments.md`.
-- Нагрузочный замер: `eval/api-load-test.md`, `scripts/load_test.py`.
-- План следующих работ (мерж, часть D на целевой машине, известное
-  train/serve-расхождение): `docs/next-steps.md`.
+Пример: `Поставка товаров: 1. Кабель USB-C 2 м, не экранированный` → `Кабель USB-C 2 м, не экранированный`.
 
-## Эндпоинты (кратко)
+Бренды, артикулы, размеры, материалы и слова «не»/«без» сохраняются: они могут менять смысл товара. Алгоритм не извлекает безошибочно название из любого свободного текста. Экспериментальный `ml2/text_cleaner.py` не используется в рабочем пути.
+
+## Оценка и ограничения
+
+| Проверка текущей модели, 274 размеченных запроса | Результат |
+| --- | ---: |
+| Первый код верен, среди 166 запросов с ожидаемым кодом | 84,3% |
+| Верный код входит в первые три | 89,2% |
+| Верный отказ, среди 108 запросов вне перечня | 84,3% |
+| Верный ответ по всем 274 запросам | 84,3% |
+| Точные названия каталога, 112 проверок | 100% |
+| ECE отображаемой уверенности среди отвеченных запросов | 0,034 |
+
+Полный отчёт и ошибки: [eval/release_eval_report.md](eval/release_eval_report.md).
+В разметке есть 17 спорных примеров. Это внутренний набор, не независимая экспертиза и не доказательство качества на неизвестных товарах жюри.
+
+Требование 85% по первому ответу на произвольном контрольном наборе пока не подтверждено. Строгий CI-порог правильных отказов 91% также пока не достигнут. В этой доработке пороги не снижались ради зелёного CI и запросы набора не добавлялись в обучение. Исторически пороги уже выбирались по этому набору, поэтому он не является независимым тестом. Проверка кодов учитывает совпадения по иерархии ОКПД2. Следующий шаг — экспертная проверка спорной разметки и новый отложенный набор, затем работа с ложными совпадениями.
+
+Поле `confidence_kind` различает:
+- `calibrated` — оценка обученной модели для соответствующего ей каталога;
+- `exact` — буквальное совпадение кода в каталоге, а не юридическая уверенность;
+- `uncalibrated` — эвристический или устаревший относительно каталога скоринг; интерфейс пишет «Сходство, не вероятность», результат требует проверки.
+
+Строки «Исключение» и «Не указан» не выдаются как положительные позиции. Исключённый код блокирует соответствующую ему позицию, а не весь нормативный документ. Исключения проверяются по явно указанному в запросе коду; для одного лишь бытового названия это не полная юридическая проверка.
+
+## Обновление каталога без пересборки приложения
+
+Настройте `ADMIN_API_KEY` в `.env`. Административные запросы используют заголовок `X-Admin-API-Key`.
+
+Предпочтительный пакет: ZIP с `data.csv` **или** `data.json`, `source_text.txt` и необязательным `metadata.json` в корне. Это обеспечивает согласованность источника и каталога. Проверка: `POST /admin/catalog?dry_run=true`; установка: `POST /admin/catalog`.
+
+CSV/JSON без источника тоже принимается, но старые фрагменты отключаются. После изменения каталога устаревшая модель теряет отметку калиброванной. Обучите и перечитайте её:
+
+```bash
+docker compose exec api python scripts/build_model.py --models-dir /app/builtin_models
+curl -X POST http://localhost:8000/admin/models/reload -H "X-Admin-API-Key: ВАШ_КЛЮЧ"
+```
+
+Для `qdrant` дополнительно нужна переиндексация. Подробный формат, ограничения и порядок действий: [docs/catalog-update.md](docs/catalog-update.md). Обновление перечня выполняет оператор; автоматического получения изменений законодательства нет.
+
+## Режимы
+
+| Режим | Назначение |
+| --- | --- |
+| `catalog` (по умолчанию) | Лексический поиск по каталогу + обученный реранкер, без тяжёлых нейросетевых весов |
+| `qdrant` | Дополнительный поиск по векторам; нужны ML-зависимости, эмбеддер и индекс |
+| `mock` | Заглушка для разработки |
+
+Для Qdrant задайте `INSTALL_ML=true`, `CLASSIFIER_BACKEND=qdrant`, `MODEL_NAME=./models/bge-m3`, положите полные веса модели в `models/bge-m3` и выполните `POST /admin/reindex`. Пока коллекция не создана, readiness может возвращать 503. Старые результаты индекса сверяются с текущим каталогом. Работа с реальными весами BGE в этой доработке заново не измерялась.
+
+Основные настройки есть в [.env.example](.env.example). В Docker каталог, задачи и лёгкая модель находятся на отдельных постоянных volumes. `docker compose down -v` удаляет эти данные; для обычной остановки используйте `docker compose down`.
+
+## Проверки
+
+```bash
+python -m ruff check .
+python -m pytest api/tests -q
+cd frontend
+npm test
+npm run build
+cd ..
+python scripts/release_smoke.py --base-url http://127.0.0.1:8000
+```
+
+Для pytest и оценочных скриптов установите `PYTHONPATH=api` в окружении. PowerShell: `$env:PYTHONPATH="api"`; Bash: `export PYTHONPATH=api`.
+
+```bash
+python eval/run_eval.py --sweep --output eval/release_eval_report.md
+```
+
+Замер скорости запускайте на свежем API с пустым кэшем. Скрипт использует 20 разных одиночных запросов и ещё 100 других реальных названий. Результат локального прогона: [eval/release_smoke.json](eval/release_smoke.json).
+
+## API
 
 | Метод | Путь | Назначение |
 | --- | --- | --- |
-| POST | `/classify` | один товар → `ClassifyResponse` (контракт v1.0) |
-| POST | `/classify/batch` | до 100 товаров → фоновая задача с прогрессом |
-| GET | `/classify/batch/{job_id}` | статус/результат задачи |
-| GET | `/classify/batch/{job_id}/events` | SSE-прогресс (`progress`, `done`) |
-| GET | `/classify/batch/{job_id}.csv` | результат батча в CSV (`;`, UTF-8 BOM) |
-| GET | `/source/{record_id}` | фрагмент текста ПП № 1875 — источник для `clause_url` |
-| GET | `/health`, `/health/ready`, `/metrics` | liveness/readiness/метрики |
-| GET/POST | `/admin/catalog` | сведения о каталоге / загрузка нового (ключ `X-Admin-API-Key`) |
-| POST | `/admin/reindex` | переиндексация Qdrant (ключ `X-Admin-API-Key`) |
+| POST | `/classify` | Один товар |
+| POST | `/classify/batch` | Задача до 100 товаров |
+| GET | `/classify/batch/{id}` | Прогресс и результаты |
+| GET | `/classify/batch/{id}.csv` | CSV-экспорт |
+| GET | `/source/{record_id}` | JSON-фрагмент источника |
+| GET | `/source/{record_id}?format=html` | Читаемый фрагмент |
+| GET | `/health/ready` | Состояние классификатора и соответствие модели каталогу |
+| GET/POST | `/admin/catalog` | Информация / обновление |
+| POST | `/admin/models/reload` | Перечитать локальную модель |
+| POST | `/admin/reindex` | Фоновая переиндексация Qdrant |
 
-Полный контракт результата — `docs/api-contract.md`; он закреплён
-`api/tests/test_contract.py` и используется фронтендом `frontend/`.
+Существующий контракт v1.0 сохранён, добавлены необязательные поля. Описания запросов и ограничений: [docs/api-contract.md](docs/api-contract.md).
 
-### Пример ответа и ссылка на источник
+## Демонстрация до пяти минут
 
-```bash
-curl -s localhost:8000/classify -H 'Content-Type: application/json' \
-  -d '{"name": "Электрочайники"}'
-```
-
-```json
-{
-  "query": "Электрочайники",
-  "code": "27.51.24.110",
-  "title": "Электрочайники",
-  "confidence": 0.9976,
-  "confidence_raw": 0.8799,
-  "status": "ok",
-  "clause_ref": "Приложение 2, позиция 339",
-  "clause_url": "/source/2-339-01",
-  "alternatives": [ { "code": "27.32", "title": "…", "confidence": 0.0165, "clause_ref": "…", "clause_url": "/source/2-113-01" } ],
-  "latency_ms": 3.1,
-  "contract_version": "1.0"
-}
-```
-
-`pp_link` в каталоге — это цитата («ПП № 1875, приложение 2, позиция 339, стр. 64»), а
-не URL, поэтому источник отдаёт сам сервис: `clause_url` ведёт на `GET /source/{record_id}`,
-который возвращает страницы `pdf_page_start..pdf_page_end` из `data/source_text.txt`:
-
-```bash
-curl -s localhost:8000/source/2-339-01 | python -m json.tool | head -20
-```
-
-```json
-{
-  "record_id": "2-339-01",
-  "name": "Электрочайники",
-  "okpd2": "27.51.24.110",
-  "clause_ref": "Приложение 2, позиция 339",
-  "pages": { "start": 64, "end": 64 },
-  "text": "…339. Электрочайники 27.51.24.110…",
-  "truncated": false,
-  "source_file": "source_text.txt",
-  "clause_url": "/source/2-339-01"
-}
-```
-
-## Тесты
-
-```bash
-python -m pip install -r api/requirements-dev.txt
-PYTHONPATH=api python -m pytest api/tests -q
-```
-
-## Структура
-
-```
-api/
-  app/
-    main.py            # FastAPI: роуты, admin-каталог, lifespan, статика /ui
-    schemas.py         # контракт v1.0 (Pydantic)
-    job_store.py       # in-memory фоновые задачи
-    core/              # config, logging, correlation id, metrics
-    middleware/        # observe, ограничение размера тела, rate limit
-    services/          # classifier (catalog/mock/qdrant), catalog_io, source_lookup
-  tests/               # API, классификатор, контракт, ML E2E, compose
-frontend/              # демо-UI (React + Vite; собирается в frontend/dist и отдаётся на /ui/)
-ml/                    # эмбеддеры (tfidf/sentence-transformers), индексация,
-                       # поиск, реранкер, лексические мосты, обучение
-models/                # артефакты (генерируются: scripts/build_model.py)
-data/                  # каталог ПП № 1875 (data.csv + data.json)
-eval/                  # размеченный набор, метрики, эксперименты, чек-листы
-docs/                  # api-contract.md, catalog-update.md
-scripts/               # build_model, validate_catalog, load_test, docker_smoke
-```
-
-> Фоновые задачи хранятся в store, выбранном `JOB_STORE` (`sqlite` по умолчанию,
-> файл `JOB_STORE_PATH`): после перезапуска API незавершённые задачи помечаются
-> `failed` с `error="interrupted by restart"`, а завершённые переживают рестарт.
-> Для многопроцессного деплоя всё ещё нужен общий store (Redis/DB).
+1. Покажите задачу закупщика и один запрос со служебными словами.
+2. Откройте результат, альтернативы и читаемый пункт постановления.
+3. Загрузите Excel/CSV, проверьте предпросмотр, обработайте список и скачайте результат.
+4. Покажите проверку ZIP новой редакции через Swagger и поясните защиту от смешивания источников.
+5. Закончите измеренными метриками, ограничениями и планом проверки на новых товарах. Не выдавайте Top-3 за точность первого ответа.

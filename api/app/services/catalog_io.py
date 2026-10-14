@@ -20,10 +20,11 @@ import logging
 import os
 import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.schemas import CatalogInfo, CatalogIssue
+from ml.preprocessing import OKPD2_PATTERN
 
 logger = logging.getLogger("dora.catalog_io")
 
@@ -47,8 +48,6 @@ REQUIRED_COLUMNS = ("name", "okpd2")
 MAX_ROWS = 50_000
 MAX_NAME_LENGTH = 500
 APPENDIX_VALUES = {"1", "2", "3", "4"}
-OKPD2_PATTERN = r"^\d{2}(\.\d{1,2}){0,3}$"
-
 CODE_ROLES_REVIEW = {"Не указан", "Исключение"}
 
 
@@ -316,8 +315,6 @@ def catalog_facts(data_dir: Path) -> CatalogInfo:
         rows=rows,
         columns=columns,
         sha256=digest.hexdigest(),
-        modified_at=datetime.fromtimestamp(latest_mtime, tz=timezone.utc).isoformat(
-            timespec="seconds"
-        ),
+        modified_at=datetime.fromtimestamp(latest_mtime, tz=UTC).isoformat(timespec="seconds"),
         source_files=[path.name for path in existing],
     )

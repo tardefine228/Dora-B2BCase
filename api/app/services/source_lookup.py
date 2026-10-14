@@ -189,19 +189,35 @@ class SourceLookup:
         if row is None:
             return None
 
+        from app.services.catalog_bundle import source_is_current, source_metadata
+
+        if not source_is_current(self.data_dir):
+            raise SourceUnavailableError(
+                "Источник не соответствует каталогу. "
+                "Загрузите ZIP с каталогом и текстом одной редакции."
+            )
+
         pages = self._pages_cached()
         start = _as_int(row.get("pdf_page_start"))
         end = _as_int(row.get("pdf_page_end")) or start
         if start is not None and end is not None and start > end:
             start, end = end, start
+        if start is not None and end is not None and (start < 1 or end - start > 200):
+            raise SourceUnavailableError("Некорректный диапазон страниц в каталоге.")
 
         selected: list[str] = []
         if start is not None and end is not None:
             selected = [pages[page] for page in range(start, end + 1) if page in pages]
-        if not selected:
-            # The page may be missing from the text dump; fall back to the whole
-            # document rather than answering with nothing.
-            selected = [pages[page] for page in sorted(pages)]
+        if (
+            not selected
+            or start is None
+            or end is None
+            or any(page not in pages for page in range(start, end + 1))
+        ):
+            raise SourceUnavailableError(
+                "Нужные страницы источника недоступны; "
+                "обновите текст постановления вместе с каталогом."
+            )
 
         text = "\n\n".join(part for part in selected if part)
         truncated = len(text) > MAX_FRAGMENT_CHARS
@@ -210,6 +226,7 @@ class SourceLookup:
 
         appendix = str(row.get("appendix") or "").strip()
         position = str(row.get("position") or "").strip()
+        edition, source_url = source_metadata(self.data_dir)
         return SourceFragment(
             record_id=record_id,
             name=(row.get("name") or "").strip() or None,
@@ -220,6 +237,8 @@ class SourceLookup:
             truncated=truncated,
             source_file=SOURCE_TEXT_NAME,
             clause_url=clause_url_for(record_id),
+            edition=edition,
+            source_url=source_url,
         )
 
 

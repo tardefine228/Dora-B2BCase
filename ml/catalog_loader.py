@@ -1,14 +1,23 @@
 """Loads the PP-1875 catalog from the parsed JSON file."""
 
+import hashlib
 import json
 
 from ml.config import DEBUG, RAW_DATA_DIR
+from ml.preprocessing import excluded_codes
 
 CATALOG_FILE = "data.json"
 
-# Keep only these code_role values. Empty set = keep everything.
-# Fill it in after running ml/check_catalog.py, e.g. {"Включён"}.
-ACTIVE_CODE_ROLES: set[str] = set()
+
+def catalog_fingerprint(items: list[dict]) -> str:
+    """Stable identity of the catalog actually seen by training and retrieval."""
+    rows = [
+        {key: item.get(key) for key in ("record_id", "name", "pp_code", "excluded_codes")}
+        for item in items
+    ]
+    rows.sort(key=lambda row: json.dumps(row, ensure_ascii=False, sort_keys=True))
+    payload = json.dumps(rows, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def load_catalog() -> list[dict]:
@@ -35,6 +44,7 @@ def _rows_to_items(rows: list[dict]) -> list[dict]:
     """Maps raw parsed rows to the internal catalog format."""
     items: list[dict] = []
     skipped = 0
+    exceptions = excluded_codes(rows)
 
     for idx, row in enumerate(rows, start=1):
         if not isinstance(row, dict):
@@ -43,7 +53,7 @@ def _rows_to_items(rows: list[dict]) -> list[dict]:
         if not name:
             skipped += 1
             continue
-        if ACTIVE_CODE_ROLES and row.get("code_role") not in ACTIVE_CODE_ROLES:
+        if row.get("code_role") in {"Исключение", "Не указан"} or not row.get("okpd2"):
             skipped += 1
             continue
 
@@ -65,6 +75,7 @@ def _rows_to_items(rows: list[dict]) -> list[dict]:
                     f"стр. {row.get('pdf_page_start')}–{row.get('pdf_page_end')}"
                 ),
                 "code_role": row.get("code_role"),
+                "excluded_codes": exceptions.get((str(appendix), str(position)), []),
             }
         )
 

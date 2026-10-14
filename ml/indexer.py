@@ -149,6 +149,8 @@ def index_catalog() -> int:
                         "record_id": item.get("record_id", ""),
                         "pp_code": item.get("pp_code", ""),
                         "pp_link": item.get("pp_link", ""),
+                        "code_role": item.get("code_role", ""),
+                        "excluded_codes": item.get("excluded_codes", []),
                     },
                 )
                 for item, vector in zip(records, vectors, strict=True)
