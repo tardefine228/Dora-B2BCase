@@ -28,7 +28,14 @@ from typing import Protocol
 from app.core.config import settings
 from app.schemas import Alternative, ClassifyResponse
 from app.services.source_lookup import clause_url_for
-from ml.preprocessing import OKPD2_PATTERN, clean_query, excluded_codes, query_hits_exclusion
+from ml.preprocessing import (
+    OKPD2_PATTERN,
+    clean_query,
+    compatible_purpose,
+    excluded_codes,
+    query_hits_exclusion,
+    search_query,
+)
 
 logger = logging.getLogger("dora.classifier")
 
@@ -258,6 +265,7 @@ class CatalogClassifier:
                     "prepared": prepare_candidate(name),
                 }
         self.index = list(by_key.values())
+        self._literal_names = {clean_query(row["name"]).casefold() for row in self.index}
 
     @staticmethod
     def _clause_ref(row: dict) -> str | None:
@@ -298,25 +306,81 @@ class CatalogClassifier:
             return _not_found(normalized_query)
 
         # 2. Lexical shortlist, then the calibrated reranker orders the candidates.
-        query_tokens = set(_tokenize(query_lower))
+        view = search_query(normalized_query)
+        # Literal catalog entries must not be rewritten by product-name aliases.
+        scoring_query = normalized_query if query_lower in self._literal_names else view.text
+        prefixes = () if query_lower in self._literal_names else view.prefixes
+        query_tokens = set(_tokenize(scoring_query))
         if not query_tokens:
             return _not_found(normalized_query)
 
-        shortlist = self._retrieve(normalized_query, query_tokens)
+        shortlist = self._retrieve(scoring_query, query_tokens, prefixes, normalized_query)
         if not shortlist:
             return _not_found(normalized_query)
 
-        return self._rank_to_response(normalized_query, shortlist)
+        if prefixes and view.clarify:
+            alternatives = []
+            seen = set()
+            for score, row in shortlist:
+                if row["okpd2"] in seen:
+                    continue
+                seen.add(row["okpd2"])
+                alternatives.append(
+                    Alternative(
+                        code=row["okpd2"],
+                        title=row["name"],
+                        confidence=round(score, 4),
+                        clause_ref=row["clause_ref"],
+                        clause_url=clause_url_for(row["record_id"]),
+                    )
+                )
+                if len(alternatives) == _MAX_ALTERNATIVES:
+                    break
+            return ClassifyResponse(
+                query=normalized_query,
+                code=None,
+                title=view.clarify,
+                confidence=0.0,
+                confidence_raw=0.0,
+                confidence_kind="uncalibrated",
+                status="review",
+                alternatives=alternatives,
+                latency_ms=0.0,
+            )
 
-    def _retrieve(self, query: str, query_tokens: set[str]) -> list[tuple[float, dict]]:
+        result = self._rank_to_response(scoring_query, shortlist)
+        # Prefix-constrained aliases change the candidate distribution, so old
+        # calibration cannot be advertised for this path. Never inflate its score.
+        if prefixes and result.code:
+            result.confidence_kind = "uncalibrated"
+            result.confidence = round(result.confidence_raw or 0.0, 4)
+            result.status = "review"
+        return result.model_copy(update={"query": normalized_query})
+
+    def _retrieve(
+        self,
+        query: str,
+        query_tokens: set[str],
+        prefixes: tuple[str, ...] = (),
+        original_query: str | None = None,
+    ) -> list[tuple[float, dict]]:
         """Lexical shortlist as ``(retrieval_score, row)`` pairs, best first."""
         from ml.features import lexical_score_prepared, prepare_candidate
         from ml.lexicon import expand_query
 
         prepared_query = prepare_candidate(expand_query(query))
+        exact_prefixes = {row["okpd2"] for row in self.index if row["okpd2"] in prefixes}
         scored: list[tuple[float, dict]] = []
         for row in self.index:
-            if query_hits_exclusion(query, row.get("excluded_codes", [])):
+            if not compatible_purpose(original_query or query, row["name"]):
+                continue
+            if prefixes and not any(
+                row["okpd2"] == prefix
+                or (prefix not in exact_prefixes and row["okpd2"].startswith(prefix + "."))
+                for prefix in prefixes
+            ):
+                continue
+            if query_hits_exclusion(original_query or query, row.get("excluded_codes", [])):
                 continue
             score = lexical_score_prepared(prepared_query, row["prepared"])
             if score <= 0.0:

@@ -13,14 +13,16 @@ const STATUS_LABEL: Record<Status, string> = {
 };
 
 const message = (error: unknown) => error instanceof Error ? error.message : 'Не удалось выполнить действие. Попробуйте ещё раз.';
-const confidenceLabel = (r: Result) => r.confidenceKind === 'calibrated' ? 'Уверенность модели' : r.confidenceKind === 'exact' ? 'Совпадение кода' : 'Сходство, не вероятность';
-const statusLabel = (r: Result) => r.status === 'ok' && r.confidenceKind === 'uncalibrated' ? 'Требует проверки: упрощённый режим' : STATUS_LABEL[r.status];
-const percent = (result: Result) => result.confidence === null ? '—' : `${Math.round(result.confidence * 100)}%`;
+const needsDetails = (r: Result) => r.status === 'review' && !r.code;
+const confidenceLabel = (r: Result) => needsDetails(r) ? 'Нужно уточнение' : r.confidenceKind === 'calibrated' ? 'Уверенность модели' : r.confidenceKind === 'exact' ? 'Совпадение кода' : 'Оценка совпадения';
+const statusLabel = (r: Result) => needsDetails(r) ? 'Уточните название' : r.status === 'ok' && r.confidenceKind === 'uncalibrated' ? 'Требует проверки' : STATUS_LABEL[r.status];
+const percent = (result: Result) => result.confidence === null || needsDetails(result) ? '—' : `${Math.round(result.confidence * 100)}%`;
 
 // Ссылка на пункт постановления: относительная `/source/...` или абсолютная http(s).
 const isSafeUrl = (url: string | null): url is string => !!url && (/^\/source\//.test(url) || /^https?:\/\//i.test(url));
 
 function Source({ result }: { result: Result }) {
+  if (needsDetails(result)) return null;
   if (!isSafeUrl(result.url)) return <span className="muted">Ссылка на пункт недоступна</span>;
   const href = result.url.startsWith('/source/') ? `${result.url}?format=html` : result.url;
   return <a href={href} target="_blank" rel="noreferrer">Открыть пункт постановления ↗</a>;
@@ -28,7 +30,7 @@ function Source({ result }: { result: Result }) {
 
 function Alternatives({ result }: { result: Result }) {
   if (!result.alternatives?.length) return null;
-  return <details><summary>Другие возможные коды ({result.alternatives.length})</summary><ul>
+  return <details open={needsDetails(result)}><summary>Возможные коды ({result.alternatives.length})</summary><ul>
     {result.alternatives.map((a,i) => <li key={i}><strong>{a.code}</strong> — {a.title}
       {isSafeUrl(a.clause_url) && <div><a target="_blank" rel="noreferrer" href={a.clause_url.startsWith('/source/') ? a.clause_url + '?format=html' : a.clause_url}>Источник: {a.clause_ref}</a></div>}
     </li>)}</ul></details>;
