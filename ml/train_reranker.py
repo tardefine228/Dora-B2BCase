@@ -650,7 +650,12 @@ def fit_logistic_named(
 # sample in-list silence 47/88; 0.12 -> 86.1% / 36/88; 0.10 -> 86.7% / 25/88 but the
 # sample starts hinting codes for unlisted goods. 0.12 keeps every out-of-list row of
 # both sets silent while answering a quarter more in-list rows.
-REVIEW_CONFIDENCE_FLOOR = 0.12
+# Re-measured 2026-10 after the typo autocorrection + the second bridge wave
+# (labeled set AND the 100-name sample): 0.12 -> labeled top-1 88.0% but its
+# out-of-list not_found drops to 62.0%; 0.14 -> 87.3% / 69.4% with the sample at
+# 63 exact / 19 silent / 8 wrong; 0.16 -> 84.9% / 76.9% but the sample loses four
+# more rows than it gains. 0.14 keeps out-of-list silence at the baseline level.
+REVIEW_CONFIDENCE_FLOOR = 0.14
 # Minimum confidence for the ``ok`` status (no second look needed). Set in
 # eval/experiments.md, эксп. 13–14: the calibrated threshold alone (0.745) let
 # two wrong answers through on the labeled set; 0.77 keeps one of them out of
@@ -782,9 +787,11 @@ def calibration_confidence(
     "not_found"`` corresponds to the API's zeroed confidence.
     """
     from ml.features import idf_table, lexical_score_prepared, prepare_candidate, stem
+    from ml.fuzzy import autocorrect
 
     # Mirror CatalogClassifier._retrieve exactly: weighted query coverage and
     # the lexicon-bridge bonus, or the fitted display map drifts from production.
+    query = autocorrect(query)
     idf = idf_table([row["name"] for row in index])
     prepared_query = prepare_candidate(expand_query(query), idf=idf)
     bridge_stems = {stem(target) for target in set(bridged_targets(query).values())}

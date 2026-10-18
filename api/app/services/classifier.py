@@ -309,7 +309,11 @@ class CatalogClassifier:
         return None
 
     def classify(self, query: str) -> ClassifyResponse:
-        normalized_query = query.strip()
+        # Typos ("Монитр", "Клавитура") are corrected against the catalog
+        # vocabulary first: stems and embeddings cannot rescue absent tokens.
+        from ml.fuzzy import autocorrect
+
+        normalized_query = autocorrect(query.strip())
         if not normalized_query:
             return _not_found(normalized_query)
 
