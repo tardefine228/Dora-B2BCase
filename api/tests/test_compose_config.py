@@ -122,6 +122,25 @@ def test_dockerfile_builds_ui_and_ships_only_dist() -> None:
     assert "COPY --chown=app:app --from=ui-build /ui/dist ./frontend" in dockerfile
 
 
+def test_dockerfile_keeps_the_big_downloads_out_of_the_code_edit_path() -> None:
+    dockerfile = (ROOT / "api" / "Dockerfile").read_text(encoding="utf-8")
+    lines = dockerfile.splitlines()
+
+    def line_of(needle: str) -> int:
+        return next(i for i, line in enumerate(lines) if needle in line)
+
+    downloads = line_of("download.pytorch.org")
+    app_copy = line_of("COPY --chown=app:app api/app")
+    training = line_of("build_model.py --dense --gate")
+    # The ~1 GB toolchain/model layer must not sit behind application-code layers:
+    # otherwise every code edit invalidates it and rebuilds pay ~10 minutes of
+    # downloads. Training (offline, cheap) may and must see the app code.
+    assert downloads < app_copy < training
+    # A re-run of the download layer must reuse local caches, not the network.
+    assert "--mount=type=cache,target=/root/.cache/pip" in dockerfile
+    assert "--mount=type=cache,target=/root/.cache/huggingface" in dockerfile
+
+
 def test_docker_build_context_keeps_ui_and_source_assets() -> None:
     dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
     dockerfile = (ROOT / "api" / "Dockerfile").read_text(encoding="utf-8")

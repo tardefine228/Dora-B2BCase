@@ -23,7 +23,12 @@ docker compose up --build
 ```
 
 Поднимаются `api`, `worker` (Celery), `postgres`, `redis`, `qdrant`. Первая сборка долгая
-(PyTorch + модель эмбеддингов + обучение реранкера под неё, ~10–15 минут), следующие — из кэша.
+(PyTorch + модель эмбеддингов + обучение реранкера под неё, ~10–15 минут). Повторный
+`docker compose up --build` идёт из кэша: слой с загрузками стоит **до** копирования кода
+и опирается только на файлы требований, поэтому правки кода/UI не вызывают повторных
+загрузок, а pip- и Hugging Face-кэши лежат в BuildKit cache-mount'ах. Обычный
+`docker compose up` (без `--build`) не скачивает ничего и стартует за секунды;
+векторный кэш каталога и коллекции Qdrant переживают рестарт в volumes.
 
 - UI/API:  http://localhost:8000/ui/  ·  Swagger: http://localhost:8000/docs
 - Что реально работает: `curl localhost:8000/health/ready` → блок `vector_search`

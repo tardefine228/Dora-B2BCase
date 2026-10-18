@@ -12,7 +12,6 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     OMP_NUM_THREADS=1 \
     MKL_NUM_THREADS=1 \
@@ -24,33 +23,51 @@ WORKDIR /app
 # and downloaded during the build and a reranker is trained for it. If anything in that
 # step fails (no internet for Hugging Face, ...) the build still succeeds and the service
 # falls back to the offline spaCy vectors; /health/ready reports the embedder in use.
+# README documents INSTALL_TRANSFORMER=false for a ~2 minute build without it.
 ARG INSTALL_TRANSFORMER=true
 ARG EMBEDDER_MODEL=intfloat/multilingual-e5-small
 COPY api/requirements.txt /tmp/requirements.txt
 COPY api/requirements-ml.txt /tmp/requirements-ml.txt
-RUN python -m pip install --no-cache-dir -r /tmp/requirements.txt
+# pip's cache lives in a BuildKit cache mount: a re-run of any pip layer reinstalls
+# from the local cache instead of re-downloading hundreds of megabytes.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install -r /tmp/requirements.txt
 
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app \
     && mkdir -p /app/jobs \
     && chown app:app /app/jobs
+
+# The heavy ML toolchain: torch (CPU) + sentence-transformers + the transformer
+# weights (~1 GB of downloads). Deliberately ordered BEFORE any application code
+# is copied and fed only by the requirement files and the download script, so
+# editing app/ml/ui code cannot invalidate this layer — otherwise every rebuild
+# pays ~10 minutes of downloads again. The Hugging Face cache is a cache mount
+# and the weights are copied out of it, for the same reason.
+COPY scripts/download_model.py ./scripts/download_model.py
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/huggingface \
+    if [ "$INSTALL_TRANSFORMER" = "true" ]; then \
+      ( python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.2,<3.0" \
+        && python -m pip install -r /tmp/requirements-ml.txt \
+        && python scripts/download_model.py "$EMBEDDER_MODEL" /root/.cache/huggingface/embedder \
+        && mkdir -p /opt/models \
+        && cp -a /root/.cache/huggingface/embedder /opt/models/embedder \
+      ) || echo "WARNING: transformer step failed - falling back to spaCy vectors"; \
+    fi
+
+# Application code, copied after the downloads: a code edit re-runs at most the
+# offline training step below, never the toolchain/model layer above.
 COPY --chown=app:app api/app ./app
 COPY --chown=app:app ml ./ml
 # Built UI (index.html + assets/); served by app.main at /ui/.
 COPY --chown=app:app --from=ui-build /ui/dist ./frontend
 COPY --chown=app:app data/data.csv data/data.json data/source_text.txt ./data/
-
-# Transformer step (best effort, see INSTALL_TRANSFORMER above). Runs as root before
-# USER app: installs torch (CPU) + sentence-transformers, bakes the model into
-# /opt/models/embedder and trains the reranker that uses that model's vector features.
 COPY scripts ./scripts
 # Labeled set + scorer: the transformer step keeps vector features only if they help.
 COPY eval/run_eval.py eval/labeled_examples.csv ./eval/
 RUN if [ "$INSTALL_TRANSFORMER" = "true" ]; then \
-      ( python -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch>=2.2,<3.0" \
-        && python -m pip install --no-cache-dir -r /tmp/requirements-ml.txt \
-        && python scripts/download_model.py "$EMBEDDER_MODEL" /opt/models/embedder \
-        && DATA_DIR=/app/data EMBEDDER_BACKEND=sentence-transformers MODEL_NAME=/opt/models/embedder \
-           MODEL_LOCAL_ONLY=true python scripts/build_model.py --dense --gate --models-dir /app/ml/artifacts \
+      ( DATA_DIR=/app/data EMBEDDER_BACKEND=sentence-transformers MODEL_NAME=/opt/models/embedder \
+         MODEL_LOCAL_ONLY=true python scripts/build_model.py --dense --gate --models-dir /app/ml/artifacts \
       ) || echo "WARNING: transformer step failed - falling back to spaCy vectors"; \
     fi
 RUN chown -R app:app /app/ml /opt/models 2>/dev/null || true
