@@ -45,7 +45,7 @@ from ml.features import (
     stems,
     tokens,
 )
-from ml.lexicon import expand_query
+from ml.lexicon import bridged_targets, expand_query
 from ml.reranker import (
     FEATURE_NAMES,
     GROUP_FEATURE_NAMES,
@@ -645,7 +645,12 @@ def fit_logistic_named(
 #   0.14 -> top-1 86.1% / top-3 92.2% / тишина 81.5%      0.165 -> 84.9% / 91.0% / 86.1%
 # 0.14 is chosen so the in-scope top-1 (the case metric: goods that ARE in the decree)
 # clears 85%; weaker answers are still labelled `review`, never `ok`, for the specialist.
-REVIEW_CONFIDENCE_FLOOR = 0.14
+# Re-measured 2026-10 after the peripheral bridges + weighted coverage (labeled set AND
+# a real 100-name procurement sample with ground truth): 0.14 -> labeled top-1 85.5%,
+# sample in-list silence 47/88; 0.12 -> 86.1% / 36/88; 0.10 -> 86.7% / 25/88 but the
+# sample starts hinting codes for unlisted goods. 0.12 keeps every out-of-list row of
+# both sets silent while answering a quarter more in-list rows.
+REVIEW_CONFIDENCE_FLOOR = 0.12
 # Minimum confidence for the ``ok`` status (no second look needed). Set in
 # eval/experiments.md, эксп. 13–14: the calibrated threshold alone (0.745) let
 # two wrong answers through on the labeled set; 0.77 keeps one of them out of
@@ -776,15 +781,21 @@ def calibration_confidence(
     Returns ``(raw_confidence, status, predicted_code)``. ``status ==
     "not_found"`` corresponds to the API's zeroed confidence.
     """
-    from ml.features import lexical_score_prepared, prepare_candidate
+    from ml.features import idf_table, lexical_score_prepared, prepare_candidate, stem
 
-    prepared_query = prepare_candidate(expand_query(query))
+    # Mirror CatalogClassifier._retrieve exactly: weighted query coverage and
+    # the lexicon-bridge bonus, or the fitted display map drifts from production.
+    idf = idf_table([row["name"] for row in index])
+    prepared_query = prepare_candidate(expand_query(query), idf=idf)
+    bridge_stems = {stem(target) for target in set(bridged_targets(query).values())}
     query_tokens = set(calibration_tokens(query))
     if not query_tokens:
         return 0.0, "not_found", None
     scored: list[tuple[float, dict]] = []
     for row in index:
         score = lexical_score_prepared(prepared_query, row["prepared"])
+        if bridge_stems and bridge_stems & row["prepared"].stem_set:
+            score = min(1.0, score + 0.15)
         if score <= 0.0:
             # The API keeps a substring-tolerance pass as a safety net.
             matched = sum(

@@ -293,6 +293,10 @@ class CatalogClassifier:
                     "prepared": prepare_candidate(name),
                 }
         self.index = list(by_key.values())
+        # Stem importance table for weighted query coverage at retrieval time.
+        from ml.features import idf_table
+
+        self._idf = idf_table([row["name"] for row in self.index])
 
     @staticmethod
     def _clause_ref(row: dict) -> str | None:
@@ -346,7 +350,7 @@ class CatalogClassifier:
                 self.index,
                 shortlist,
                 normalized_query,
-                prepare_candidate(expand_query(normalized_query)),
+                prepare_candidate(expand_query(normalized_query), idf=self._idf),
             )
         else:
             fused = [(score, row, 0.0, 0.0) for score, row in shortlist]
@@ -357,13 +361,19 @@ class CatalogClassifier:
 
     def _retrieve(self, query: str, query_tokens: set[str]) -> list[tuple[float, dict]]:
         """Lexical shortlist as ``(retrieval_score, row)`` pairs, best first."""
-        from ml.features import lexical_score_prepared, prepare_candidate
-        from ml.lexicon import expand_query
+        from ml.features import lexical_score_prepared, prepare_candidate, stem
+        from ml.lexicon import bridged_targets, expand_query
 
-        prepared_query = prepare_candidate(expand_query(query))
+        prepared_query = prepare_candidate(expand_query(query), idf=self._idf)
+        # A bridged product word ("принтер" -> "вывода") is a deliberate lexicon
+        # decision: candidates containing the category word get a retrieval bonus
+        # so abstract official names outrank stem-accidental junk ("печать" ~ "печи").
+        bridge_stems = {stem(target) for target in set(bridged_targets(query).values())}
         scored: list[tuple[float, dict]] = []
         for row in self.index:
             score = lexical_score_prepared(prepared_query, row["prepared"])
+            if bridge_stems and bridge_stems & row["prepared"].stem_set:
+                score = min(1.0, score + 0.15)
             if score <= 0.0:
                 # Keep the historical token-substring tolerance as a safety net.
                 matched = sum(

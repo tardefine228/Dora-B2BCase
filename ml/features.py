@@ -252,8 +252,10 @@ COMPOUND_PREFIXES = frozenset(
 # Derivational suffixes between a noun stem and its relational adjective:
 # "металл" ~ "металлическ", "двер" ~ "дверн", "кож" ~ "кожан". Only applied to
 # stems of 4+ characters so that "газ"/"газов" style collisions stay out.
+# Note: no bare "ат" — it glued unrelated stems ("печать" ~ "печи"),
+# dragging therapeutic lasers and microwave ovens into printer shortlists.
 DERIVATIONAL_SUFFIXES = frozenset(
-    {"ическ", "еск", "ск", "ов", "ев", "ан", "ян", "н", "ин", "енн", "онн", "ист", "ат"}
+    {"ическ", "еск", "ск", "ов", "ев", "ан", "ян", "н", "ин", "енн", "онн", "ист"}
 )
 DERIVATIONAL_WEIGHT = 0.8
 MIN_DERIVATIONAL_STEM = 4
@@ -399,12 +401,21 @@ LOW_SIGNAL_WORDS = frozenset(
         "переносной",
         "диагональ",
         "дюйм",
+        # Spec/packaging words that never name a position of the decree list
+        # (zero occurrences in data/data.csv): counting them as "unknown product
+        # words" diluted query coverage and silenced in-list products
+        # ("Электрочайник … корпус из нержавеющей стали; 1.7 л").
+        "экран",
+        "память",
+        "разрешение",
+        "поколение",
+        "корпус",
+        "литр",
         "см",
         "мм",
         "метр",
         "кг",
         "грамм",
-        "литр",
         "ватт",
         "вольт",
         "шт",
@@ -601,7 +612,12 @@ def lexical_score(query: str, candidate: str) -> float:
 
 @dataclass
 class PreparedText:
-    """Precomputed features so retrieval can score many candidates cheaply."""
+    """Precomputed features so retrieval can score many candidates cheaply.
+
+    ``weights`` is optional: stem importance for the *query* side (head noun and
+    bridged category words dominate, spec modifiers and Cyrillic unknowns weigh
+    less). Without it coverage stays uniform, as before.
+    """
 
     raw: str
     normalized: str
@@ -609,10 +625,14 @@ class PreparedText:
     stem_set: set[str]
     chars: Counter[str]
     digit_set: set[str]
+    weights: dict[str, float] | None = None
 
 
-def prepare_candidate(text: str) -> PreparedText:
+def prepare_candidate(text: str, idf: dict[str, float] | None = None) -> PreparedText:
     stem_list = stems(text)
+    weights = None
+    if idf is not None:
+        weights = query_stem_weights(set(stem_list), idf, head=query_head(text))
     return PreparedText(
         raw=text,
         normalized=normalize(text),
@@ -620,6 +640,7 @@ def prepare_candidate(text: str) -> PreparedText:
         stem_set=set(stem_list),
         chars=char_ngrams(text),
         digit_set=digits(text),
+        weights=weights,
     )
 
 
@@ -631,8 +652,19 @@ def lexical_score_prepared(query: PreparedText, candidate: PreparedText) -> floa
 
     query_stems = query.stem_set
     candidate_stems = candidate.stem_set
-    query_hits = sum(best_match_weight(stem, candidate_stems) for stem in query_stems)
-    cover = query_hits / len(query_stems) if query_stems else 0.0
+    if query.weights:
+        # Weighted coverage: a hit of the head noun ("электрочайник", bridged
+        # "устройства вывода") must not be diluted by unmatched spec words.
+        total = sum(query.weights.values())
+        hit = sum(
+            query.weights[stem] * best_match_weight(stem, candidate_stems)
+            for stem in query_stems
+            if stem in query.weights
+        )
+        cover = hit / total if total else 0.0
+    else:
+        query_hits = sum(best_match_weight(stem, candidate_stems) for stem in query_stems)
+        cover = query_hits / len(query_stems) if query_stems else 0.0
 
     if cover == 0.0:
         # Character similarity still catches typos/transliterations.
