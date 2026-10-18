@@ -43,7 +43,17 @@ docker compose up --build
   резать именно их: сборка теперь проверяет доступность Hugging Face **до** тяжёлых скачиваний
   и печатает в лог, какой именно шаг упал. Успех виден так: в логе сборки есть строка
   `Model intfloat/multilingual-e5-small saved to …`, без `WARNING: transformer step failed`,
-  а `/health/ready` → `vector_search.embedder` содержит `e5`, а не `spacy`.
+  а `/health/ready` → `vector_search.embedder` = `st-embedder`, `dim` = 384 (у spaCy —
+  `spacy-ru_core_news_md`, `dim` = 300).
+- Сборка успешна, но `/health/ready` всё равно показывает `spacy-ru_core_news_md`? Почти
+  всегда виноват устаревший `MODEL_NAME` в вашем `.env` (например, `./models/bge-m3` из
+  старых ревизий `.env.example`): переменная из `.env` перекрывает путь `/opt/models/embedder`,
+  запечённый в образе, каталог не находится — и рантайм молча откатывается на spaCy.
+  Диагностика: `docker compose exec api ls /opt/models/embedder` (модель в образе есть?)
+  и `docker compose exec api printenv MODEL_NAME` (что реально видит сервис?). Лечение —
+  убрать строку `MODEL_NAME` из `.env` и `docker compose up -d`; пересборка не нужна.
+  Первый старт после переключения займёт минуту-другую: каталог переэмбедится в новую
+  коллекцию Qdrant (имя коллекции включает тег эмбеддера, старая удаляется автоматически).
 
 Проверка стека на целевой машине: `bash scripts/docker_smoke.sh --build`.
 

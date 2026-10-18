@@ -2,8 +2,9 @@
 
 Three interchangeable backends implement the same ``encode()`` contract:
 
-* ``sentence-transformers`` — a real transformer model (for example ``BAAI/bge-m3``)
-  from a local SentenceTransformers directory. Heavy, optional, best quality.
+* ``sentence-transformers`` — a real transformer model (for example
+  ``intfloat/multilingual-e5-small``) from a local SentenceTransformers directory.
+  Heavy, optional, best quality.
 * ``spacy`` — static Russian word vectors (``ru_core_news_md``), IDF-weighted
   mean per phrase. Offline, no torch; semantic but coarse.
 * ``tfidf`` — a self-contained hashing TF-IDF embedder fitted on the catalog

@@ -71,7 +71,7 @@ class Settings:
             if origin.strip()
         ]
 
-        self.model_name = os.getenv("MODEL_NAME", "BAAI/bge-m3").strip()
+        self.model_name = os.getenv("MODEL_NAME", "intfloat/multilingual-e5-small").strip()
         self.model_device = os.getenv("MODEL_DEVICE", "cpu").strip() or "cpu"
         self.model_local_only = _bool("MODEL_LOCAL_ONLY", default=False)
 

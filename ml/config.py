@@ -28,7 +28,7 @@ TFIDF_NGRAMS: tuple[int, ...] = tuple(
 SPACY_MODEL: str = os.getenv("SPACY_MODEL", "ru_core_news_md").strip()
 
 # === Model ===
-_model_value = os.getenv("MODEL_NAME", "BAAI/bge-m3").strip()
+_model_value = os.getenv("MODEL_NAME", "intfloat/multilingual-e5-small").strip()
 _model_path = Path(_model_value).expanduser()
 if (
     _model_path.is_absolute()
@@ -37,7 +37,7 @@ if (
 ):
     MODEL_NAME: str = str(_project_path(_model_value))
 else:
-    # Keep hub IDs such as `BAAI/bge-m3` unchanged.
+    # Keep hub IDs such as `intfloat/multilingual-e5-small` unchanged.
     MODEL_NAME = _model_value
 MODEL_DEVICE: str = os.getenv("MODEL_DEVICE", "cpu")
 MODEL_LOCAL_ONLY: bool = os.getenv("MODEL_LOCAL_ONLY", "false").lower() in {
