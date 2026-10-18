@@ -87,6 +87,12 @@ GROUP_FEATURE_NAMES: tuple[str, ...] = (
     "top_dense_cosine",
     "top_dense_gap",
     "query_dense_top",
+    # Bridge-rescued candidates ("принтер" -> "Устройства ввода или вывода…") have
+    # almost zero stem overlap with the official name, so coverage features alone
+    # starve their confidence. The pair model already sees the lexicon bridge;
+    # these two features let the group model trust it too.
+    "top_bridge_canonical",
+    "top_bridge_cover",
 )
 SOFTMAX_TEMPERATURE = 0.15
 
@@ -275,6 +281,8 @@ def extract_group_features(query: str, ranked: list[RankedCandidate]) -> dict[st
         "top_dense_cosine": top.features.get("dense_cosine", 0.0),
         "top_dense_gap": top.features.get("dense_gap", 0.0),
         "query_dense_top": float(top.payload.get("dense_top", 0.0) or 0.0),
+        "top_bridge_canonical": top.features.get("bridge_canonical", 0.0),
+        "top_bridge_cover": top.features.get("bridge_cover", 0.0),
     }
 
 
