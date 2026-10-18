@@ -651,11 +651,11 @@ def fit_logistic_named(
 # sample starts hinting codes for unlisted goods. 0.12 keeps every out-of-list row of
 # both sets silent while answering a quarter more in-list rows.
 # Re-measured 2026-10 after the typo autocorrection + the second bridge wave
-# (labeled set AND the 100-name sample): 0.12 -> labeled top-1 88.0% but its
-# out-of-list not_found drops to 62.0%; 0.14 -> 87.3% / 69.4% with the sample at
-# 63 exact / 19 silent / 8 wrong; 0.16 -> 84.9% / 76.9% but the sample loses four
-# more rows than it gains. 0.14 keeps out-of-list silence at the baseline level.
-REVIEW_CONFIDENCE_FLOOR = 0.14
+# (labeled set AND the 100-name sample): 0.12 -> sample 66 exact / 16 silent but
+# labeled not_found 68.5; 0.13 -> the same sample with not_found 72.2; 0.14 ->
+# sample 64 / 20 for not_found 75.9. 0.13 is the knee: every extra point of
+# out-of-list silence above it costs two answered rows of the real sample.
+REVIEW_CONFIDENCE_FLOOR = 0.13
 # Minimum confidence for the ``ok`` status (no second look needed). Set in
 # eval/experiments.md, эксп. 13–14: the calibrated threshold alone (0.745) let
 # two wrong answers through on the labeled set; 0.77 keeps one of them out of
