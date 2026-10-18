@@ -13,15 +13,33 @@ def test_source_endpoint_serves_a_readable_page_to_browsers() -> None:
         )
         assert page.status_code == 200
         assert page.headers["content-type"].startswith("text/html")
+        assert "no-cache" in page.headers.get("cache-control", "").lower()
         assert "<!doctype html>" in page.text
         assert "Компьютеры портативные" in page.text
         # The decree entry is highlighted and the official sources are linked.
         assert 'class="pos hit"' in page.text
+        assert 'id="hit"' in page.text
         assert 'class="code">26.20.11<' in page.text
         assert "publication.pravo.gov.ru" in page.text
         assert "government.ru" in page.text
         # Raw JSON must not leak into the browser view.
         assert '"record_id"' not in page.text
+
+
+def test_source_endpoint_renders_structured_view_for_refrigerators() -> None:
+    fridge_id = "1-56-01"
+    with TestClient(app) as client:
+        page = client.get(
+            f"/source/{fridge_id}", headers={"Accept": "text/html,application/xhtml+xml"}
+        )
+        assert page.status_code == 200
+        assert "no-cache" in page.headers.get("cache-control", "").lower()
+        assert "Шкафы холодильные" in page.text
+        assert 'class="pos hit"' in page.text
+        assert 'id="hit"' in page.text
+        assert 'class="code">28.25.13.111<' in page.text
+        # Must not be rendered as a raw monospace <pre> block.
+        assert "<pre>" not in page.text
 
 
 def test_source_endpoint_keeps_json_for_api_clients() -> None:

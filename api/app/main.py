@@ -634,22 +634,29 @@ def get_source_fragment(
             status_code=404,
             detail="Позиция каталога с таким record_id не найдена",
         )
-    response.headers["Cache-Control"] = "public, max-age=3600"
     if "text/html" in request.headers.get("accept", ""):
         return HTMLResponse(
-            _source_page(fragment), headers={"Cache-Control": "public, max-age=3600"}
+            _source_page(fragment),
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
         )
+    response.headers["Cache-Control"] = "public, max-age=3600"
     return fragment
 
 
-def _render_decree(text: str, code: str) -> str:
+def _render_decree(text: str, code: str, target_pos: str = "") -> str:
     """Structure the decree pages: numbered positions, codes as badges."""
     import re
     from html import escape
 
     entry_re = re.compile(r"^(\d{1,5})\.\s+(.*)$")
-    code_re = re.compile(r"\s(\d+(?:\.\d+){1,4})$")
+    # Matches OKPD2 codes (2-5 dotted groups), optionally followed by min share pct.
+    code_re = re.compile(r"\s(\d{2}(?:\.\d+){1,4})(?:\s+\d{1,3}(?:[.,]\d+)?)?$")
     out: list[str] = []
+    has_hit = False
     for raw in text.splitlines():
         line = raw.rstrip()
         if not line.strip():
@@ -660,16 +667,26 @@ def _render_decree(text: str, code: str) -> str:
             continue
         entry = entry_re.match(line.strip())
         if entry:
+            pos_num = entry.group(1)
             body = entry.group(2)
             hit_code = ""
             coded = code_re.search(body)
             if coded:
                 hit_code = coded.group(1)
                 body = body[: coded.start()]
-            hit = " hit" if hit_code and hit_code == code else ""
+            is_hit = False
+            if hit_code and hit_code == code:
+                is_hit = True
+            elif target_pos and pos_num == target_pos:
+                is_hit = True
+            hit = " hit" if is_hit else ""
+            id_attr = ""
+            if is_hit and not has_hit:
+                id_attr = ' id="hit"'
+                has_hit = True
             badge = f'<span class="code">{escape(hit_code)}</span>' if hit_code else ""
             out.append(
-                f'<div class="pos{hit}"><span class="num">{escape(entry.group(1))}.</span>'
+                f'<div class="pos{hit}"{id_attr}><span class="num">{escape(pos_num)}.</span>'
                 f'<span class="name">{escape(body.strip())}</span>{badge}</div>'
             )
         else:
@@ -694,12 +711,14 @@ def _source_page(fragment: SourceFragment) -> str:
         f"<span>{escape(note)}</span></li>"
         for title, url, note in DECREE_OFFICIAL_SOURCES
     )
-    decree = _render_decree(fragment.text, fragment.okpd2 or "")
+    target_pos = fragment.record_id.split("-")[1] if "-" in fragment.record_id else ""
+    decree = _render_decree(fragment.text, fragment.okpd2 or "", target_pos)
     return f"""<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{escape(fragment.name or fragment.record_id)} — ПП № 1875</title>
 <style>
+html{{scroll-behavior:smooth}}
 body{{margin:0;background:#f4f6fc;color:#141c3b;font:16px/1.6 Inter,Arial,sans-serif}}
 main{{max-width:1020px;margin:0 auto;padding:28px 20px 60px}}
 .topline{{display:flex;justify-content:space-between;align-items:center;gap:12px;
@@ -757,7 +776,14 @@ color:#3a3fd6;border-radius:7px;padding:2px 9px;white-space:nowrap}}
 {decree}
 </section>
 <p class="hint">Позиция, к которой привела классификация, подсвечена жёлтым.</p>
-</main></body></html>"""
+</main>
+<script>
+window.addEventListener('DOMContentLoaded',function(){{
+var hit=document.getElementById('hit');
+if(hit){{hit.scrollIntoView({{behavior:'smooth',block:'center'}});}}
+}});
+</script>
+</body></html>"""
 
 
 @app.post(
