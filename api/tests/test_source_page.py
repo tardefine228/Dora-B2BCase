@@ -15,6 +15,10 @@ def test_source_endpoint_serves_a_readable_page_to_browsers() -> None:
         assert page.headers["content-type"].startswith("text/html")
         assert "<!doctype html>" in page.text
         assert "Компьютеры портативные" in page.text
+        # The decree entry is highlighted and the official sources are linked.
+        assert "<mark>" in page.text
+        assert "publication.pravo.gov.ru" in page.text
+        assert "government.ru" in page.text
         # Raw JSON must not leak into the browser view.
         assert '"record_id"' not in page.text
 

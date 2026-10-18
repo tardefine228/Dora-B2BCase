@@ -87,6 +87,26 @@ from app.tasks import run_batch_job
 configure_logging(settings.log_level)
 logger = logging.getLogger("dora.api")
 
+# Where the specialist can verify the decree text served from data/source_text.txt:
+# (title, url, note) triplets rendered on the /source/{record_id} HTML page.
+DECREE_OFFICIAL_SOURCES: tuple[tuple[str, str, str], ...] = (
+    (
+        "Официальный интернет-портал правовой информации",
+        "http://publication.pravo.gov.ru/document/0001202412250018",
+        "Официальное опубликование 25.12.2024, № 0001202412250018",
+    ),
+    (
+        "Портал Правительства России",
+        "http://government.ru/docs/all/157130/",
+        "Подписан 23.12.2024; там же PDF-оригинал (32 МБ)",
+    ),
+    (
+        "Действующая редакция (Контур.Норматив)",
+        "https://normativ.kontur.ru/document?moduleId=1&documentId=507717",
+        "Текст с изменениями — сверяйте дату редакции перед применением",
+    ),
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -634,24 +654,78 @@ def _source_page(fragment: SourceFragment) -> str:
         )
         if part
     )
+    # The position lines in the decree text carry the OKPD2 code: highlight them
+    # so the specialist sees the exact entry instead of a wall of text.
+    code = fragment.okpd2 or ""
+    marked: list[str] = []
+    for line in fragment.text.splitlines():
+        safe = escape(line)
+        if code and line.strip().endswith(code):
+            marked.append(f"<mark>{safe}</mark>")
+        else:
+            marked.append(safe)
+    meta_items = "".join(
+        f"<li>{part}</li>"
+        for part in (
+            escape(fragment.okpd2) if fragment.okpd2 else "",
+            escape(fragment.clause_ref) if fragment.clause_ref else "",
+            f"стр. {fragment.pages.start}–{fragment.pages.end}" if fragment.pages.end else "",
+        )
+        if part
+    )
+    body = "\n".join(marked)
+    sources = "\n".join(
+        f'<li><a href="{url}" target="_blank" rel="noopener noreferrer">{escape(title)}</a>'
+        f"<span>{escape(note)}</span></li>"
+        for title, url, note in DECREE_OFFICIAL_SOURCES
+    )
     return f"""<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{escape(fragment.name or fragment.record_id)} — ПП № 1875</title>
 <style>
 body{{margin:0;background:#f4f6fc;color:#141c3b;font:16px/1.6 Inter,Arial,sans-serif}}
-main{{max-width:960px;margin:0 auto;padding:32px 20px 60px}}
-h1{{font-size:26px;line-height:1.3;margin:0 0 8px}}
-.meta{{color:#606d90;margin:0 0 24px;font-size:15px}}
-pre{{white-space:pre-wrap;background:#fff;border:1px solid #dbe1ef;border-radius:14px;
-padding:22px;font:14px/1.7 ui-monospace,Consolas,monospace;overflow-wrap:anywhere}}
-.back{{display:inline-block;margin-bottom:20px;color:#454cff;text-decoration:none}}
+main{{max-width:980px;margin:0 auto;padding:28px 20px 60px}}
+.topline{{display:flex;justify-content:space-between;align-items:center;gap:12px;
+flex-wrap:wrap;margin-bottom:22px}}
+.back{{color:#454cff;text-decoration:none;font-weight:600}}
+.decree{{background:#eef0ff;color:#3a3fd6;border-radius:30px;padding:8px 18px;font-size:13px;
+font-weight:600}}
+h1{{font-size:27px;line-height:1.35;margin:0 0 10px;letter-spacing:-.3px}}
+.meta{{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 22px;padding:0;list-style:none}}
+.meta li{{background:#fff;border:1px solid #dbe1ef;border-radius:10px;padding:7px 14px;
+font-size:14px;color:#4c5f94;font-weight:600}}
+.verify{{background:#fff;border:1px solid #dbe1ef;border-radius:16px;padding:20px 24px;
+margin:0 0 22px}}
+.verify h2{{font-size:16px;margin:0 0 6px}}
+.verify p{{margin:0 0 12px;color:#657293;font-size:14px}}
+.verify ul{{margin:0;padding:0;list-style:none;display:grid;gap:10px}}
+.verify a{{color:#454cff;font-weight:600;text-decoration:none}}
+.verify a:hover{{text-decoration:underline}}
+.verify li span{{display:block;color:#7584a8;font-size:13px;margin-top:2px}}
+pre{{white-space:pre-wrap;background:#fff;border:1px solid #dbe1ef;border-radius:16px;
+padding:24px;font:14px/1.75 ui-monospace,Consolas,monospace;overflow-wrap:anywhere;margin:0}}
+mark{{background:#fff3bf;border-radius:4px;padding:1px 3px;font-weight:700}}
+.hint{{color:#7584a8;font-size:13px;margin:14px 2px 0}}
+@media print{{.topline,.verify{{display:none}} body{{background:#fff}}
+pre{{border:0;padding:0}}}}
 </style></head>
 <body><main>
+<div class="topline">
 <a class="back" href="javascript:history.back()">← назад к результатам</a>
+<span class="decree">ПП РФ № 1875 от 23.12.2024</span>
+</div>
 <h1>{escape(fragment.name or fragment.record_id)}</h1>
-<p class="meta">{meta or escape(fragment.record_id)}</p>
-<pre>{escape(fragment.text)}</pre>
+<ul class="meta">{meta_items}</ul>
+<section class="verify">
+<h2>Удостовериться в подлинности</h2>
+<p>Текст ниже приведён из рабочего файла постановления; первоисточники — здесь:</p>
+<ul>
+{sources}
+</ul>
+</section>
+<pre>{body}</pre>
+<p class="hint">Позиция перечня в тексте подсвечена. {escape(meta)}</p>
 </main></body></html>"""
 
 
