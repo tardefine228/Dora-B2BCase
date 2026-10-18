@@ -642,28 +642,44 @@ def get_source_fragment(
     return fragment
 
 
+def _render_decree(text: str, code: str) -> str:
+    """Structure the decree pages: numbered positions, codes as badges."""
+    import re
+    from html import escape
+
+    entry_re = re.compile(r"^(\d{1,5})\.\s+(.*)$")
+    code_re = re.compile(r"\s(\d+(?:\.\d+){1,4})$")
+    out: list[str] = []
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        if not line.strip():
+            continue
+        page = re.match(r"^=== СТРАНИЦА (\d+) ===$", line.strip())
+        if page:
+            out.append(f'<div class="page-break">страница {escape(page.group(1))}</div>')
+            continue
+        entry = entry_re.match(line.strip())
+        if entry:
+            body = entry.group(2)
+            hit_code = ""
+            coded = code_re.search(body)
+            if coded:
+                hit_code = coded.group(1)
+                body = body[: coded.start()]
+            hit = " hit" if hit_code and hit_code == code else ""
+            badge = f'<span class="code">{escape(hit_code)}</span>' if hit_code else ""
+            out.append(
+                f'<div class="pos{hit}"><span class="num">{escape(entry.group(1))}.</span>'
+                f'<span class="name">{escape(body.strip())}</span>{badge}</div>'
+            )
+        else:
+            out.append(f'<div class="cont">{escape(line.strip())}</div>')
+    return "\n".join(out)
+
+
 def _source_page(fragment: SourceFragment) -> str:
     from html import escape
 
-    meta = " · ".join(
-        part
-        for part in (
-            escape(fragment.okpd2) if fragment.okpd2 else "",
-            escape(fragment.clause_ref) if fragment.clause_ref else "",
-            f"стр. {fragment.pages.start}–{fragment.pages.end}" if fragment.pages.end else "",
-        )
-        if part
-    )
-    # The position lines in the decree text carry the OKPD2 code: highlight them
-    # so the specialist sees the exact entry instead of a wall of text.
-    code = fragment.okpd2 or ""
-    marked: list[str] = []
-    for line in fragment.text.splitlines():
-        safe = escape(line)
-        if code and line.strip().endswith(code):
-            marked.append(f"<mark>{safe}</mark>")
-        else:
-            marked.append(safe)
     meta_items = "".join(
         f"<li>{part}</li>"
         for part in (
@@ -673,59 +689,74 @@ def _source_page(fragment: SourceFragment) -> str:
         )
         if part
     )
-    body = "\n".join(marked)
     sources = "\n".join(
         f'<li><a href="{url}" target="_blank" rel="noopener noreferrer">{escape(title)}</a>'
         f"<span>{escape(note)}</span></li>"
         for title, url, note in DECREE_OFFICIAL_SOURCES
     )
+    decree = _render_decree(fragment.text, fragment.okpd2 or "")
     return f"""<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{escape(fragment.name or fragment.record_id)} — ПП № 1875</title>
 <style>
 body{{margin:0;background:#f4f6fc;color:#141c3b;font:16px/1.6 Inter,Arial,sans-serif}}
-main{{max-width:980px;margin:0 auto;padding:28px 20px 60px}}
+main{{max-width:1020px;margin:0 auto;padding:28px 20px 60px}}
 .topline{{display:flex;justify-content:space-between;align-items:center;gap:12px;
 flex-wrap:wrap;margin-bottom:22px}}
 .back{{color:#454cff;text-decoration:none;font-weight:600}}
-.decree{{background:#eef0ff;color:#3a3fd6;border-radius:30px;padding:8px 18px;font-size:13px;
-font-weight:600}}
+.decree-badge{{background:#eef0ff;color:#3a3fd6;border-radius:30px;padding:8px 18px;
+font-size:13px;font-weight:600}}
 h1{{font-size:27px;line-height:1.35;margin:0 0 10px;letter-spacing:-.3px}}
 .meta{{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 22px;padding:0;list-style:none}}
 .meta li{{background:#fff;border:1px solid #dbe1ef;border-radius:10px;padding:7px 14px;
 font-size:14px;color:#4c5f94;font-weight:600}}
 .verify{{background:#fff;border:1px solid #dbe1ef;border-radius:16px;padding:20px 24px;
-margin:0 0 22px}}
+margin:0 0 26px}}
 .verify h2{{font-size:16px;margin:0 0 6px}}
 .verify p{{margin:0 0 12px;color:#657293;font-size:14px}}
 .verify ul{{margin:0;padding:0;list-style:none;display:grid;gap:10px}}
 .verify a{{color:#454cff;font-weight:600;text-decoration:none}}
 .verify a:hover{{text-decoration:underline}}
 .verify li span{{display:block;color:#7584a8;font-size:13px;margin-top:2px}}
-pre{{white-space:pre-wrap;background:#fff;border:1px solid #dbe1ef;border-radius:16px;
-padding:24px;font:14px/1.75 ui-monospace,Consolas,monospace;overflow-wrap:anywhere;margin:0}}
-mark{{background:#fff3bf;border-radius:4px;padding:1px 3px;font-weight:700}}
-.hint{{color:#7584a8;font-size:13px;margin:14px 2px 0}}
+.doc{{background:#fff;border:1px solid #dbe1ef;border-radius:16px;padding:26px 30px}}
+.doc h3{{margin:0 0 18px;font-size:15px;color:#657293;font-weight:600;
+text-transform:uppercase;letter-spacing:.06em}}
+.page-break{{margin:26px 0 12px;color:#9aa3bd;font-size:12px;letter-spacing:.12em;
+text-transform:uppercase;border-bottom:1px dashed #e1e6f1;padding-bottom:6px}}
+.page-break:first-child{{margin-top:0}}
+.pos{{display:flex;align-items:baseline;gap:10px;padding:7px 12px;border-radius:10px;
+border:1px solid transparent}}
+.pos .num{{color:#9aa3bd;min-width:2.6em;font-variant-numeric:tabular-nums}}
+.pos .name{{flex:1}}
+.pos .code{{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:#eef0ff;
+color:#3a3fd6;border-radius:7px;padding:2px 9px;white-space:nowrap}}
+.pos.hit{{background:#fff3bf;border-color:#f0d264}}
+.pos.hit .name{{font-weight:700}}
+.cont{{color:#55618a;padding:0 12px 6px 4.4em;font-size:15px}}
+.hint{{color:#7584a8;font-size:13px;margin:16px 2px 0}}
 @media print{{.topline,.verify{{display:none}} body{{background:#fff}}
-pre{{border:0;padding:0}}}}
+.doc{{border:0;padding:0}}}}
 </style></head>
 <body><main>
 <div class="topline">
 <a class="back" href="javascript:history.back()">← назад к результатам</a>
-<span class="decree">ПП РФ № 1875 от 23.12.2024</span>
+<span class="decree-badge">ПП РФ № 1875 от 23.12.2024</span>
 </div>
 <h1>{escape(fragment.name or fragment.record_id)}</h1>
 <ul class="meta">{meta_items}</ul>
 <section class="verify">
 <h2>Удостовериться в подлинности</h2>
-<p>Текст ниже приведён из рабочего файла постановления; первоисточники — здесь:</p>
+<p>Ниже — рабочий файл постановления; первоисточники и действующая редакция:</p>
 <ul>
 {sources}
 </ul>
 </section>
-<pre>{body}</pre>
-<p class="hint">Позиция перечня в тексте подсвечена. {escape(meta)}</p>
+<section class="doc">
+<h3>Текст перечня (фрагмент страниц {fragment.pages.start}–{fragment.pages.end})</h3>
+{decree}
+</section>
+<p class="hint">Позиция, к которой привела классификация, подсвечена жёлтым.</p>
 </main></body></html>"""
 
 
