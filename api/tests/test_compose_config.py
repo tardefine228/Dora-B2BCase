@@ -67,6 +67,16 @@ def test_stack_has_postgres_redis_and_a_celery_worker(compose) -> None:
     assert services["redis"]["healthcheck"]["test"]
 
 
+def test_worker_sees_the_ml_package(compose) -> None:
+    # The celery console script does not put the working directory on sys.path
+    # (uvicorn does, for the api), so without PYTHONPATH the worker cannot import
+    # the sibling `ml` package and every batch job dies with ModuleNotFoundError.
+    environment = compose["services"]["worker"]["environment"]
+    if isinstance(environment, list):
+        environment = dict(item.split("=", 1) for item in environment)
+    assert environment.get("PYTHONPATH") == "/app"
+
+
 def test_jobs_live_in_postgres_and_batches_go_through_redis(compose) -> None:
     for name in ("api", "worker"):
         env = compose["services"][name]["environment"]

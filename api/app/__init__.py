@@ -22,9 +22,13 @@ def _ensure_project_root_on_syspath() -> None:
     -> ``/app``) and in the repository (``api/app/__init__.py`` -> repo root).
     Appending (not inserting) keeps site-packages priority untouched; when no
     ``ml`` package exists above us (installed-wheel scenario) nothing happens.
+    ``ml`` is recognized by ``features.py`` as well as ``__init__.py`` so a
+    checkout that lost the (empty-ish) ``__init__.py`` still imports it as a
+    namespace package once the root is on ``sys.path``.
     """
     for parent in Path(__file__).resolve().parents:
-        if (parent / "ml" / "__init__.py").is_file():
+        ml_dir = parent / "ml"
+        if (ml_dir / "__init__.py").is_file() or (ml_dir / "features.py").is_file():
             root = str(parent)
             if root not in sys.path:
                 sys.path.append(root)

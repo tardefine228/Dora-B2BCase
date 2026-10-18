@@ -33,6 +33,20 @@ PROBE = "\n".join(
     )
 )
 
+# Same, for a layout where ``ml`` has no ``__init__.py`` (namespace package):
+# there is no ``api`` subdirectory to insert, PYTHONPATH alone carries ``app``.
+PROBE_NAMESPACE = "\n".join(
+    (
+        "import os, sys",
+        "cwd = os.path.abspath(os.curdir)",
+        "sys.path = [p for p in sys.path if os.path.abspath(p or os.curdir) != cwd]",
+        "import app",
+        "import ml.features",
+        "assert ml.features.VALUE == 42",
+        "print('ml-ok')",
+    )
+)
+
 
 def test_ml_package_importable_without_cwd_on_syspath() -> None:
     env = {**os.environ, "PYTHONPATH": str(ROOT / "api")}
@@ -58,3 +72,26 @@ def test_project_root_bootstrap_is_idempotent() -> None:
 
     roots_again = [p for p in sys.path if (Path(p) / "ml" / "__init__.py").is_file()]
     assert roots_again == roots, "bootstrap appended the root twice"
+
+
+def test_bootstrap_recognizes_ml_without_init_file(tmp_path: Path) -> None:
+    # A checkout/image that lost ml/__init__.py must still work: the package is
+    # then a PEP 420 namespace package once its parent is on sys.path.
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "__init__.py").write_text(
+        (ROOT / "api" / "app" / "__init__.py").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    (tmp_path / "ml").mkdir()
+    (tmp_path / "ml" / "features.py").write_text("VALUE = 42\n", encoding="utf-8")
+    env = {**os.environ, "PYTHONPATH": str(tmp_path)}
+    env.pop("PYTHONSAFEPATH", None)
+    result = subprocess.run(
+        [sys.executable, "-c", PROBE_NAMESPACE],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "ml-ok" in result.stdout

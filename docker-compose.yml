@@ -77,7 +77,14 @@ services:
   worker:
     image: dora-app
     command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--concurrency=1"]
-    environment: *app-env
+    environment:
+      <<: *app-env
+      # Belt and braces for the console-script entrypoint: unlike uvicorn, the
+      # `celery` binary does not put the working directory on sys.path, so the
+      # sibling `ml` package stayed invisible in the worker (ModuleNotFoundError
+      # in every batch job). app/__init__.py adds the root itself; this keeps
+      # the worker covered even if that bootstrap ever regresses.
+      PYTHONPATH: /app
     volumes:
       - "catalog_data:/app/data"
     depends_on:
