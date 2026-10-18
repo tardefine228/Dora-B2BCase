@@ -4,6 +4,8 @@ Two interchangeable implementations share one interface:
 
 * :class:`MemoryJobStore` — the historical process-local store; the fastest and
   the right choice for tests and single-shot demos;
+* :class:`app.job_store_postgres.PostgresJobStore` — production store shared by the
+  API and the Celery worker (``JOB_STORE=postgres``);
 * :class:`SqliteJobStore` — persists batches to ``JOB_STORE_PATH`` (WAL, stdlib
   ``sqlite3`` only), so a restarted API still answers ``GET /classify/batch/{id}``
   and a finished batch is not lost.
@@ -521,7 +523,18 @@ def build_job_store() -> JobStore:
             max_stored_jobs=settings.job_max_stored,
             ttl_seconds=settings.job_ttl_hours * 3600,
         )
-    raise ValueError(f"Неизвестный JOB_STORE: {backend!r} (ожидается memory или sqlite)")
+    if backend == "postgres":
+        from app.job_store_postgres import PostgresJobStore
+
+        logger.info("Фоновые задачи: PostgreSQL store")
+        return PostgresJobStore(
+            settings.database_url,
+            max_active_jobs=settings.job_max_active,
+            max_stored_jobs=settings.job_max_stored,
+            ttl_seconds=settings.job_ttl_hours * 3600,
+            stale_seconds=settings.job_stale_seconds,
+        )
+    raise ValueError(f"Неизвестный JOB_STORE: {backend!r} (ожидается memory, sqlite или postgres)")
 
 
 def _resolve_job_store_path(raw_path: str) -> Path:
@@ -595,3 +608,12 @@ def complete_reindex(job_id: str, total: int) -> bool:
 
 def fail_job(job_id: str, error: str) -> bool:
     return get_store().fail(job_id, error)
+
+
+def audit_classifications(source: str, rows: list[ClassifyResponse]) -> None:
+    """Write answers to the PostgreSQL audit log when enabled (no-op otherwise)."""
+    if not settings.audit_log:
+        return
+    log = getattr(get_store(), "log_classifications", None)
+    if callable(log):
+        log(source, rows)

@@ -51,6 +51,15 @@ class Settings:
         self.qdrant_api_key = os.getenv("QDRANT_API_KEY", "")
         self.qdrant_collection = os.getenv("QDRANT_COLLECTION", "pp1875_items")
 
+        # Vector search (embeddings) joins the lexical matcher in the catalog backend.
+        # Falls back to lexical-only (and says so in /health) if no embedder loads.
+        self.vector_search = _bool("VECTOR_SEARCH", default=True)
+        # memory (exact numpy search, default for local runs and tests) | qdrant
+        # (vectors published to the Qdrant service; falls back to memory if it is down).
+        self.vector_store = os.getenv("VECTOR_STORE", "memory").strip().lower()
+        if self.vector_store not in {"memory", "qdrant"}:
+            raise ValueError("VECTOR_STORE must be 'memory' or 'qdrant'")
+
         self.catalog_path = os.getenv("CATALOG_PATH", "").strip()
         self.data_dir = os.getenv("DATA_DIR", "data").strip() or "data"
 
@@ -92,9 +101,25 @@ class Settings:
         self.rate_limit_admin_burst = _positive_int("RATE_LIMIT_ADMIN_BURST", 2)
 
         # Background jobs: sqlite survives an API restart, memory is for tests/demos.
+        # memory | sqlite | postgres (postgres is the production store; DATABASE_URL).
         self.job_store = os.getenv("JOB_STORE", "sqlite").strip().lower()
-        if self.job_store not in {"memory", "sqlite"}:
-            raise ValueError("JOB_STORE must be 'memory' or 'sqlite'")
+        if self.job_store not in {"memory", "sqlite", "postgres"}:
+            raise ValueError("JOB_STORE must be 'memory', 'sqlite' or 'postgres'")
+        self.database_url = os.getenv("DATABASE_URL", "").strip()
+        if self.job_store == "postgres" and not self.database_url:
+            raise ValueError("JOB_STORE=postgres requires DATABASE_URL")
+        # Request audit log in PostgreSQL (best effort, never blocks an answer).
+        self.audit_log = _bool("AUDIT_LOG", default=self.job_store == "postgres")
+
+        # Where heavy batches run: `inprocess` (FastAPI background task, tests and
+        # local runs) or `celery` (a separate worker fed through Redis).
+        self.queue_backend = os.getenv("QUEUE_BACKEND", "inprocess").strip().lower()
+        if self.queue_backend not in {"inprocess", "celery"}:
+            raise ValueError("QUEUE_BACKEND must be 'inprocess' or 'celery'")
+        self.redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0").strip()
+        # A job that has not been touched for this long while `running` is considered
+        # lost (its worker died) and is failed instead of hanging forever.
+        self.job_stale_seconds = _positive_int("JOB_STALE_SECONDS", 900)
         self.job_store_path = os.getenv("JOB_STORE_PATH", "data/jobs.sqlite").strip()
         self.job_ttl_hours = _positive_int("JOB_TTL_HOURS", 24)
         self.job_max_active = _positive_int("JOB_MAX_ACTIVE", 16)

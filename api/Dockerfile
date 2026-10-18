@@ -20,15 +20,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-ARG INSTALL_ML=false
+# Embeddings for vector search. true (default): a multilingual transformer is installed
+# and downloaded during the build and a reranker is trained for it. If anything in that
+# step fails (no internet for Hugging Face, ...) the build still succeeds and the service
+# falls back to the offline spaCy vectors; /health/ready reports the embedder in use.
+ARG INSTALL_TRANSFORMER=true
+ARG EMBEDDER_MODEL=intfloat/multilingual-e5-small
 COPY api/requirements.txt /tmp/requirements.txt
 COPY api/requirements-ml.txt /tmp/requirements-ml.txt
-RUN if [ "$INSTALL_ML" = "true" ]; then \
-        python -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch>=2.2,<3.0" && \
-        python -m pip install --no-cache-dir -r /tmp/requirements-ml.txt; \
-    else \
-        python -m pip install --no-cache-dir -r /tmp/requirements.txt; \
-    fi
+RUN python -m pip install --no-cache-dir -r /tmp/requirements.txt
 
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app \
     && mkdir -p /app/jobs \
@@ -38,21 +38,29 @@ COPY --chown=app:app ml ./ml
 # Built UI (index.html + assets/); served by app.main at /ui/.
 COPY --chown=app:app --from=ui-build /ui/dist ./frontend
 COPY --chown=app:app data/data.csv data/data.json data/source_text.txt ./data/
-COPY --chown=app:app scripts/build_model.py ./scripts/build_model.py
-# Build deterministic lightweight weights in the image; no Python setup on the host.
-# BUILD_MODELS=false is for code-only updates with an existing reranker_data volume.
-ARG BUILD_MODELS=true
-RUN python -m pip install --no-cache-dir 'numpy>=1.26,<3' \
-    && mkdir -p /app/builtin_models \
-    && if [ "$BUILD_MODELS" = "true" ]; then \
-        python scripts/build_model.py --models-dir /app/builtin_models; \
-    fi \
-    && chown -R app:app /app/builtin_models
+
+# Transformer step (best effort, see INSTALL_TRANSFORMER above). Runs as root before
+# USER app: installs torch (CPU) + sentence-transformers, bakes the model into
+# /opt/models/embedder and trains the reranker that uses that model's vector features.
+COPY scripts ./scripts
+# Labeled set + scorer: the transformer step keeps vector features only if they help.
+COPY eval/run_eval.py eval/labeled_examples.csv ./eval/
+RUN if [ "$INSTALL_TRANSFORMER" = "true" ]; then \
+      ( python -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch>=2.2,<3.0" \
+        && python -m pip install --no-cache-dir -r /tmp/requirements-ml.txt \
+        && python scripts/download_model.py "$EMBEDDER_MODEL" /opt/models/embedder \
+        && DATA_DIR=/app/data EMBEDDER_BACKEND=sentence-transformers MODEL_NAME=/opt/models/embedder \
+           MODEL_LOCAL_ONLY=true python scripts/build_model.py --dense --gate --models-dir /app/ml/artifacts \
+      ) || echo "WARNING: transformer step failed - falling back to spaCy vectors"; \
+    fi
+RUN chown -R app:app /app/ml /opt/models 2>/dev/null || true
 
 ENV DATA_DIR=/app/data \
-    MODELS_DIR=/app/builtin_models \
     CLASSIFIER_BACKEND=catalog \
-    ML_ENABLED=false \
+    VECTOR_SEARCH=true \
+    EMBEDDER_BACKEND=auto \
+    MODEL_NAME=/opt/models/embedder \
+    MODEL_LOCAL_ONLY=true \
     QDRANT_URL=http://qdrant:6333
 
 USER app

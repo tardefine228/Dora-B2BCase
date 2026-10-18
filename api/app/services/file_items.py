@@ -21,8 +21,6 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ml.preprocessing import clean_query
-
 SUPPORTED_EXTENSIONS = {
     ".txt": "text",
     ".md": "text",
@@ -98,7 +96,7 @@ def clean_item(raw: object) -> str | None:
     """Normalize one candidate; ``None`` if it is not a product name."""
     if raw is None:
         return None
-    text = clean_query(str(raw))
+    text = " ".join(str(raw).replace("\u00a0", " ").split())
     text = _LIST_MARKER.sub("", text).strip(" \t;,")
     if len(text) < MIN_ITEM_LENGTH or _ONLY_NUMBERS.match(text):
         return None

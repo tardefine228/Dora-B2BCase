@@ -4,7 +4,7 @@
 Поддерживаются основные приложения 1–4 с версткой, похожей на исходный PDF.
 Номера страниц и количество позиций не зашиты в код. Это не универсальный
 парсер произвольных юридических документов. Смотрите warnings.csv.
-Python 3.10+. Пример: python parse_pp1875.py pp_1875.pdf --out result
+Python 3.10+. Пример: python scripts/parse_pp1875.py pp_1875.pdf --out data
 """
 
 from __future__ import annotations
@@ -308,10 +308,7 @@ def parse_tables(pages: list[dict]) -> tuple[list[dict], list[dict]]:
             "missing_appendix",
             None,
             missing,
-            detail=(
-                "Не найдено основное приложение. "
-                "Оно могло быть удалено, не входить в PDF или не распознаться."
-            ),
+            detail="Не найдено основное приложение. Оно могло быть удалено, не входить в PDF или не распознаться.",
         )
     return positions, issues
 
@@ -377,7 +374,7 @@ def make_dataframe(positions: list[dict], issues: list[dict]) -> pd.DataFrame:
             warning(issues, "ambiguous_exception", page, app, pos, raw_codes)
         if matches and any(
             raw_codes[m.end() : n.start()].strip() in ("-", "–", "—")
-            for m, n in zip(matches, matches[1:], strict=False)
+            for m, n in zip(matches, matches[1:])
         ):
             warning(
                 issues,
@@ -427,10 +424,7 @@ def make_dataframe(positions: list[dict], issues: list[dict]) -> pd.DataFrame:
                     "numbering_gap",
                     None,
                     app,
-                    detail=(
-                        f"Пропуски целых номеров: {gaps}. "
-                        "Это может быть изменение документа или ошибка OCR."
-                    ),
+                    detail=f"Пропуски целых номеров: {gaps}. Это может быть изменение документа или ошибка OCR.",
                 )
     df = pd.DataFrame(rows, columns=FIELDS)
     for col in ("appendix", "pdf_page_start", "pdf_page_end"):
@@ -537,8 +531,7 @@ def export_excel(path: Path, df: pd.DataFrame, issues: list, pages: list, source
             ],
             [
                 "Проверка",
-                "Откройте лист «Проверить». "
-                "Отсутствие предупреждений не гарантирует отсутствие ошибок OCR.",
+                "Откройте лист «Проверить». Отсутствие предупреждений не гарантирует отсутствие ошибок OCR.",
             ],
             ["Исключения", "code_role=Исключение: код не является включённым в позицию."],
             [
@@ -661,8 +654,7 @@ def run(args) -> int:
         "\n\n".join(f"=== СТРАНИЦА {p['page']} ===\n{p['text']}" for p in pages), encoding="utf-8"
     )
     print(
-        f"Готово: {len(df)} строк; {len(positions)} позиций; "
-        f"{len(issues)} предупреждений.\nПапка: {out}"
+        f"Готово: {len(df)} строк; {len(positions)} позиций; {len(issues)} предупреждений.\nПапка: {out}"
     )
     return 2 if df.empty or (args.strict and issues) else 0
 

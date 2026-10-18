@@ -16,3 +16,6 @@ select = [
   "B",
   "UP",
 ]
+[lint.per-file-ignores]
+# One-off PDF parser with long Russian user-facing messages.
+"scripts/parse_pp1875.py" = ["E501", "B905"]

@@ -16,12 +16,16 @@ def _project_path(value: str) -> Path:
 
 
 # === Embedding backend ===
-# auto | sentence-transformers | tfidf
+# auto | sentence-transformers | spacy | tfidf
+# auto order: sentence-transformers (if a model loads) -> spacy vectors -> tfidf.
 EMBEDDER_BACKEND: str = os.getenv("EMBEDDER_BACKEND", "auto").strip().lower()
 TFIDF_DIM: int = int(os.getenv("TFIDF_DIM", "512"))
 TFIDF_NGRAMS: tuple[int, ...] = tuple(
     int(size) for size in os.getenv("TFIDF_NGRAMS", "3,4").split(",") if size.strip()
 )
+
+# Static Russian word vectors (offline fallback when no transformer model is available).
+SPACY_MODEL: str = os.getenv("SPACY_MODEL", "ru_core_news_md").strip()
 
 # === Model ===
 _model_value = os.getenv("MODEL_NAME", "BAAI/bge-m3").strip()
@@ -65,6 +69,10 @@ USE_INT8: bool = os.getenv("USE_INT8", "false").lower() in {"1", "true", "yes", 
 
 # === Paths ===
 MODELS_DIR: Path = _project_path(os.getenv("MODELS_DIR", str(ROOT_DIR / "models")))
+# Pre-built, version-controlled artifacts (reranker.json, tfidf_embedder.json). They ship
+# inside the Docker image, so `docker compose up --build` needs no extra training step.
+# MODELS_DIR (e.g. a mounted volume) still takes priority when it holds an artifact.
+ARTIFACTS_DIR: Path = Path(__file__).resolve().parent / "artifacts"
 DATA_DIR: Path = _project_path(os.getenv("DATA_DIR", str(ROOT_DIR / "data")))
 # The checked-in JSON is stored directly in data/; allow RAW_DATA_DIR to override it.
 RAW_DATA_DIR: Path = _project_path(os.getenv("RAW_DATA_DIR", str(DATA_DIR)))

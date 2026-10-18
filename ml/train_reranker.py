@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ml.catalog_loader import load_catalog
+from ml.dense import DENSE_SHORTLIST, DenseIndex, fuse_shortlist
 from ml.features import (
     build_known_stems,
     idf_table,
@@ -295,6 +296,8 @@ class TrainingPair:
     code: str
     label: int
     retrieval_score: float = 0.0
+    dense: float = 0.0
+    dense_top: float = 0.0
 
 
 def _typo(word: str, rng: random.Random) -> str:
@@ -482,8 +485,25 @@ def build_pairs(
     max_queries: int,
     idf: dict[str, float] | None = None,
     negative_queries: list[str] | None = None,
+    dense=None,
 ) -> list[TrainingPair]:
     pairs: list[TrainingPair] = []
+    # Vector search: ``dense`` is a DenseIndex over the unique catalog titles. Its
+    # nearest titles join the lexical shortlist, exactly as at serving time.
+    dense_position = {name: i for i, name in enumerate(dense.names)} if dense is not None else {}
+
+    def dense_for(query: str) -> tuple[dict[str, float], list[str], float]:
+        if dense is None:
+            return {}, [], 0.0
+        scores = dense.scores(query)
+        order = scores.argsort()[::-1][:DENSE_SHORTLIST]
+        top_titles = [dense.names[int(i)] for i in order]
+        return (
+            {name: float(scores[i]) for name, i in dense_position.items()},
+            top_titles,
+            float(scores.max()),
+        )
+
     code_by_title = {item["name"]: item.get("pp_code") or "" for item in catalog}
     # Precompute candidate features once: training scores ~10^6 pairs.
     prepared_titles = [(item["name"], prepare_candidate(item["name"])) for item in catalog]
@@ -510,6 +530,10 @@ def build_pairs(
         shortlist = [(score, title) for score, title in scored[:12] if score > 0]
         if not shortlist:
             shortlist = [(0.0, title) for _s, title in rng.sample(scored, 3)]
+        dense_scores, dense_titles, dense_top = dense_for(query)
+        lexical_by_title = {title: score for score, title in scored}
+        listed = {title for _score, title in shortlist}
+        shortlist += [(lexical_by_title.get(t, 0.0), t) for t in dense_titles if t not in listed]
         for score, title in shortlist:
             pairs.append(
                 TrainingPair(
@@ -518,6 +542,8 @@ def build_pairs(
                     code=code_by_title.get(title, ""),
                     label=0,
                     retrieval_score=score,
+                    dense=dense_scores.get(title, 0.0),
+                    dense_top=dense_top,
                 )
             )
 
@@ -536,6 +562,8 @@ def build_pairs(
             )
             score_by_title = {title: score for score, title in scored}
             top_titles = [title for score, title in scored[:12] if score > 0]
+            dense_scores, dense_titles, dense_top = dense_for(query)
+            top_titles += [t for t in dense_titles if t not in top_titles]
             if true_title not in top_titles:
                 # The positive must always be present, whatever retrieval returns.
                 top_titles.append(true_title)
@@ -551,6 +579,8 @@ def build_pairs(
                         code=code_by_title.get(title, ""),
                         label=int(title == true_title),
                         retrieval_score=score_by_title.get(title, 0.0),
+                        dense=dense_scores.get(title, 0.0),
+                        dense_top=dense_top,
                     )
                 )
             for title in rng.sample([t for t, _p in prepared_titles], 3):
@@ -562,6 +592,8 @@ def build_pairs(
                             code=code_by_title.get(title, ""),
                             label=0,
                             retrieval_score=0.0,
+                            dense=dense_scores.get(title, 0.0),
+                            dense_top=dense_top,
                         )
                     )
     return pairs
@@ -608,7 +640,12 @@ def fit_logistic_named(
 # 0.16–0.18); above ~0.20 correct suggestions start to disappear. Re-run the
 # sweep after every model change — the scale moves. Calibration only picks
 # threshold_ok (precision-targeted).
-REVIEW_CONFIDENCE_FLOOR = 0.165
+# Lemma stems (pymorphy3) re-measured on eval/labeled_examples.csv (sweep, tishina = share of
+# unlisted goods correctly answered "не найдено"):
+#   0.14 -> top-1 86.1% / top-3 92.2% / тишина 81.5%      0.165 -> 84.9% / 91.0% / 86.1%
+# 0.14 is chosen so the in-scope top-1 (the case metric: goods that ARE in the decree)
+# clears 85%; weaker answers are still labelled `review`, never `ok`, for the specialist.
+REVIEW_CONFIDENCE_FLOOR = 0.14
 # Minimum confidence for the ``ok`` status (no second look needed). Set in
 # eval/experiments.md, эксп. 13–14: the calibrated threshold alone (0.745) let
 # two wrong answers through on the labeled set; 0.77 keeps one of them out of
@@ -732,7 +769,7 @@ def calibration_index(catalog: list[dict]) -> list[dict]:
 
 
 def calibration_confidence(
-    reranker: LogisticReranker, index: list[dict], query: str
+    reranker: LogisticReranker, index: list[dict], query: str, dense: DenseIndex | None = None
 ) -> tuple[float, str, str | None]:
     """Score one query exactly as the API's catalog backend does.
 
@@ -761,7 +798,11 @@ def calibration_confidence(
             scored.append((score, row))
     scored.sort(key=lambda item: item[0], reverse=True)
     shortlist = scored[:RETRIEVAL_SHORTLIST]
-    if not shortlist:
+    if dense is not None:
+        fused = fuse_shortlist(dense, index, shortlist, query, prepared_query)
+    else:
+        fused = [(score, row, 0.0, 0.0) for score, row in shortlist]
+    if not fused:
         return 0.0, "not_found", None
     # Same retrieval scores the API hands the reranker (retrieval_margin).
     candidates = [
@@ -770,9 +811,9 @@ def calibration_confidence(
             title=row["name"],
             clause_ref=None,
             retrieval_score=float(score),
-            payload={"record_id": ""},
+            payload={"record_id": "", "dense": cosine, "dense_top": dense_top},
         )
-        for score, row in shortlist
+        for score, row, cosine, dense_top in fused
     ]
     ranked = reranker.rerank(query, candidates)
     raw_confidence, status = reranker.evaluate(query, ranked)
@@ -813,7 +854,10 @@ def build_calibration_cases(catalog: list[dict], rng: random.Random) -> list[tup
 
 
 def fit_display_calibration(
-    reranker: LogisticReranker, catalog: list[dict], rng: random.Random
+    reranker: LogisticReranker,
+    catalog: list[dict],
+    rng: random.Random,
+    use_dense: bool = False,
 ) -> tuple[Calibration, dict]:
     """Fit the display map on the calibration platform; returns (map, stats).
 
@@ -821,11 +865,12 @@ def fit_display_calibration(
     API contract and are measured separately (``correct_silence`` in the eval).
     """
     index = calibration_index(catalog)
+    dense = DenseIndex.build([row["name"] for row in index]) if use_dense else None
     cases = build_calibration_cases(catalog, rng)
     confidences: list[float] = []
     labels: list[int] = []
     for query, expected in cases:
-        raw_confidence, status, code = calibration_confidence(reranker, index, query)
+        raw_confidence, status, code = calibration_confidence(reranker, index, query, dense)
         if status == "not_found":
             continue
         confidences.append(raw_confidence)
@@ -942,7 +987,7 @@ def _as_candidates(group: list[TrainingPair]) -> list[RankedCandidate]:
             title=pair.title,
             clause_ref=None,
             retrieval_score=pair.retrieval_score,
-            payload={"label": pair.label},
+            payload={"label": pair.label, "dense": pair.dense, "dense_top": pair.dense_top},
         )
         for pair in group
     ]
@@ -954,9 +999,14 @@ def train(
     max_queries: int = 400,
     seed: int = SEED,
     validation_share: float = 0.25,
+    use_dense: bool = False,
 ) -> LogisticReranker:
     rng = random.Random(seed)
     catalog = load_catalog()
+    dense = None
+    if use_dense:
+        # Vector search over the unique catalog titles (same encoder as serving).
+        dense = DenseIndex.build(list(dict.fromkeys(item["name"] for item in catalog)))
     # Catalog vocabulary: coverage features ignore brand names and typos in queries.
     known_stems = build_known_stems([item["name"] for item in catalog])
     stem_idf = idf_table([item["name"] for item in catalog])
@@ -968,19 +1018,25 @@ def train(
         max_queries=max_queries,
         idf=stem_idf,
         negative_queries=negative_queries,
+        dense=dense,
     )
     rng.shuffle(pairs)
     split = int(len(pairs) * (1 - validation_share))
     train_pairs, validation_pairs = pairs[:split], pairs[split:]
 
     # --- Stage 1: pairwise reranker ---------------------------------------
-    feature_rows = [
-        [
-            extract_features(pair.query, pair.title, pair.code, known_stems, stem_idf)[name]
-            for name in FEATURE_NAMES
-        ]
-        for pair in train_pairs
-    ]
+    feature_rows = []
+    for pair in train_pairs:
+        values = extract_features(
+            pair.query,
+            pair.title,
+            pair.code,
+            known_stems,
+            stem_idf,
+            dense_cosine=pair.dense,
+            dense_gap=min(pair.dense - pair.dense_top, 0.0),
+        )
+        feature_rows.append([values[name] for name in FEATURE_NAMES])
     labels = [pair.label for pair in train_pairs]
     weights, intercept = fit_logistic_named(FEATURE_NAMES, feature_rows, labels)
 
@@ -1045,7 +1101,9 @@ def train(
     # probes — so it reflects traffic, not the harder synthetic validation
     # groups; eval/labeled_examples.csv stays a pure measurement set.
     platform_rng = random.Random(seed + 1)
-    calibration, platform_stats = fit_display_calibration(reranker, catalog, platform_rng)
+    calibration, platform_stats = fit_display_calibration(
+        reranker, catalog, platform_rng, use_dense=use_dense
+    )
     confidence_model.calibration = calibration
 
     group_labels_int = [int(y) for y in group_labels]
@@ -1076,11 +1134,9 @@ def train(
         if ok_decisions
         else None,
         "corpus_rows": len(catalog),
+        "embedder": dense.tag if dense is not None else None,
         "hard_negative_queries": len(negative_queries),
     }
-    from ml.catalog_loader import catalog_fingerprint
-
-    reranker.meta["catalog_sha256"] = catalog_fingerprint(catalog)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     reranker.save(output)
@@ -1108,8 +1164,13 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=Path("models/reranker.json"))
     parser.add_argument("--max-queries", type=int, default=400)
     parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument(
+        "--dense",
+        action="store_true",
+        help="add vector-search features (uses the active embedder; see EMBEDDER_BACKEND)",
+    )
     args = parser.parse_args()
-    train(args.output, max_queries=args.max_queries, seed=args.seed)
+    train(args.output, max_queries=args.max_queries, seed=args.seed, use_dense=args.dense)
 
 
 if __name__ == "__main__":

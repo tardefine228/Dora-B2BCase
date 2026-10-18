@@ -122,3 +122,13 @@ def test_exact_catalog_names_are_not_broken_by_bridges(classifier, query: str, c
     response = classifier.classify(query)
     assert response.code == code, (query, response.code, response.title)
     assert response.confidence >= 0.5
+
+
+def test_lemma_stems_unify_inflected_forms():
+    from ml.features import lemmatizer_active, stems
+
+    if not lemmatizer_active():
+        pytest.skip("pymorphy3 is not installed")
+    assert stems("Станки") == stems("станок")
+    assert stems("Гобои") == stems("Гобой")
+    assert stems("Счётчики") == stems("счетчик")

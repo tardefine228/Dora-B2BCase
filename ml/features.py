@@ -9,9 +9,11 @@ backend keeps working without numpy or ML dependencies installed.
 
 from __future__ import annotations
 
+import os
 import re
 from collections import Counter
 from dataclasses import dataclass
+from functools import lru_cache
 from math import log, sqrt
 
 TOKEN_RE = re.compile(r"[a-zа-яё0-9]+", re.IGNORECASE)
@@ -97,11 +99,41 @@ def tokens(text: str) -> list[str]:
     return [token for token in TOKEN_RE.findall(normalize(text)) if len(token) > 1]
 
 
-def stem(token: str) -> str:
-    """Very light Russian/English suffix stripper, safe for short tokens."""
-    word = normalize(token)
-    if word.isdigit() or len(word) <= 3:
+_CYRILLIC_RE = re.compile(r"[а-яё]+")
+_morph = None
+_morph_checked = False
+
+
+def _analyzer():
+    """pymorphy3 analyzer, or ``None`` when it is not installed (suffix stripping only)."""
+    global _morph, _morph_checked
+    if not _morph_checked:
+        _morph_checked = True
+        if os.getenv("STEMMER", "lemma").strip().lower() == "lemma":
+            try:
+                import pymorphy3
+
+                _morph = pymorphy3.MorphAnalyzer()
+            except Exception:  # noqa: BLE001 - optional dependency
+                _morph = None
+    return _morph
+
+
+def lemmatizer_active() -> bool:
+    """True when stems are built from real lemmas (trained artifacts record this)."""
+    return _analyzer() is not None
+
+
+@lru_cache(maxsize=200_000)
+def _lemma(word: str) -> str:
+    analyzer = _analyzer()
+    if analyzer is None:
         return word
+    parses = analyzer.parse(word)
+    return normalize(parses[0].normal_form) if parses else word
+
+
+def _strip_suffix(word: str) -> str:
     for suffix in _RU_SUFFIXES:
         if word.endswith(suffix) and len(word) - len(suffix) >= 3:
             return word[: -len(suffix)]
@@ -109,6 +141,23 @@ def stem(token: str) -> str:
         if word.endswith(suffix) and len(word) - len(suffix) >= 3:
             return word[: -len(suffix)]
     return word
+
+
+@lru_cache(maxsize=200_000)
+def stem(token: str) -> str:
+    """Lemma-based Russian stem (pymorphy3) with the light suffix stripper on top.
+
+    Inflected forms collapse to one lemma first (\"станки\" and \"станок\", \"гобои\"
+    and \"гобой\"), which a pure suffix stripper cannot do; the stripper then
+    trims derivational endings so \"токарный\"/\"токарные\" share a stem. Without
+    pymorphy3 only the suffix stripper runs.
+    """
+    word = normalize(token)
+    if word.isdigit() or len(word) <= 3:
+        return word
+    if _CYRILLIC_RE.fullmatch(word) and _analyzer() is not None:
+        word = _lemma(word)
+    return _strip_suffix(word)
 
 
 def stems(text: str) -> list[str]:

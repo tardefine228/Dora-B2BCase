@@ -24,7 +24,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app.schemas import CatalogInfo, CatalogIssue
-from ml.preprocessing import OKPD2_PATTERN
 
 logger = logging.getLogger("dora.catalog_io")
 
@@ -48,6 +47,8 @@ REQUIRED_COLUMNS = ("name", "okpd2")
 MAX_ROWS = 50_000
 MAX_NAME_LENGTH = 500
 APPENDIX_VALUES = {"1", "2", "3", "4"}
+OKPD2_PATTERN = r"^\d{2}(\.\d{1,2}){0,3}$"
+
 CODE_ROLES_REVIEW = {"Не указан", "Исключение"}
 
 

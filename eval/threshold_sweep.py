@@ -155,7 +155,10 @@ def main() -> int:
     print(f"бэкенд={args.backend} строк={len(rows)} (с кодом {with_code}, вне перечня {silence})")
 
     points = [
-        evaluate_point(rows, ok, review) for ok in OK_GRID for review in REVIEW_GRID if review < ok
+        evaluate_point(rows, ok, review)
+        for ok in OK_GRID
+        for review in REVIEW_GRID
+        if review < ok
     ]
     print()
     print(

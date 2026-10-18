@@ -24,19 +24,19 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.log_config import configure_logging
 from app.core.metrics import metrics as metrics_store
+from app.dispatch import enqueue_batch
 from app.job_store import (
     BatchJob,
     JobStoreCapacityError,
     ReindexAlreadyRunningError,
     ReindexJob,
-    add_batch_result,
-    complete_batch,
+    audit_classifications,
     complete_reindex,
     create_job,
     create_reindex_job,
@@ -64,6 +64,7 @@ from app.schemas import (
 from app.services.catalog_io import (
     catalog_facts,
     normalize_rows,
+    parse_catalog_bytes,
     resolve_data_dir,
     validate_rows,
     write_catalog,
@@ -80,6 +81,7 @@ from app.services.source_lookup import (
     get_source_lookup,
     reset_source_lookup,
 )
+from app.tasks import run_batch_job
 
 configure_logging(settings.log_level)
 logger = logging.getLogger("dora.api")
@@ -199,7 +201,7 @@ def _batch_status(job: BatchJob) -> BatchJobStatusResponse:
     )
 
 
-# CSV export of a finished batch (matches the client-side exporter in frontend/app.js).
+# CSV export of a finished batch (matches the client-side exporter in frontend/src).
 CSV_COLUMNS: tuple[str, ...] = (
     "query",
     "code",
@@ -219,7 +221,7 @@ _CSV_ALTERNATIVES = 3
 # Excel on a Russian locale expects ";" separators and a BOM in an UTF-8 file.
 BATCH_CSV_BOM = "\ufeff"
 
-# Server-sent events for batch progress (see frontend/app.js for the client).
+# Server-sent events for batch progress (see frontend/src for the client).
 SSE_POLL_SECONDS = 0.25
 SSE_HEARTBEAT_SECONDS = 15.0
 
@@ -251,30 +253,8 @@ def _sse_event(event: str, payload: dict) -> str:
 
 
 def _run_batch_job(job_id: str) -> None:
-    """Classify a batch off the event loop and publish progress in bounded chunks."""
-    snapshot = get_job(job_id)
-    if not isinstance(snapshot, BatchJob) or not start_job(job_id):
-        return
-
-    try:
-        classifier = _classifier_or_503()
-        chunk_size = 16
-        for offset in range(0, len(snapshot.items), chunk_size):
-            names = snapshot.items[offset : offset + chunk_size]
-            started = time.perf_counter()
-            results = classifier.classify_many(names)
-            per_item_latency = (time.perf_counter() - started) * 1000 / max(len(names), 1)
-            for name, result in zip(names, results, strict=True):
-                add_batch_result(
-                    job_id,
-                    result.model_copy(
-                        update={"query": name, "latency_ms": round(per_item_latency, 3)}
-                    ),
-                )
-        complete_batch(job_id)
-    except Exception:
-        logger.exception("Batch job failed: %s", job_id)
-        fail_job(job_id, "Не удалось обработать список товаров; проверьте логи сервиса")
+    """In-process runner (``QUEUE_BACKEND=inprocess``); Celery runs the same body."""
+    run_batch_job(job_id, _classifier_or_503)
 
 
 def _run_reindex_job(job_id: str) -> None:
@@ -357,6 +337,13 @@ def health() -> dict:
     }
 
 
+def _vector_info() -> dict:
+    """What the vector layer is actually doing (embedder, dimension, scoring mode)."""
+    inner = getattr(get_classifier(), "_classifier", None)
+    info = getattr(inner, "vector_info", None)
+    return info if isinstance(info, dict) else {"enabled": False}
+
+
 @app.get("/health/ready", tags=["system"], summary="Readiness probe")
 def readiness() -> dict:
     """Ready only when the configured classifier and its required resources are usable."""
@@ -377,17 +364,14 @@ def readiness() -> dict:
 
     app.state.classifier_initialization_attempted = True
     app.state.classifier_error = None
-    base = get_classifier()._classifier
-    reranker = getattr(base, "_reranker", None)
     return {
         "status": "ready",
-        "model": type(reranker).__name__ if reranker is not None else None,
-        "calibrated": bool(getattr(reranker, "confidence_model", None))
-        and getattr(base, "model_catalog_current", False),
-        "model_catalog_current": getattr(base, "model_catalog_current", False),
         "service": "dora-api",
         "classifier_backend": settings.classifier_backend,
         "version": app.version,
+        "vector_search": _vector_info(),
+        "job_store": settings.job_store,
+        "queue_backend": settings.queue_backend,
     }
 
 
@@ -406,7 +390,9 @@ def classify(request: ClassifyRequest) -> ClassifyResponse:
     started = time.perf_counter()
     result = _classifier_or_503().classify(request.name)
     latency_ms = (time.perf_counter() - started) * 1000
-    return result.model_copy(update={"query": request.name, "latency_ms": round(latency_ms, 3)})
+    answer = result.model_copy(update={"query": request.name, "latency_ms": round(latency_ms, 3)})
+    audit_classifications("single", [answer])
+    return answer
 
 
 @app.post(
@@ -427,7 +413,7 @@ def classify_batch(
         raise HTTPException(status_code=429, detail=str(exc), headers={"Retry-After": "5"}) from exc
 
     logger.info("Batch job accepted job_id=%s batch_size=%d", job.job_id, len(job.items))
-    background_tasks.add_task(_run_batch_job, job.job_id)
+    enqueue_batch(job.job_id, background_tasks, _run_batch_job)
     return BatchJobAccepted(
         job_id=job.job_id,
         status="queued",
@@ -477,7 +463,7 @@ async def classify_file(
         len(job.items),
         extracted.total_found,
     )
-    background_tasks.add_task(_run_batch_job, job.job_id)
+    enqueue_batch(job.job_id, background_tasks, _run_batch_job)
     return FileBatchJobAccepted(
         job_id=job.job_id,
         status="queued",
@@ -608,7 +594,7 @@ def stream_batch_events(job_id: str) -> StreamingResponse:
     tags=["sources"],
     summary="Фрагмент текста ПП № 1875 по позиции каталога",
 )
-def get_source_fragment(record_id: str, response: Response, format: str = Query(default="json")):
+def get_source_fragment(record_id: str, response: Response) -> SourceFragment:
     """Human-readable source of record behind ``clause_url`` of a classification.
 
     ``pp_link`` in the catalog is a citation, not a URL, so the service serves the
@@ -624,11 +610,7 @@ def get_source_fragment(record_id: str, response: Response, format: str = Query(
             status_code=404,
             detail="Позиция каталога с таким record_id не найдена",
         )
-    response.headers["Cache-Control"] = "no-store"
-    if format == "html":
-        from app.services.source_view import render_source
-
-        return HTMLResponse(render_source(fragment), headers={"Cache-Control": "no-store"})
+    response.headers["Cache-Control"] = "public, max-age=3600"
     return fragment
 
 
@@ -700,33 +682,17 @@ def get_catalog_info() -> CatalogInfo:
 
 
 @app.post(
-    "/admin/models/reload",
-    tags=["admin"],
-    summary="Перечитать локальные артефакты модели после обучения",
-    dependencies=[Depends(require_admin_key)],
-)
-def reload_models() -> dict:
-    from app.services.classifier import exclusive_inference
-    from ml.embedder import reset_encoder_cache
-
-    with exclusive_inference():
-        reset_encoder_cache()
-        reset_classifier()
-        return readiness()
-
-
-@app.post(
     "/admin/catalog",
     response_model=CatalogUploadResponse,
     tags=["admin"],
-    summary="Загрузить каталог (CSV/JSON) или ZIP с каталогом и текстом источника",
+    summary="Загрузить и проверить новый каталог (CSV или JSON)",
     dependencies=[Depends(require_admin_key)],
 )
 async def upload_catalog(
     background_tasks: BackgroundTasks,
     file: Annotated[
         UploadFile,
-        File(description="data.csv, data.json или ZIP с каталогом и source_text.txt"),
+        File(description="data.csv или data.json с перечнем ПП № 1875"),
     ],
     dry_run: bool = Query(
         default=False,
@@ -739,9 +705,7 @@ async def upload_catalog(
 ) -> CatalogUploadResponse:
     content = await file.read()
     try:
-        from app.services.catalog_bundle import unpack_catalog
-
-        parsed, source_text, source_metadata = unpack_catalog(file.filename or "", content)
+        parsed = parse_catalog_bytes(file.filename or "", content)
         report = validate_rows(parsed)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -751,13 +715,8 @@ async def upload_catalog(
     reindex_required = False
 
     if report.ok and not dry_run:
-        from app.services.catalog_bundle import bind_source
-
         rows = normalize_rows(parsed)
-        # Fail closed before replacing a catalog: never expose stale excerpts.
-        bind_source(resolve_data_dir(), None, {})
         catalog_info = write_catalog(rows, resolve_data_dir())
-        bind_source(resolve_data_dir(), source_text, source_metadata)
         applied = True
         # Drop caches so the next request sees the new catalog immediately.
         reset_classifier()

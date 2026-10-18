@@ -1,61 +1,121 @@
+# Dora B2B: one command — `docker compose up --build` — starts the whole stack:
+#   api       FastAPI + React UI (/ui)           :8000
+#   worker    Celery worker for heavy batches    (same image as api)
+#   postgres  jobs, batch results, audit log
+#   redis     Celery broker
+#   qdrant    vector store for catalog embeddings
+x-app-env: &app-env
+  APP_NAME: "Dora B2BCase API"
+  LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+  CLASSIFIER_BACKEND: "${CLASSIFIER_BACKEND:-catalog}"
+  # Only for the pure-semantic `qdrant` backend (experiments); the default needs neither.
+  ML_ENABLED: "${ML_ENABLED:-false}"
+  CATALOG_PATH: "${CATALOG_PATH:-}"
+  DATA_DIR: "/app/data"
+  # Vector search: embeddings of the catalog live in Qdrant; the embedder is the baked-in
+  # transformer (falls back to spaCy vectors) — see /health/ready -> vector_search.
+  VECTOR_SEARCH: "${VECTOR_SEARCH:-true}"
+  VECTOR_STORE: "${VECTOR_STORE:-qdrant}"
+  QDRANT_URL: "http://qdrant:6333"
+  QDRANT_API_KEY: "${QDRANT_API_KEY:-}"
+  QDRANT_COLLECTION: "${QDRANT_COLLECTION:-pp1875_items}"
+  EMBEDDER_BACKEND: "${EMBEDDER_BACKEND:-auto}"
+  MODEL_NAME: "${MODEL_NAME:-/opt/models/embedder}"
+  MODEL_LOCAL_ONLY: "${MODEL_LOCAL_ONLY:-true}"
+  MODEL_DEVICE: "${MODEL_DEVICE:-cpu}"
+  MODEL_BATCH_SIZE: "${MODEL_BATCH_SIZE:-16}"
+  # Jobs and audit log in PostgreSQL; batches run in the Celery worker through Redis.
+  JOB_STORE: "postgres"
+  DATABASE_URL: "postgresql://dora:${POSTGRES_PASSWORD:-dora}@postgres:5432/dora"
+  QUEUE_BACKEND: "celery"
+  REDIS_URL: "redis://redis:6379/0"
+  JOB_TTL_HOURS: "${JOB_TTL_HOURS:-24}"
+  ADMIN_API_KEY: "${ADMIN_API_KEY:-}"
+  MAX_CONCURRENT_INFERENCES: "${MAX_CONCURRENT_INFERENCES:-1}"
+  CLASSIFICATION_CACHE_SIZE: "${CLASSIFICATION_CACHE_SIZE:-512}"
+  MAX_REQUEST_BODY_BYTES: "${MAX_REQUEST_BODY_BYTES:-1000000}"
+
+x-app-build: &app-build
+  context: .
+  dockerfile: api/Dockerfile
+  args:
+    INSTALL_TRANSFORMER: "${INSTALL_TRANSFORMER:-true}"
+    EMBEDDER_MODEL: "${EMBEDDER_MODEL:-intfloat/multilingual-e5-small}"
+
 services:
   api:
-    build:
-      context: .
-      dockerfile: api/Dockerfile
-      args:
-        INSTALL_ML: "${INSTALL_ML:-false}"
+    build: *app-build
+    image: dora-app
     ports:
       - "${API_BIND_ADDRESS:-0.0.0.0}:${API_PORT:-8000}:8000"
-    environment:
-      APP_NAME: "Dora B2BCase API"
-      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
-      CLASSIFIER_BACKEND: "${CLASSIFIER_BACKEND:-catalog}"
-      ML_ENABLED: "${INSTALL_ML:-false}"
-      CATALOG_PATH: "${CATALOG_PATH:-}"
-      DATA_DIR: "/app/data"
-      QDRANT_URL: "${QDRANT_URL:-http://qdrant:6333}"
-      QDRANT_API_KEY: "${QDRANT_API_KEY:-}"
-      QDRANT_COLLECTION: "${QDRANT_COLLECTION:-pp1875_items}"
-      MODEL_NAME: "${MODEL_NAME:-./models/bge-m3}"
-      MODEL_DEVICE: "${MODEL_DEVICE:-cpu}"
-      MODEL_LOCAL_ONLY: "${MODEL_LOCAL_ONLY:-true}"
-      MODEL_BATCH_SIZE: "${MODEL_BATCH_SIZE:-16}"
-      ADMIN_API_KEY: "${ADMIN_API_KEY:-}"
-      MAX_CONCURRENT_INFERENCES: "${MAX_CONCURRENT_INFERENCES:-1}"
-      CLASSIFICATION_CACHE_SIZE: "${CLASSIFICATION_CACHE_SIZE:-512}"
-      MAX_REQUEST_BODY_BYTES: "${MAX_REQUEST_BODY_BYTES:-1000000}"
-      # Background jobs survive `docker compose restart` (sqlite in jobs_data).
-      JOB_STORE: "${JOB_STORE:-sqlite}"
-      JOB_STORE_PATH: "/app/jobs/jobs.sqlite"
-      JOB_TTL_HOURS: "${JOB_TTL_HOURS:-24}"
+    environment: *app-env
     volumes:
-      # Place a complete local SentenceTransformers model under ./models to run offline.
-      - "${MODEL_HOST_DIR:-./models}:/app/models:ro"
-      # Writable lightweight weights: retrain after a catalog update without rebuilding the image.
-      - "reranker_data:/app/builtin_models"
-      # Uploaded catalogs survive restarts; the first mount seeds it from the image.
+      # Uploaded catalogs survive restarts and are shared with the worker; the first
+      # mount seeds the volume from the image. Vector cache lives in data/dense_cache.
       - "catalog_data:/app/data"
-      # Batch/reindex job state (sqlite WAL) also survives restarts.
-      - "jobs_data:/app/jobs"
     depends_on:
-      # The official Qdrant image is intentionally minimal and has no curl/wget
-      # binary for an in-container healthcheck. Its endpoint is checked from the
-      # host by the smoke script; API readiness probes Qdrant when that backend is selected.
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
       qdrant:
         condition: service_started
-    mem_limit: "${API_MEMORY_LIMIT:-1g}"
+    mem_limit: "${API_MEMORY_LIMIT:-2g}"
     cpus: "${API_CPUS:-2.0}"
     healthcheck:
       test:
         - CMD
         - python
         - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5)"
       interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 90s
+    restart: unless-stopped
+
+  worker:
+    image: dora-app
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--concurrency=1"]
+    environment: *app-env
+    volumes:
+      - "catalog_data:/app/data"
+    depends_on:
+      api:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: "${WORKER_MEMORY_LIMIT:-2g}"
+    cpus: "${WORKER_CPUS:-2.0}"
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: dora
+      POSTGRES_USER: dora
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-dora}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dora -d dora"]
+      interval: 5s
       timeout: 3s
-      retries: 5
-      start_period: 15s
+      retries: 20
+    mem_limit: "${POSTGRES_MEMORY_LIMIT:-256m}"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: "${REDIS_MEMORY_LIMIT:-128m}"
     restart: unless-stopped
 
   qdrant:
@@ -71,5 +131,4 @@ services:
 volumes:
   qdrant_data:
   catalog_data:
-  jobs_data:
-  reranker_data:
+  postgres_data:

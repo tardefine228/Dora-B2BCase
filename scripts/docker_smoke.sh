@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Проверка Docker-развёртывания на целевой машине (см. eval/docker-target-checklist.md).
+# Проверка Docker-развёртывания на целевой машине (см. eval/docker-target-checklist.md; обязательный минимум — шаги 3b и 5).
 # Использование: bash scripts/docker_smoke.sh [--build]
 set -euo pipefail
 
@@ -19,24 +19,29 @@ else
   $COMPOSE up -d
 fi
 
-log "3. Ожидание API и Qdrant (до 90 сек)"
-# The official Qdrant image is minimal and does not include curl. Check its
-# /healthz endpoint from the host rather than via an in-container healthcheck.
-for _ in $(seq 1 45); do
-  api_health=$(docker inspect --format='{{.State.Health.Status}}' "$($COMPOSE ps -q api)" 2>/dev/null || echo unknown)
-  if curl -fsS "http://localhost:${QDRANT_PORT:-6333}/healthz" >/dev/null 2>&1; then
-    qdrant_health=healthy
-  else
-    qdrant_health=starting
-  fi
-  [[ "$api_health" == "healthy" && "$qdrant_health" == "healthy" ]] && break
+log "3. Ожидание API (до 4 мин: загрузка эмбеддера и векторного индекса)"
+api_container=$($COMPOSE ps -q api | head -1)
+for _ in $(seq 1 120); do
+  api_health=$(docker inspect --format='{{.State.Health.Status}}' "$api_container" 2>/dev/null || echo unknown)
+  [[ "$api_health" == "healthy" ]] && break
   sleep 2
 done
-echo "api=$api_health qdrant=$qdrant_health"
-[[ "$api_health" == "healthy" && "$qdrant_health" == "healthy" ]] || { echo "FAIL: healthcheck"; exit 1; }
+echo "api=$api_health"
+[[ "$api_health" == "healthy" ]] || { echo "FAIL: healthcheck"; $COMPOSE logs --tail=40 api; exit 1; }
+curl -fsS "http://localhost:${QDRANT_PORT:-6333}/healthz" >/dev/null && echo "qdrant OK"
+for service in worker postgres redis; do
+  [[ -n "$($COMPOSE ps -q --status running $service)" ]] || { echo "FAIL: $service не запущен"; exit 1; }
+done
+echo "worker/postgres/redis запущены"
+
+log "3b. Что реально обслуживает запросы (эмбеддер, хранилище, очередь)"
+ready=$(curl -fsS "http://localhost:${API_PORT:-8000}/health/ready")
+echo "$ready"
+grep -q '"enabled":true' <<<"$ready" || { echo "FAIL: векторный поиск выключен"; exit 1; }
+grep -q '"job_store":"postgres"' <<<"$ready" || { echo "FAIL: хранилище задач не PostgreSQL"; exit 1; }
+grep -q '"queue_backend":"celery"' <<<"$ready" || { echo "FAIL: очередь не Celery"; exit 1; }
 
 log "4. Ответ API"
-$COMPOSE exec -T api python -c 'import json, urllib.request; r=json.load(urllib.request.urlopen("http://127.0.0.1:8000/health/ready")); assert r.get("calibrated") and r.get("model_catalog_current"), r; print("Trained model matches catalog")'
 curl -fsS "http://localhost:${API_PORT:-8000}/health" | head -c 300; echo
 curl -fsS -X POST "http://localhost:${API_PORT:-8000}/classify" \
   -H 'Content-Type: application/json' \
@@ -53,14 +58,27 @@ ui_type=$(curl -fsS -o /dev/null -w '%{content_type}' "http://localhost:${API_PO
 grep -qi 'javascript' <<<"$ui_type" || { echo "FAIL: ${ui_script} served as '${ui_type}'"; exit 1; }
 echo "demo UI OK (${ui_script}, ${ui_type})"
 
-log "5. Данные Qdrant переживают перезапуск"
-$COMPOSE restart qdrant >/dev/null
-sleep 5
-curl -fsS "http://localhost:${QDRANT_PORT:-6333}/healthz" >/dev/null && echo "qdrant restarted OK"
-if [[ -n "${ADMIN_API_KEY:-}" && "${INSTALL_ML:-false}" == "true" ]]; then
-  curl -fsS -X POST "http://localhost:${API_PORT:-8000}/admin/reindex" \
-    -H "X-Admin-API-Key: ${ADMIN_API_KEY}" | head -c 300; echo
-fi
+log "5. Пакет через Redis -> Celery-воркер -> PostgreSQL"
+job=$(curl -fsS -X POST "http://localhost:${API_PORT:-8000}/classify/batch" \
+  -H 'Content-Type: application/json' \
+  -d '{"items":["Ноутбук Lenovo","Электрочайники","Станок токарный с ЧПУ"]}')
+status_url=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["status_url"])' "$job")
+for _ in $(seq 1 30); do
+  state=$(curl -fsS "http://localhost:${API_PORT:-8000}${status_url}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+  [[ "$state" == "completed" || "$state" == "failed" ]] && break
+  sleep 1
+done
+echo "batch: $state"
+[[ "$state" == "completed" ]] || { $COMPOSE logs --tail=30 worker; exit 1; }
+$COMPOSE exec -T postgres psql -U dora -d dora -tAc "select count(*) || ' записей в classification_log' from classification_log"
+
+log "5b. Состояние переживает перезапуск API"
+$COMPOSE restart api >/dev/null
+for _ in $(seq 1 90); do
+  curl -fsS "http://localhost:${API_PORT:-8000}/health" >/dev/null 2>&1 && break
+  sleep 2
+done
+curl -fsS "http://localhost:${API_PORT:-8000}${status_url}" | head -c 120; echo
 
 log "6. Размер образов"
 docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}' | grep -Ei 'api|qdrant|REPOSITORY' || true

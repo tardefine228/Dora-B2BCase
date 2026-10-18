@@ -23,10 +23,10 @@ bash scripts/docker_smoke.sh --build   # сборка + все проверки 
 | 7 | Классификация | `curl -s -X POST localhost:8000/classify -H 'Content-Type: application/json' -d '{"name":"Электрочайники"}'` | код `27.51.24.110` | |
 | 8 | Перезапуск Qdrant | `docker compose restart qdrant` → `curl localhost:6333/healthz` | данные volume `qdrant_data` сохранены (коллекция доступна) | |
 | 9 | Перезапуск API с загруженным каталогом | `docker compose restart api` → `GET /admin/catalog` | `rows` не сброшены (volume `catalog_data`) | |
-| 10 | Переиндексация (нужен `INSTALL_ML=true`) | `POST /admin/reindex` с `X-Admin-API-Key` | job `completed`, `indexed` ≈ числу строк каталога | |
+| 10 | Переиндексация (нужен `ML_ENABLED=true`) | `POST /admin/reindex` с `X-Admin-API-Key` | job `completed`, `indexed` ≈ числу строк каталога | |
 | 11 | Размеры образов | `docker images` | записать `api` (и `qdrant`) | |
 | 12 | RAM/CPU | `docker stats --no-stream` | API ≤ `API_MEMORY_LIMIT`, Qdrant ≤ `QDRANT_MEMORY_LIMIT` | |
-| 13 | Ресурсы ML-режима | запуск с `INSTALL_ML=true` + модель в `./models` | RSS API после загрузки модели; время ответа `/classify` | |
+| 13 | Ресурсы ML-режима | запуск с `ML_ENABLED=true` + модель в `./models` | RSS API после загрузки модели; время ответа `/classify` | |
 
 ## Режимы запуска
 
@@ -35,7 +35,7 @@ bash scripts/docker_smoke.sh --build   # сборка + все проверки 
 docker compose up --build
 
 # семантический — модель в ./models (например, models/bge-m3), ключ администратора
-INSTALL_ML=true MODEL_NAME=./models/bge-m3 ADMIN_API_KEY=<секрет> \
+ML_ENABLED=true MODEL_NAME=./models/bge-m3 ADMIN_API_KEY=<секрет> \
   CLASSIFIER_BACKEND=qdrant docker compose up --build
 ```
 
@@ -60,7 +60,7 @@ Swagger) и проверьте `GET /admin/reindex/{job_id}` до статуса
 свип нужно переснять и зафиксировать в `eval/experiments.md`:
 
 ```bash
-# 1) проиндексировать каталог моделью (Docker, INSTALL_ML=true)
+# 1) проиндексировать каталог моделью (Docker, ML_ENABLED=true)
 CLASSIFIER_BACKEND=qdrant MODEL_NAME=./models/bge-m3 docker compose up --build
 curl -X POST localhost:8000/admin/reindex -H "X-Admin-API-Key: $ADMIN_API_KEY"
 

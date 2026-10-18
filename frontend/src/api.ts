@@ -6,8 +6,6 @@ export type Status = 'ok' | 'review' | 'not_found';
 export type JobStatus = 'queued' | 'running' | 'completed' | 'failed';
 
 export type Result = {
-  confidenceKind?: 'calibrated' | 'uncalibrated' | 'exact';
-  alternatives?: { code: string | null; title: string | null; clause_ref: string | null; clause_url: string | null }[];
   name: string;
   code: string | null;
   title: string | null;
@@ -38,8 +36,6 @@ export interface ClassifierApi {
 
 // Ответы API в snake_case, как в docs/api-contract.md.
 type ApiClassify = {
-  confidence_kind?: 'calibrated' | 'uncalibrated' | 'exact';
-  alternatives?: Result['alternatives'];
   query: string;
   code: string | null;
   title: string | null;
@@ -107,8 +103,6 @@ async function request<T>(path: string, init: { method?: string; body?: unknown 
 function toResult(item: ApiClassify): Result {
   const notFound = item.status === 'not_found';
   return {
-    confidenceKind: item.confidence_kind ?? 'uncalibrated',
-    alternatives: item.alternatives ?? [],
     name: item.query,
     code: notFound ? null : item.code,
     title: notFound ? null : item.title,

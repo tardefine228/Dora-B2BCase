@@ -34,9 +34,7 @@ reranker learns the bridged queries too.
 
 from __future__ import annotations
 
-import re
-
-from ml.features import LOW_SIGNAL_STEMS, normalize, stem, stems, tokens
+from ml.features import normalize, stem, stems, tokens
 
 # source product word -> catalog category word
 BRIDGES: dict[str, str] = {
@@ -208,25 +206,8 @@ for _source, _target in BRIDGES.items():
 def bridged_targets(query: str) -> dict[str, str]:
     """Map each bridged query token (normalized) to its category word."""
     found: dict[str, str] = {}
-    words = tokens(query)
-    for index, token in enumerate(words):
-        if token in {"для", "без", "кроме"}:
-            break
+    for token in tokens(query):
         target = _BRIDGE_BY_STEM.get(token) or _BRIDGE_BY_STEM.get(stem(token))
-        # A camera becomes a tyre tube only when that meaning is explicit.
-        if stem(token) == stem("камера") and not re.search(
-            r"шин|резин|автомоб|велосипед|пневмат", normalize(query)
-        ):
-            continue
-        # A noun before the bridge usually names an accessory, not the device:
-        # "чехол ноутбука", "держатель телефона", "запчасти чайника".
-        before = words[:index]
-        if target and any(
-            stem(word) not in LOW_SIGNAL_STEMS
-            and not re.search(r"(?:ый|ий|ой|ая|яя|ое|ее|ые|ие|ого|его|ую|юю)$", word)
-            for word in before
-        ):
-            continue
         if target:
             found[token] = target
     return found

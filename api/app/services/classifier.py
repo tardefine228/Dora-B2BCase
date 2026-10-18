@@ -2,8 +2,10 @@
 
 Three backends share one response contract:
 
-* ``catalog`` — offline matching against the checked-in ``data/data.csv``:
-  lexical retrieval shortlist + calibrated reranker (default, demo mode);
+* ``catalog`` — matching against the checked-in ``data/data.csv``: a *hybrid*
+  shortlist (lexical matcher + vector search over embeddings of the catalog names)
+  scored by the calibrated reranker (default). Without an embedder it degrades to
+  lexical-only;
 * ``qdrant`` — semantic search in a prebuilt Qdrant collection (``ml`` package),
   reranked with the same calibrated reranker;
 * ``mock`` — deterministic placeholder for frontend development.
@@ -28,19 +30,11 @@ from typing import Protocol
 from app.core.config import settings
 from app.schemas import Alternative, ClassifyResponse
 from app.services.source_lookup import clause_url_for
-from ml.preprocessing import (
-    OKPD2_PATTERN,
-    clean_query,
-    compatible_purpose,
-    excluded_codes,
-    query_hits_exclusion,
-    search_query,
-)
 
 logger = logging.getLogger("dora.classifier")
 
 # OKPD2 examples: 14.1, 26.20.11, 26.20.11.110
-OKPD2_RE = re.compile(OKPD2_PATTERN)
+OKPD2_RE = re.compile(r"^\d{2}(\.\d{1,2}){0,3}$")
 TOKEN_RE = re.compile(r"[a-zа-яё0-9]+", re.IGNORECASE)
 _INFERENCE_SEMAPHORE = BoundedSemaphore(settings.max_concurrent_inferences)
 
@@ -161,15 +155,19 @@ def _distinct_alternatives(ranked, status: str, threshold_review: float) -> list
     return alternatives
 
 
-def _load_reranker():
-    """Return the trained reranker, or a lexical fallback when artifacts are absent."""
+def _load_reranker(tag: str | None = None):
+    """Return the trained reranker, or a lexical fallback when artifacts are absent.
+
+    ``tag`` is the active embedder: the artifact trained with that embedder's vector
+    features is preferred (see ``ml.reranker.load_reranker``).
+    """
     try:
         from ml.reranker import load_reranker
     except Exception:  # ml package must never break the offline catalog backend
         logger.exception("ml.reranker недоступен — используется эвристический скоринг")
         return None
     try:
-        return load_reranker()
+        return load_reranker(tag=tag)
     except Exception:
         logger.exception("Не удалось загрузить реранкер — используется эвристический скоринг")
         return None
@@ -196,55 +194,86 @@ class MockClassifier:
         )
 
 
-class CatalogClassifier:
-    """Matching against the checked-in CSV catalog: lexical retrieval + reranker."""
+def _build_dense_index(rows: list[dict]):
+    """Vector index over the catalog names, or ``None`` when no embedder is available."""
+    if not settings.vector_search:
+        return None
+    try:
+        from ml.dense import DenseIndex, QdrantMirror
 
-    def __init__(self, catalog_path: Path, reranker=None) -> None:
+        mirror = None
+        if settings.vector_store == "qdrant":
+            try:
+                mirror = QdrantMirror.connect(
+                    settings.qdrant_url,
+                    settings.qdrant_api_key,
+                    f"{settings.qdrant_collection}_dense",
+                )
+            except Exception:  # noqa: BLE001 - fall back to the in-memory index
+                logger.exception("Qdrant недоступен (%s) — векторы в памяти", settings.qdrant_url)
+        cache_dir = Path(settings.data_dir).expanduser() / "dense_cache"
+        return DenseIndex.build([row["name"] for row in rows], cache_dir=cache_dir, mirror=mirror)
+    except Exception:  # noqa: BLE001 - the lexical matcher must keep working
+        logger.exception("Векторный поиск недоступен — работаем только на лексике")
+        return None
+
+
+class CatalogClassifier:
+    """Hybrid matching against the CSV catalog: lexical + vector retrieval, then reranker.
+
+    ``dense`` is ``"auto"`` (build the index when ``VECTOR_SEARCH`` is on), ``None``
+    (lexical only) or a ready ``ml.dense.DenseIndex`` aligned with ``self.index``.
+    """
+
+    def __init__(self, catalog_path: Path, reranker=None, dense="auto") -> None:
         self.catalog_path = Path(catalog_path)
         self.index: list[dict] = []
-        self._reranker = reranker if reranker is not None else _load_reranker()
         self._load()
         if not self.index:
             raise ValueError(f"В каталоге нет записей: {self.catalog_path}")
+        self._dense = _build_dense_index(self.index) if dense == "auto" else dense
+        tag = self._dense.tag if self._dense is not None else None
+        self._reranker = reranker if reranker is not None else _load_reranker(tag)
         logger.info(
-            "CatalogClassifier загружен: %d позиций из %s (reranker=%s)",
+            "CatalogClassifier загружен: %d позиций из %s (reranker=%s, vector=%s)",
             len(self.index),
             self.catalog_path,
             type(self._reranker).__name__ if self._reranker else "none",
+            tag or "off",
         )
 
+    @property
+    def vector_info(self) -> dict:
+        """Status of the vector layer for /health (what is actually serving requests)."""
+        if self._dense is None:
+            return {"enabled": False, "embedder": None, "dim": 0, "scoring": "lexical"}
+        return {
+            "enabled": True,
+            "embedder": self._dense.tag,
+            "dim": self._dense.dim,
+            "positions": len(self._dense.names),
+            "store": self._dense.store,
+            "scoring": "vector-features"
+            if getattr(self._reranker, "uses_dense", False)
+            else "lexical-reranker",
+        }
+
     def _load(self) -> None:
-        from ml.catalog_loader import _rows_to_items, catalog_fingerprint
         from ml.features import prepare_candidate
 
-        by_key: dict[tuple[str, str, tuple[str, ...]], dict] = {}
+        by_key: dict[tuple[str, str], dict] = {}
         with self.catalog_path.open(encoding="utf-8-sig", newline="") as csv_file:
             reader = csv.DictReader(csv_file, delimiter=";")
             required_columns = {"name", "okpd2"}
             if not reader.fieldnames or not required_columns.issubset(reader.fieldnames):
                 raise ValueError(f"В каталоге должны быть колонки {sorted(required_columns)}")
-            rows = list(reader)
-            items = _rows_to_items(rows)
-            self.catalog_rows = {item["record_id"]: item for item in items if item["record_id"]}
-            fingerprint = catalog_fingerprint(items)
-            self.model_catalog_current = (
-                getattr(self._reranker, "meta", {}).get("catalog_sha256") == fingerprint
-            )
-            exceptions = excluded_codes(rows)
-            for row in rows:
-                if row.get("code_role") in {"Исключение", "Не указан"}:
-                    continue
-                if not (row.get("okpd2") or "").strip():
-                    continue
+            for row in reader:
                 name = (row.get("name") or "").strip()
                 if not name:
                     continue
                 okpd2 = (row.get("okpd2") or "").strip()
                 clause_ref = self._clause_ref(row)
-                excluded = exceptions.get(
-                    (str(row.get("appendix", "")), str(row.get("position", ""))), []
-                )
-                key = (okpd2, name, tuple(excluded))
+                key = (okpd2, name)
                 existing = by_key.get(key)
                 if existing is not None:
                     # The same position often appears in several appendices; keep
@@ -253,7 +282,6 @@ class CatalogClassifier:
                         existing["clause_ref"] = f"{existing['clause_ref']}; {clause_ref}"
                     continue
                 by_key[key] = {
-                    "excluded_codes": excluded,
                     "okpd2": okpd2,
                     "name": name,
                     "appendix": (row.get("appendix") or "").strip(),
@@ -265,7 +293,6 @@ class CatalogClassifier:
                     "prepared": prepare_candidate(name),
                 }
         self.index = list(by_key.values())
-        self._literal_names = {clean_query(row["name"]).casefold() for row in self.index}
 
     @staticmethod
     def _clause_ref(row: dict) -> str | None:
@@ -278,7 +305,7 @@ class CatalogClassifier:
         return None
 
     def classify(self, query: str) -> ClassifyResponse:
-        normalized_query = clean_query(query)
+        normalized_query = query.strip()
         if not normalized_query:
             return _not_found(normalized_query)
 
@@ -296,92 +323,46 @@ class CatalogClassifier:
                         title=row["name"],
                         confidence=1.0,
                         confidence_raw=1.0,
-                        confidence_kind="exact",
                         status="ok",
                         clause_ref=row["clause_ref"],
                         clause_url=clause_url_for(row.get("record_id")),
                         alternatives=[],
                         latency_ms=0.0,
                     )
-            return _not_found(normalized_query)
 
         # 2. Lexical shortlist, then the calibrated reranker orders the candidates.
-        view = search_query(normalized_query)
-        # Literal catalog entries must not be rewritten by product-name aliases.
-        scoring_query = normalized_query if query_lower in self._literal_names else view.text
-        prefixes = () if query_lower in self._literal_names else view.prefixes
-        query_tokens = set(_tokenize(scoring_query))
+        query_tokens = set(_tokenize(query_lower))
         if not query_tokens:
             return _not_found(normalized_query)
 
-        shortlist = self._retrieve(scoring_query, query_tokens, prefixes, normalized_query)
-        if not shortlist:
+        shortlist = self._retrieve(normalized_query, query_tokens)
+        if self._dense is not None:
+            from ml.dense import fuse_shortlist
+            from ml.features import prepare_candidate
+            from ml.lexicon import expand_query
+
+            fused = fuse_shortlist(
+                self._dense,
+                self.index,
+                shortlist,
+                normalized_query,
+                prepare_candidate(expand_query(normalized_query)),
+            )
+        else:
+            fused = [(score, row, 0.0, 0.0) for score, row in shortlist]
+        if not fused:
             return _not_found(normalized_query)
 
-        if prefixes and view.clarify:
-            alternatives = []
-            seen = set()
-            for score, row in shortlist:
-                if row["okpd2"] in seen:
-                    continue
-                seen.add(row["okpd2"])
-                alternatives.append(
-                    Alternative(
-                        code=row["okpd2"],
-                        title=row["name"],
-                        confidence=round(score, 4),
-                        clause_ref=row["clause_ref"],
-                        clause_url=clause_url_for(row["record_id"]),
-                    )
-                )
-                if len(alternatives) == _MAX_ALTERNATIVES:
-                    break
-            return ClassifyResponse(
-                query=normalized_query,
-                code=None,
-                title=view.clarify,
-                confidence=0.0,
-                confidence_raw=0.0,
-                confidence_kind="uncalibrated",
-                status="review",
-                alternatives=alternatives,
-                latency_ms=0.0,
-            )
+        return self._rank_to_response(normalized_query, fused)
 
-        result = self._rank_to_response(scoring_query, shortlist)
-        # Prefix-constrained aliases change the candidate distribution, so old
-        # calibration cannot be advertised for this path. Never inflate its score.
-        if prefixes and result.code:
-            result.confidence_kind = "uncalibrated"
-            result.confidence = round(result.confidence_raw or 0.0, 4)
-            result.status = "review"
-        return result.model_copy(update={"query": normalized_query})
-
-    def _retrieve(
-        self,
-        query: str,
-        query_tokens: set[str],
-        prefixes: tuple[str, ...] = (),
-        original_query: str | None = None,
-    ) -> list[tuple[float, dict]]:
+    def _retrieve(self, query: str, query_tokens: set[str]) -> list[tuple[float, dict]]:
         """Lexical shortlist as ``(retrieval_score, row)`` pairs, best first."""
         from ml.features import lexical_score_prepared, prepare_candidate
         from ml.lexicon import expand_query
 
         prepared_query = prepare_candidate(expand_query(query))
-        exact_prefixes = {row["okpd2"] for row in self.index if row["okpd2"] in prefixes}
         scored: list[tuple[float, dict]] = []
         for row in self.index:
-            if not compatible_purpose(original_query or query, row["name"]):
-                continue
-            if prefixes and not any(
-                row["okpd2"] == prefix
-                or (prefix not in exact_prefixes and row["okpd2"].startswith(prefix + "."))
-                for prefix in prefixes
-            ):
-                continue
-            if query_hits_exclusion(original_query or query, row.get("excluded_codes", [])):
-                continue
             score = lexical_score_prepared(prepared_query, row["prepared"])
             if score <= 0.0:
                 # Keep the historical token-substring tolerance as a safety net.
@@ -397,9 +378,9 @@ class CatalogClassifier:
         scored.sort(key=lambda item: item[0], reverse=True)
         return scored[:_RETRIEVAL_SHORTLIST]
 
-    def _rank_to_response(
-        self, query: str, shortlist: list[tuple[float, dict]]
-    ) -> ClassifyResponse:
+    def _rank_to_response(self, query: str, shortlist: list[tuple]) -> ClassifyResponse:
+        # Entries are ``(score, row)`` (lexical) or ``(score, row, cosine, dense_top)``.
+        shortlist = [entry if len(entry) == 4 else (*entry, 0.0, 0.0) for entry in shortlist]
         try:
             from ml.reranker import RankedCandidate
         except Exception:  # pragma: no cover - fallback path
@@ -425,9 +406,13 @@ class CatalogClassifier:
                 title=row["name"],
                 clause_ref=row["clause_ref"],
                 retrieval_score=float(score),
-                payload={"record_id": row.get("record_id") or ""},
+                payload={
+                    "record_id": row.get("record_id") or "",
+                    "dense": cosine,
+                    "dense_top": dense_top,
+                },
             )
-            for score, row in shortlist
+            for score, row, cosine, dense_top in shortlist
         ]
         if self._reranker is not None:
             ranked = self._reranker.rerank(query, candidates)
@@ -439,14 +424,8 @@ class CatalogClassifier:
             raw_confidence, status = self._reranker.evaluate(query, ranked)
         else:  # pragma: no cover
             raw_confidence, status = best.probability, "review"
-        raw_confidence = min(max(raw_confidence, 0.0), 1.0)
+        raw_confidence = round(min(max(raw_confidence, 0.0), 1.0), 4)
         confidence = round(_display_confidence(self._reranker, raw_confidence), 4)
-        calibrated = bool(getattr(self._reranker, "confidence_model", None))
-        calibrated = calibrated and self.model_catalog_current
-        if not calibrated:
-            confidence = round(raw_confidence, 4)
-            if status == "ok":
-                status = "review"
 
         threshold_review = getattr(self._reranker, "threshold_review", 0.45)
         alternatives = _distinct_alternatives(ranked, status, threshold_review)
@@ -473,7 +452,6 @@ class CatalogClassifier:
             title=best.title,
             confidence=confidence,
             confidence_raw=raw_confidence,
-            confidence_kind="calibrated" if calibrated else "uncalibrated",
             status=status,
             clause_ref=best.clause_ref,
             clause_url=clause_url_for(best.payload.get("record_id")),
@@ -512,19 +490,12 @@ class QdrantClassifier:
             )
         self._search_many = search_many
         self._reranker = _apply_semantic_floors(_load_reranker())
-        catalog_path = _resolve_catalog_path()
-        if catalog_path is None:
-            raise FileNotFoundError(
-                "Для проверки семантической выдачи требуется актуальный каталог."
-            )
-        self._catalog = CatalogClassifier(catalog_path, reranker=self._reranker)
-        self.model_catalog_current = self._catalog.model_catalog_current
 
     def classify(self, query: str) -> ClassifyResponse:
         return self.classify_many([query])[0]
 
     def classify_many(self, queries: list[str]) -> list[ClassifyResponse]:
-        normalized_queries = [clean_query(query) for query in queries]
+        normalized_queries = [query.strip() for query in queries]
         if not normalized_queries:
             return []
 
@@ -541,23 +512,6 @@ class QdrantClassifier:
 
         results: list[ClassifyResponse] = []
         for query, hits in zip(normalized_queries, hit_groups, strict=True):
-            catalog = getattr(self, "_catalog", None)
-            if catalog is not None:
-                if OKPD2_RE.fullmatch(query.replace(" ", "")):
-                    results.append(catalog.classify(query))
-                    continue
-                # Never trust an old index to identify the current legal position.
-                hits = [
-                    hit
-                    for hit in hits
-                    if (row := catalog.catalog_rows.get(getattr(hit, "record_id", "")))
-                    and row["pp_code"] == hit.pp_code
-                    and row["name"] == hit.name
-                    and not query_hits_exclusion(query, row["excluded_codes"])
-                ]
-            hits = [
-                h for h in hits if not query_hits_exclusion(query, getattr(h, "excluded_codes", []))
-            ]
             if not hits:
                 results.append(_not_found(query))
                 continue
@@ -576,7 +530,7 @@ class QdrantClassifier:
                 ranked = self._reranker.rerank(query, candidates)
                 best = ranked[0]
                 raw_confidence, status = self._reranker.evaluate(query, ranked)
-                raw_confidence = min(max(raw_confidence, 0.0), 1.0)
+                raw_confidence = round(min(max(raw_confidence, 0.0), 1.0), 4)
                 confidence = round(_display_confidence(self._reranker, raw_confidence), 4)
                 threshold_review = getattr(self._reranker, "threshold_review", 0.45)
                 alternatives = _distinct_alternatives(ranked, status, threshold_review)
@@ -603,12 +557,6 @@ class QdrantClassifier:
                 clause_url = clause_url_for(top.record_id)
                 code, title = top.pp_code or None, top.name or None
 
-            calibrated = bool(getattr(self._reranker, "confidence_model", None))
-            calibrated = calibrated and getattr(self, "model_catalog_current", False)
-            if not calibrated:
-                confidence = round(raw_confidence, 4)
-                if status == "ok":
-                    status = "review"
             results.append(
                 ClassifyResponse(
                     query=query,
@@ -616,7 +564,6 @@ class QdrantClassifier:
                     title=title,
                     confidence=confidence,
                     confidence_raw=raw_confidence,
-                    confidence_kind="calibrated" if calibrated else "uncalibrated",
                     status=status,
                     clause_ref=clause_ref,
                     # The source citation itself lives in clause_ref; the URL points
@@ -758,24 +705,48 @@ class CachedClassifier:
 
 
 _singleton: CachedClassifier | None = None
+_singleton_signature: tuple | None = None
 _singleton_lock = RLock()
 
 
+def _catalog_signature() -> tuple | None:
+    """``(path, mtime_ns, size)`` of the catalog file in use (``None`` for non-catalog backends)."""
+    if settings.classifier_backend != "catalog":
+        return None
+    path = _resolve_catalog_path()
+    if path is None:
+        return None
+    stat = path.stat()
+    return (str(path), stat.st_mtime_ns, stat.st_size)
+
+
 def get_classifier() -> CachedClassifier:
-    """Return the single process-wide classifier and its bounded response cache."""
-    global _singleton
+    """Return the process-wide classifier and its bounded response cache.
+
+    The catalog may be replaced at runtime (``POST /admin/catalog``) by *another*
+    process sharing the data volume (the API and the Celery worker are separate), so
+    the catalog file's signature is checked on every call (one ``stat``) and the
+    classifier, including its vector index, is rebuilt when it changes.
+    """
+    global _singleton, _singleton_signature
     with _singleton_lock:
+        signature = _catalog_signature()
+        if _singleton is not None and signature != _singleton_signature:
+            logger.info("Каталог изменился на диске — пересобираем классификатор")
+            _singleton = None
         if _singleton is None:
             base_classifier = build_classifier()
             _singleton = CachedClassifier(
                 base_classifier,
                 max_entries=settings.classification_cache_size,
             )
+            _singleton_signature = signature
         return _singleton
 
 
 def reset_classifier() -> None:
     """Reset the singleton (primarily used by tests and catalog reload tooling)."""
-    global _singleton
+    global _singleton, _singleton_signature
     with _singleton_lock:
         _singleton = None
+        _singleton_signature = None

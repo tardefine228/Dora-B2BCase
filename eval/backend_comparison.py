@@ -328,33 +328,23 @@ def main() -> int:
     summary = summarize(rows)
     write_csv(rows, args.output)
 
-    print(
-        f"catalog: top-1 {summary['catalog']['top1']}% / "
-        f"тишина {summary['catalog']['silence']}% / "
-        f"p50 {summary['catalog']['latency']['p50']} мс"
-    )
-    print(
-        f"qdrant : top-1 {summary['qdrant']['top1']}% / "
-        f"тишина {summary['qdrant']['silence']}% / "
-        f"p50 {summary['qdrant']['latency']['p50']} мс"
-    )
+    print(f"catalog: top-1 {summary['catalog']['top1']}% / "
+          f"тишина {summary['catalog']['silence']}% / "
+          f"p50 {summary['catalog']['latency']['p50']} мс")
+    print(f"qdrant : top-1 {summary['qdrant']['top1']}% / "
+          f"тишина {summary['qdrant']['silence']}% / "
+          f"p50 {summary['qdrant']['latency']['p50']} мс")
     silent = summary["catalog_silent_with_code"]
     hints = summary["catalog_false_hint"]
-    print(
-        f"catalog промолчал с кодом в перечне: {silent['total']}, "
-        f"qdrant нашёл top-1: {silent['found_top1']}, всё ещё молчит: {silent['still_silent']}"
-    )
-    print(
-        f"catalog выдумал подсказку вне перечня: {hints['total']}, "
-        f"qdrant замолчал: {hints['silenced']}, всё ещё подсказывает: {hints['still_hint']}"
-    )
+    print(f"catalog промолчал с кодом в перечне: {silent['total']}, "
+          f"qdrant нашёл top-1: {silent['found_top1']}, всё ещё молчит: {silent['still_silent']}")
+    print(f"catalog выдумал подсказку вне перечня: {hints['total']}, "
+          f"qdrant замолчал: {hints['silenced']}, всё ещё подсказывает: {hints['still_hint']}")
     print(f"вердикты: {summary['verdicts']}")
     print(f"исправлено строк: {len(summary['fixed'])}, регрессий: {len(summary['regressions'])}")
     for row in summary["regressions"]:
-        print(
-            f"  регрессия: {row['query']} | ожидалось {row['expected']} | "
-            f"catalog {row['catalog']['code']} | qdrant {row['qdrant']['code']}"
-        )
+        print(f"  регрессия: {row['query']} | ожидалось {row['expected']} | "
+              f"catalog {row['catalog']['code']} | qdrant {row['qdrant']['code']}")
     print(f"CSV: {args.output}")
 
     if args.markdown:

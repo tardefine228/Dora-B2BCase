@@ -1,4 +1,4 @@
-# Optional and heavyweight. Install only for semantic Qdrant search/reindexing.
+# Transformer embeddings (multilingual-e5 / bge-m3). Installed into the image by default
+# (see INSTALL_TRANSFORMER in api/Dockerfile); torch itself comes from the CPU wheel index.
 -r requirements.txt
-qdrant-client>=1.14,<2.0
 sentence-transformers>=3.0,<6.0
