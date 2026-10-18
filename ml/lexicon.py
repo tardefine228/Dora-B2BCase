@@ -191,6 +191,7 @@ BRIDGES: dict[str, str] = {
     "варочная": "варочные",
     # Мебель: офис против металла различаем словом «офисный»
     "офисный": "офисов",
+    "стеллаж": "металлическая",
     # Склад и инженерка: описательные названия перечня
     "погрузчик": "автопогрузчики",
     "насос": "центробежные",
@@ -215,6 +216,12 @@ BRIDGES: dict[str, str] = {
 BRIDGE_VETO: dict[str, set[str]] = {
     "насос": {"роторн", "объемн", "винтов", "шестерен", "вакуумн", "плунжерн"},
 }
+
+# The opposite of a veto: the bridge fires only together with a confirming
+# context stem. (Empty for now: the "кухонный" experiment showed a raw stem
+# overlap ("вытяжка кухонная" ~ "Мебель кухонная") bypasses any bridge guard,
+# so context-dependent goods stay out of the lexicon until pair-level rules.)
+BRIDGE_REQUIRE: dict[str, set[str]] = {}
 
 # Category word -> OKPD2 code of the canonical position it bridges into.
 # Training attaches bridged product words only to this row.
@@ -251,6 +258,7 @@ CANONICAL_CODES: dict[str, str] = {
     "пайки": "27.90.31.110",
     "варочные": "27.51.28",
     "офисов": "31.01.1",
+    "металлическая": "31.09.11",
     "автопогрузчики": "28.22.15.110",
     "центробежные": "28.13.14",
     "арматура": "28.14.11",
@@ -293,6 +301,9 @@ def bridged_targets(query: str) -> dict[str, str]:
         # belongs to a neighbouring position, not the bridged one.
         vetoes = BRIDGE_VETO.get(token) or BRIDGE_VETO.get(stem(token))
         if vetoes and query_stems & vetoes:
+            continue
+        require = BRIDGE_REQUIRE.get(token) or BRIDGE_REQUIRE.get(stem(token))
+        if require and not query_stems & require:
             continue
         found[token] = target
     return found
