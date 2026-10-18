@@ -112,6 +112,11 @@ def test_dockerfile_bakes_the_embedder_with_a_safe_fallback() -> None:
     # A failed transformer step must not fail the whole build.
     assert "|| echo" in dockerfile
     assert "USER app" in dockerfile
+    # Fail-fast preflight: a blocked Hugging Face must be diagnosed in seconds,
+    # not after ten minutes of dead downloads, and name the step that died.
+    assert "huggingface.co/api/models" in dockerfile
+    assert "download.pytorch.org" in dockerfile
+    assert "WARNING: torch install failed" in dockerfile
 
 
 def test_dockerfile_builds_ui_and_ships_only_dist() -> None:

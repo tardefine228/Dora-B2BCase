@@ -37,6 +37,13 @@ docker compose up --build
   векторный слой работает на офлайн-векторах spaCy.
 - Если скачивание модели при сборке не удалось, сборка **не падает**: сервис откатывается на
   spaCy, а `/health/ready` покажет `embedder: spacy-ru_core_news_md`.
+- Чтобы трансформер запёкся, сборке нужны исходящие HTTPS на: `huggingface.co` (API и веса),
+  `*.hf.co` / `cdn-lfs.hf.co` (CDN весов), `download.pytorch.org` (torch CPU), `pypi.org` и
+  `files.pythonhosted.org` (пакеты). Антивирусный веб-фильтр или корпоративный прокси любят
+  резать именно их: сборка теперь проверяет доступность Hugging Face **до** тяжёлых скачиваний
+  и печатает в лог, какой именно шаг упал. Успех виден так: в логе сборки есть строка
+  `Model intfloat/multilingual-e5-small saved to …`, без `WARNING: transformer step failed`,
+  а `/health/ready` → `vector_search.embedder` содержит `e5`, а не `spacy`.
 
 Проверка стека на целевой машине: `bash scripts/docker_smoke.sh --build`.
 

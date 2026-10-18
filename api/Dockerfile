@@ -47,10 +47,17 @@ COPY scripts/download_model.py ./scripts/download_model.py
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/huggingface \
     if [ "$INSTALL_TRANSFORMER" = "true" ]; then \
-      ( python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.2,<3.0" \
-        && python -m pip install -r /tmp/requirements-ml.txt \
-        && python scripts/download_model.py "$EMBEDDER_MODEL" /root/.cache/huggingface/embedder \
-        && mkdir -p /opt/models \
+      ( python -c "import urllib.request as u; u.urlopen('https://huggingface.co/api/models/$EMBEDDER_MODEL', timeout=20)" \
+        || { echo "WARNING: huggingface.co unreachable - check the antivirus/proxy web filter"; \
+             echo "WARNING: whitelist huggingface.co and *.hf.co (model CDN), then rebuild"; \
+             echo "WARNING: skipping the transformer step early, falling back to spaCy vectors"; exit 1; }; \
+        python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.2,<3.0" \
+        || { echo "WARNING: torch install failed - download.pytorch.org blocked?"; exit 1; }; \
+        python -m pip install -r /tmp/requirements-ml.txt \
+        || { echo "WARNING: sentence-transformers install failed - pypi.org blocked?"; exit 1; }; \
+        python scripts/download_model.py "$EMBEDDER_MODEL" /root/.cache/huggingface/embedder \
+        || { echo "WARNING: model download failed - huggingface.co or the *.hf.co CDN blocked mid-download"; exit 1; }; \
+        mkdir -p /opt/models \
         && cp -a /root/.cache/huggingface/embedder /opt/models/embedder \
       ) || echo "WARNING: transformer step failed - falling back to spaCy vectors"; \
     fi
