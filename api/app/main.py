@@ -20,11 +20,12 @@ from fastapi import (
     Header,
     HTTPException,
     Query,
+    Request,
     Response,
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
@@ -594,12 +595,15 @@ def stream_batch_events(job_id: str) -> StreamingResponse:
     tags=["sources"],
     summary="Фрагмент текста ПП № 1875 по позиции каталога",
 )
-def get_source_fragment(record_id: str, response: Response) -> SourceFragment:
+def get_source_fragment(
+    record_id: str, request: Request, response: Response
+) -> SourceFragment | HTMLResponse:
     """Human-readable source of record behind ``clause_url`` of a classification.
 
     ``pp_link`` in the catalog is a citation, not a URL, so the service serves the
     pages of ``data/source_text.txt`` recorded in ``pdf_page_start``/``pdf_page_end``
-    for the row ``record_id``.
+    for the row ``record_id``. Browsers (``Accept: text/html``) get a readable page
+    because the classification table links here for people; API clients keep JSON.
     """
     try:
         fragment = get_source_lookup().fragment(record_id)
@@ -611,7 +615,44 @@ def get_source_fragment(record_id: str, response: Response) -> SourceFragment:
             detail="Позиция каталога с таким record_id не найдена",
         )
     response.headers["Cache-Control"] = "public, max-age=3600"
+    if "text/html" in request.headers.get("accept", ""):
+        return HTMLResponse(
+            _source_page(fragment), headers={"Cache-Control": "public, max-age=3600"}
+        )
     return fragment
+
+
+def _source_page(fragment: SourceFragment) -> str:
+    from html import escape
+
+    meta = " · ".join(
+        part
+        for part in (
+            escape(fragment.okpd2) if fragment.okpd2 else "",
+            escape(fragment.clause_ref) if fragment.clause_ref else "",
+            f"стр. {fragment.pages.start}–{fragment.pages.end}" if fragment.pages.end else "",
+        )
+        if part
+    )
+    return f"""<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{escape(fragment.name or fragment.record_id)} — ПП № 1875</title>
+<style>
+body{{margin:0;background:#f4f6fc;color:#141c3b;font:16px/1.6 Inter,Arial,sans-serif}}
+main{{max-width:960px;margin:0 auto;padding:32px 20px 60px}}
+h1{{font-size:26px;line-height:1.3;margin:0 0 8px}}
+.meta{{color:#606d90;margin:0 0 24px;font-size:15px}}
+pre{{white-space:pre-wrap;background:#fff;border:1px solid #dbe1ef;border-radius:14px;
+padding:22px;font:14px/1.7 ui-monospace,Consolas,monospace;overflow-wrap:anywhere}}
+.back{{display:inline-block;margin-bottom:20px;color:#454cff;text-decoration:none}}
+</style></head>
+<body><main>
+<a class="back" href="javascript:history.back()">← назад к результатам</a>
+<h1>{escape(fragment.name or fragment.record_id)}</h1>
+<p class="meta">{meta or escape(fragment.record_id)}</p>
+<pre>{escape(fragment.text)}</pre>
+</main></body></html>"""
 
 
 @app.post(
