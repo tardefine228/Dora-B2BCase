@@ -10,6 +10,9 @@ x-app-env: &app-env
   CLASSIFIER_BACKEND: "${CLASSIFIER_BACKEND:-catalog}"
   # Only for the pure-semantic `qdrant` backend (experiments); the default needs neither.
   ML_ENABLED: "${ML_ENABLED:-false}"
+  # auto: reranker.<embedder-tag>.json when present, else the lexical one;
+  # lexical: always reranker.json (rollback switch, no rebuild needed).
+  SEMANTIC_RERANKER: "${SEMANTIC_RERANKER:-auto}"
   CATALOG_PATH: "${CATALOG_PATH:-}"
   DATA_DIR: "/app/data"
   # Vector search: embeddings of the catalog live in Qdrant; the embedder is the baked-in

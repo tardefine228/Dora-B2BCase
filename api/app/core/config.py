@@ -75,15 +75,26 @@ class Settings:
         self.model_device = os.getenv("MODEL_DEVICE", "cpu").strip() or "cpu"
         self.model_local_only = _bool("MODEL_LOCAL_ONLY", default=False)
 
-        # Decision floors for the semantic backend. The artifact ships the point
-        # measured on the lexical backend, but the semantic raw scale is compressed,
-        # so its `review` floor is measured separately: 0.25 lifts the precision of
-        # an honest `not_found` from 89.8% to 97.2% (eval/experiments.md, эксп. 16).
+        # Decision floors for the semantic backend. The semantic raw scale is
+        # compressed, so its `review` floor is measured separately: 0.25 lifts the
+        # precision of an honest `not_found` from 89.8% to 97.2%
+        # (eval/experiments.md, эксп. 16) — measured while the semantic backend was
+        # still scored by the *lexical* artifact. With SEMANTIC_RERANKER=auto and a
+        # reranker trained for the embedder the raw scale moves, so re-measure it:
+        # eval/threshold_sweep.py --backend qdrant.
         # `ok` is aligned with the lexical floor (0.77) — it does not move any
         # measured metric, only how many answers are labelled confidently.
         # Empty string means "keep the artifact value".
         self.semantic_ok_floor = _optional_float("QDRANT_OK_FLOOR", 0.77)
         self.semantic_review_floor = _optional_float("QDRANT_REVIEW_FLOOR", 0.25)
+
+        # Which artifact scores the semantic backend: `auto` prefers the reranker
+        # trained for the active embedder (reranker.<tag>.json) and falls back to the
+        # lexical one, `lexical` always uses reranker.json. An escape hatch: switching
+        # back must not require editing files inside the image.
+        self.semantic_reranker = os.getenv("SEMANTIC_RERANKER", "auto").strip().lower()
+        if self.semantic_reranker not in {"auto", "lexical"}:
+            raise ValueError("SEMANTIC_RERANKER must be 'auto' or 'lexical'")
 
         # Reindexing is disabled unless dependencies are installed; protect it with a key.
         self.admin_api_key = os.getenv("ADMIN_API_KEY", "")

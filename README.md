@@ -32,7 +32,8 @@ docker compose up --build
 
 - UI/API:  http://localhost:8000/ui/  ·  Swagger: http://localhost:8000/docs
 - Что реально работает: `curl localhost:8000/health/ready` → блок `vector_search`
-  (`embedder`, `dim`, `store` = `qdrant`/`memory`, `scoring`), `job_store`, `queue_backend`.
+  (`embedder`, `dim`, `store` = `qdrant`/`memory`, `reranker` — какой артефакт скорит,
+  `scoring`), `job_store`, `queue_backend`.
 - Без трансформера (быстрая сборка, ~2 мин): `INSTALL_TRANSFORMER=false docker compose up --build` —
   векторный слой работает на офлайн-векторах spaCy.
 - Если скачивание модели при сборке не удалось, сборка **не падает**: сервис откатывается на
@@ -79,7 +80,13 @@ PYTHONPATH=api uvicorn app.main:app --reload --port 8000
 
 Косинус «запрос ↔ кандидат» — признак реранкера. Шкалы косинусов у разных эмбеддеров разные,
 поэтому реранкер с векторными признаками обучается **под конкретный эмбеддер**
-(`reranker.<тег-эмбеддера>.json`), а API берёт тот, что соответствует загруженному эмбеддеру.
+(`reranker.<тег-эмбеддера>.json`), а API берёт тот, что соответствует загруженному эмбеддеру —
+в **обоих** режимах: `catalog` и `qdrant` (в семантическом косинус попадает в `dense_cosine`/
+`dense_gap`, иначе признак был бы нулевым и артефакт не влиял бы на решение).
+`SEMANTIC_RERANKER=lexical` возвращает семантический режим на общий `reranker.json`
+(откат без пересборки образа). Какой артефакт реально скорит, видно в
+`GET /health/ready` → `vector_search.reranker`; при векторных признаках пороги `QDRANT_*_FLOOR`
+надо перемерить под эмбеддер.
 
 **Предохранитель.** Векторные признаки учатся на синтетических запросах и могут ухудшить
 реальные ответы. Поэтому `scripts/build_model.py --dense --gate` оценивает такой реранкер на
@@ -167,6 +174,7 @@ python scripts/build_model.py --dense --gate --models-dir models
 | `CLASSIFIER_BACKEND` | `catalog` | `catalog` \| `qdrant` \| `mock` (см. таблицу выше) |
 | `VECTOR_SEARCH` | `true` | векторный слой в режиме `catalog` (при ошибке эмбеддера — лексика, видно в `/health/ready`) |
 | `VECTOR_STORE` | `memory` (в Docker `qdrant`) | где хранятся и ищутся векторы; при недоступности Qdrant — память |
+| `SEMANTIC_RERANKER` | `auto` | реранкер режима `qdrant`: `auto` — `reranker.<тег-эмбеддера>.json`, иначе `reranker.json`; `lexical` — всегда общий (откат) |
 | `EMBEDDER_BACKEND` | `auto` | `sentence-transformers` \| `spacy` \| `tfidf`; явный выбор не откатывается молча |
 | `MODEL_NAME` / `MODEL_LOCAL_ONLY` | `/opt/models/embedder` / `true` | путь к модели эмбеддингов (в образе скачана при сборке) |
 | `ML_ENABLED` | `false` | включает чисто семантический режим `qdrant` |
