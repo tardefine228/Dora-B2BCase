@@ -163,8 +163,11 @@ alt1_code;alt1_title;alt2_code;alt2_title;alt3_code;alt3_title
 
 ### Rate limit
 
-Публичные эндпоинты ограничены token bucket'ом на клиента (первый адрес
-`X-Forwarded-For`, иначе адрес сокета): `RATE_LIMIT_RPS`/`RATE_LIMIT_BURST`
+Публичные эндпоинты ограничены token bucket'ом на клиента. Клиент — адрес сокета;
+`X-Forwarded-For` учитывается только для прокси из `TRUSTED_PROXIES`, и берётся
+правый непроверенный хоп (тот, что дописал ваш прокси): `RATE_LIMIT_RPS`/`RATE_LIMIT_BURST`
+для обычных запросов, `RATE_LIMIT_FILE_RPS`/`RATE_LIMIT_FILE_BURST` — для
+`POST /classify/file` (считается в файлах: одна загрузка — до 100 позиций)
 (по умолчанию 10/20), у `/admin/*` — отдельный строгий лимит
 (`RATE_LIMIT_ADMIN_RPS`/`_BURST`, по умолчанию 1/2). `/health*`, `/metrics` и
 статика `/ui` не лимитируются; лимит выключается `RATE_LIMIT_ENABLED=false`.

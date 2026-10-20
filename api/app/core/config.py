@@ -28,6 +28,32 @@ def _bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _trusted_proxies(name: str) -> tuple[str, ...]:
+    """Parse ``TRUSTED_PROXIES`` into ``("10.0.0.0/8", "127.0.0.1")``.
+
+    Entries are IP addresses or CIDR networks. A typo must fail at startup: a
+    silently ignored entry would either lock every client into one bucket or
+    reopen the spoofing hole. Wildcards are deliberately rejected; trusting
+    every peer would recreate the header-spoofing vulnerability.
+    """
+    import ipaddress
+
+    raw = os.getenv(name, "")
+    entries: list[str] = []
+    for chunk in raw.split(","):
+        entry = chunk.strip()
+        if not entry:
+            continue
+        try:
+            ipaddress.ip_network(entry, strict=False)
+        except ValueError as exc:
+            raise ValueError(
+                f"{name}: '{entry}' is not an IP address or CIDR network"
+            ) from exc
+        entries.append(entry)
+    return tuple(entries)
+
+
 def _optional_float(name: str, default: float | None = None) -> float | None:
     """Float setting with an explicit "unset" state (empty string means unset)."""
     value = os.getenv(name)
@@ -105,11 +131,21 @@ class Settings:
         self.max_upload_bytes = _positive_int("MAX_UPLOAD_BYTES", 10_000_000)
 
         # Per-client rate limiting (token bucket); probes, metrics and /ui are exempt.
+        # ``X-Forwarded-For`` is honoured only when the request comes from one of
+        # these addresses/networks (a reverse proxy). Empty = trust nobody, so a
+        # direct client cannot pick its own bucket by forging the header.
+        self.trusted_proxies = _trusted_proxies("TRUSTED_PROXIES")
         self.rate_limit_enabled = _bool("RATE_LIMIT_ENABLED", default=True)
         self.rate_limit_rps = _positive_int("RATE_LIMIT_RPS", 10)
         self.rate_limit_burst = _positive_int("RATE_LIMIT_BURST", 20)
         self.rate_limit_admin_rps = _positive_int("RATE_LIMIT_ADMIN_RPS", 1)
         self.rate_limit_admin_burst = _positive_int("RATE_LIMIT_ADMIN_BURST", 2)
+        # ``POST /classify/file`` is far heavier than ``/classify``: one upload
+        # becomes a batch of up to MAX_FILE_ITEMS classifications, so counting it
+        # against the request bucket let a client queue hundreds of positions per
+        # second. It gets its own bucket, counted in files.
+        self.rate_limit_file_rps = _positive_int("RATE_LIMIT_FILE_RPS", 1)
+        self.rate_limit_file_burst = _positive_int("RATE_LIMIT_FILE_BURST", 3)
 
         # Background jobs: sqlite survives an API restart, memory is for tests/demos.
         # memory | sqlite | postgres (postgres is the production store; DATABASE_URL).

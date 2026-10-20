@@ -90,4 +90,8 @@ ENV DATA_DIR=/app/data \
 USER app
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --no-proxy-headers: uvicorn's own ProxyHeadersMiddleware trusts 127.0.0.1 by
+# default and rewrites scope["client"] from X-Forwarded-For, which silently
+# defeats the app's TRUSTED_PROXIES policy (and cannot be seen by tests). Trust
+# for forwarded headers is decided in app/middleware/ratelimit.py only.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]

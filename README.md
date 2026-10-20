@@ -62,7 +62,7 @@ docker compose up --build
 
 ```bash
 python -m pip install -r api/requirements-dev.txt
-PYTHONPATH=api uvicorn app.main:app --reload --port 8000
+PYTHONPATH=api uvicorn app.main:app --reload --port 8000 --no-proxy-headers
 ```
 
 По умолчанию локально: задачи в SQLite (`JOB_STORE=sqlite`), пакеты в процессе API
@@ -128,20 +128,41 @@ top-1 86.1% (top-3 92.2%) по товарам из перечня на разм�
 
 ## Ограничение частоты запросов
 
-Ответы 429 отдают `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`;
-клиент определяется по первому адресу `X-Forwarded-For` (за прокси) или по
-сокету. `/health*`, `/metrics` и статика `/ui` не лимитируются, у `/admin/*`
-свой строгий лимит. Счётчик отказов — в `GET /metrics`
-(`rate_limited_total`, `rate_limited_by_path`).
+Ответы 429 отдают `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`.
+`/health*`, `/metrics` и статика `/ui` не лимитируются. Свои бакеты у
+`/admin/*` (строгий лимит на изменяющие операции) и у `POST /classify/file`:
+один файл — это до 100 позиций, поэтому загрузки считаются **по файлам**
+(`RATE_LIMIT_FILE_RPS=1`, `RATE_LIMIT_FILE_BURST=3`) и не тратят общий лимит
+запросов. Счётчик отказов — в `GET /metrics` (`rate_limited_total`,
+`rate_limited_by_path`).
+
+**Кто считается клиентом.** По умолчанию — адрес сокета, а `X-Forwarded-For`
+**игнорируется**: иначе любой клиент подставлял бы случайный адрес в заголовок
+и получал свежий бакет на каждый запрос. Заголовок читается только если запрос
+пришёл от прокси из `TRUSTED_PROXIES` (IP или CIDR через запятую), и берётся
+**правый непроверенный хоп** — тот, который дописал ваш прокси; всё, что клиент
+дописал слева, не учитывается. Прокси за прокси обходятся справа налево, пока
+не встретится адрес не из списка.
 
 ```bash
-# 21-й запрос подряд с одного адреса в ту же секунду (burst 20) → 429
+# Укажите фактический IP/узкую CIDR-сеть прокси (пример: 10.0.0.1).
+# 21-й запрос с одного адреса → 429.
+TRUSTED_PROXIES=10.0.0.1 docker compose up -d
 for i in $(seq 1 25); do
   curl -s -o /dev/null -w "%{http_code} " -X POST localhost:8000/classify \
     -H 'Content-Type: application/json' -H "X-Forwarded-For: 203.0.113.7" \
     -d '{"name": "Ноутбук Lenovo"}'
 done; echo
+
+# Без прокси (сервис доступен напрямую) адрес берётся из сокета, а подделанный
+# заголовок ничего не меняет — те же 429 на том же клиенте.
 ```
+
+`TRUSTED_PROXIES` обязателен при работе за прокси: без него все клиенты
+попадут в один бакет (лимит станет общим на весь сервис). У `uvicorn` в образе
+и в примерах запуска стоит `--no-proxy-headers`, чтобы он не переписывал адрес
+клиента сам: решение о доверии заголовку принимает только приложение.
+Опечатка в `TRUSTED_PROXIES` роняет старт, а не игнорируется молча.
 
 Для нагрузочных прогонов (`scripts/load_test.py`, `eval/api-load-test.md`)
 лимит отключают: `RATE_LIMIT_ENABLED=false`. Скрипт сам подсказывает это,
@@ -190,7 +211,9 @@ python scripts/build_model.py --dense --gate --models-dir models
 | `JOB_TTL_HOURS` | `24` | сколько хранить завершённые задачи до очистки |
 | `ADMIN_API_KEY` | — | ключ `X-Admin-API-Key`; без него админ-эндпоинты отключены |
 | `MAX_REQUEST_BODY_BYTES` | `1000000` | ограничение размера тела запроса (413) |
+| `TRUSTED_PROXIES` | — | адреса/CIDR прокси, которым доверяем `X-Forwarded-For`; пусто — заголовок игнорируется |
 | `RATE_LIMIT_ENABLED` | `true` | включает per-client rate limit (token bucket) |
+| `RATE_LIMIT_FILE_RPS` / `RATE_LIMIT_FILE_BURST` | `1` / `3` | отдельный бакет `POST /classify/file`, считается в файлах |
 | `RATE_LIMIT_RPS` / `RATE_LIMIT_BURST` | `10` / `20` | лимит публичных эндпоинтов (на клиента) |
 | `RATE_LIMIT_ADMIN_RPS` / `..._BURST` | `1` / `2` | отдельный строгий лимит на `/admin/*` |
 
