@@ -229,6 +229,7 @@ CSV_COLUMNS: tuple[str, ...] = (
     "title",
     "status",
     "confidence",
+    "confidence_raw",
     "clause_ref",
     "clause_url",
     "alt1_code",
@@ -258,6 +259,7 @@ def _build_batch_csv(results: list[ClassifyResponse]) -> str:
             result.title or "",
             result.status,
             f"{result.confidence:.4f}",
+            f"{result.confidence_raw:.4f}" if result.confidence_raw is not None else "",
             result.clause_ref or "",
             result.clause_url or "",
         ]
