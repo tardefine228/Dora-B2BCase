@@ -124,7 +124,7 @@ top-1 86.1% (top-3 92.2%) по товарам из перечня на разм�
 (p50 ~171 мс против ~39 мс). Поэтому **по умолчанию остаётся `catalog`**, а `qdrant`
 включается флагом как второй режим с другим компромиссом. Реранкер, формат ответа и
 шкала уверенности общие; пороги решения — свои у каждого режима
-(`QDRANT_OK_FLOOR`/`QDRANT_REVIEW_FLOOR`), контракт v1.0 (`docs/api-contract.md`).
+(`QDRANT_OK_FLOOR`/`QDRANT_REVIEW_FLOOR`; для каталога — `CATALOG_*_FLOOR`), контракт v1.0 (`docs/api-contract.md`).
 
 ## Ограничение частоты запросов
 
@@ -193,6 +193,7 @@ python scripts/build_model.py --dense --gate --models-dir models
 | Переменная | По умолчанию | Что делает |
 | --- | --- | --- |
 | `CLASSIFIER_BACKEND` | `catalog` | `catalog` \| `qdrant` \| `mock` (см. таблицу выше) |
+| `CATALOG_OK_FLOOR` / `CATALOG_REVIEW_FLOOR` | пороги из артефакта | decision floors для `catalog`; пусто — значения обученной модели, иначе `0..1` и `OK > REVIEW`; применяются при старте без переобучения |
 | `VECTOR_SEARCH` | `true` | векторный слой в режиме `catalog` (при ошибке эмбеддера — лексика, видно в `/health/ready`) |
 | `VECTOR_STORE` | `memory` (в Docker `qdrant`) | где хранятся и ищутся векторы; при недоступности Qdrant — память |
 | `SEMANTIC_RERANKER` | `auto` | реранкер режима `qdrant`: `auto` — `reranker.<тег-эмбеддера>.json`, иначе `reranker.json`; `lexical` — всегда общий (откат) |

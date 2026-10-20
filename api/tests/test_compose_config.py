@@ -21,6 +21,17 @@ def compose() -> dict:
     return yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
 
 
+def test_catalog_decision_floors_are_passed_to_api_and_worker(compose) -> None:
+    """The shared env anchor feeds both services without rebuilding the model."""
+    common = compose["x-app-env"]
+    assert common["CATALOG_OK_FLOOR"] == "${CATALOG_OK_FLOOR:-}"
+    assert common["CATALOG_REVIEW_FLOOR"] == "${CATALOG_REVIEW_FLOOR:-}"
+    assert compose["services"]["api"]["environment"] == common
+    assert compose["services"]["worker"]["environment"]["CATALOG_OK_FLOOR"] == (
+        "${CATALOG_OK_FLOOR:-}"
+    )
+
+
 def test_compose_healthchecks_api_and_starts_minimal_qdrant(compose) -> None:
     services = compose["services"]
     assert {"api", "qdrant"} <= set(services)

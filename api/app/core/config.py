@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 
 from dotenv import load_dotenv
@@ -26,6 +27,20 @@ def _bool(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _confidence_floor(name: str) -> float | None:
+    """Read an optional decision threshold in the inclusive probability range."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return None
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a finite number from 0 to 1") from exc
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise ValueError(f"{name} must be a finite number from 0 to 1")
+    return value
 
 
 def _trusted_proxies(name: str) -> tuple[str, ...]:
@@ -88,6 +103,12 @@ class Settings:
 
         self.catalog_path = os.getenv("CATALOG_PATH", "").strip()
         self.data_dir = os.getenv("DATA_DIR", "data").strip() or "data"
+
+        # Catalog decision floors override the values in the reranker artifact.
+        # Empty/unset keeps the artifact's calibrated operating point; the classifier
+        # validates the ok > review relationship against the loaded artifact.
+        self.catalog_ok_floor = _confidence_floor("CATALOG_OK_FLOOR")
+        self.catalog_review_floor = _confidence_floor("CATALOG_REVIEW_FLOOR")
 
         # Comma-separated origins for browser clients; empty value disables CORS
         # headers (same-origin deployments such as /ui do not need them).

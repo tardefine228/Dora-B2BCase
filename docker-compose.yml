@@ -8,6 +8,9 @@ x-app-env: &app-env
   APP_NAME: "Dora B2BCase API"
   LOG_LEVEL: "${LOG_LEVEL:-INFO}"
   CLASSIFIER_BACKEND: "${CLASSIFIER_BACKEND:-catalog}"
+  # Empty = keep the model artifact floors; values are read at API/worker startup.
+  CATALOG_OK_FLOOR: "${CATALOG_OK_FLOOR:-}"
+  CATALOG_REVIEW_FLOOR: "${CATALOG_REVIEW_FLOOR:-}"
   # Only for the pure-semantic `qdrant` backend (experiments); the default needs neither.
   ML_ENABLED: "${ML_ENABLED:-false}"
   # auto: reranker.<embedder-tag>.json when present, else the lexical one;

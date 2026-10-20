@@ -11,9 +11,10 @@ Three backends share one response contract:
 * ``mock`` — deterministic placeholder for frontend development.
 
 Both real backends return the reranker's match probability as ``confidence`` and
-map it to ``ok`` / ``review`` / ``not_found`` with the calibrated thresholds from
-``models/reranker.json``. Results are suggestions for a specialist, not a legal
-determination.
+map it to ``ok`` / ``review`` / ``not_found`` with thresholds from the active
+reranker artifact. Catalog floors may be overridden with ``CATALOG_*_FLOOR``; the
+semantic backend uses its own ``QDRANT_*_FLOOR`` pair. Results are suggestions for
+a specialist, not a legal determination.
 """
 
 from __future__ import annotations
@@ -103,6 +104,48 @@ def _apply_semantic_floors(reranker):
             model.threshold_ok,
             original["review"],
             model.threshold_review,
+        )
+    return reranker
+
+
+def _apply_catalog_floors(reranker):
+    """Apply optional catalog floors without changing trained model weights.
+
+    The group confidence model decides statuses when present; heuristic/legacy
+    rerankers use their own thresholds. If either override makes ``ok <= review``,
+    discard the pair and keep the artifact's calibrated operating point intact.
+    """
+    if reranker is None:
+        return None
+    model = getattr(reranker, "confidence_model", None)
+    owner = model if model is not None else reranker
+    if not hasattr(owner, "threshold_ok") or not hasattr(owner, "threshold_review"):
+        return reranker
+
+    original_ok = owner.threshold_ok
+    original_review = owner.threshold_review
+    ok_floor = settings.catalog_ok_floor
+    review_floor = settings.catalog_review_floor
+    if ok_floor is not None:
+        owner.threshold_ok = float(ok_floor)
+    if review_floor is not None:
+        owner.threshold_review = float(review_floor)
+
+    if owner.threshold_ok <= owner.threshold_review:
+        owner.threshold_ok = original_ok
+        owner.threshold_review = original_review
+        logger.warning(
+            "Catalog floors ignored (ok %s <= review %s); artifact thresholds kept",
+            ok_floor,
+            review_floor,
+        )
+    elif (owner.threshold_ok, owner.threshold_review) != (original_ok, original_review):
+        logger.info(
+            "Catalog floors applied: ok %s -> %s, review %s -> %s",
+            original_ok,
+            owner.threshold_ok,
+            original_review,
+            owner.threshold_review,
         )
     return reranker
 
@@ -281,7 +324,8 @@ class CatalogClassifier:
             raise ValueError(f"В каталоге нет записей: {self.catalog_path}")
         self._dense = _build_dense_index(self.index) if dense == "auto" else dense
         tag = self._dense.tag if self._dense is not None else None
-        self._reranker = reranker if reranker is not None else _load_reranker(tag)
+        loaded_reranker = reranker if reranker is not None else _load_reranker(tag)
+        self._reranker = _apply_catalog_floors(loaded_reranker)
         logger.info(
             "CatalogClassifier загружен: %d позиций из %s (reranker=%s, vector=%s)",
             len(self.index),
