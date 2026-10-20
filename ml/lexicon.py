@@ -164,7 +164,64 @@ BRIDGES: dict[str, str] = {
     "эмаль": "лакокрасочные",
     "грунтовка": "лакокрасочные",
     "лак": "лакокрасочные",
+    # Компьютерная периферия: перечень называет её абстрактно
+    # («Устройства ввода или вывода…», 26.20.16/18, 26.20.2, 26.12.2, 26.30.11.110)
+    "принтер": "вывода",
+    "сканер": "ввода",
+    "клавиатура": "ввода",
+    "мышь": "ввода",
+    "мфу": "периферийные",
+    "накопитель": "запоминающие",
+    "ssd": "запоминающие",
+    "винчестер": "запоминающие",
+    "видеокарта": "видеоплаты",
+    "коммутатор": "коммутации",
+    # Канцелярия и игрушки: официальные названия короткие и буквальные
+    "бумага": "бумага",
+    "тетрадь": "тетради",
+    "блокнот": "блокноты",
+    "витрина": "витрины",
+    "конструктор": "игрушки",
+    # Ручной инструмент: якорные слова официальных названий уникальны
+    "дрель": "механизированным",
+    "сверло": "сменных",
+    "бур": "сменных",
+    "паяльник": "пайки",
+    # Кухонная теплотехника
+    "варочная": "варочные",
+    # Мебель: офис против металла различаем словом «офисный»
+    "офисный": "офисов",
+    "стеллаж": "металлическая",
+    # Склад и инженерка: описательные названия перечня
+    "погрузчик": "автопогрузчики",
+    "насос": "центробежные",
+    "клапан": "арматура",
+    "компрессор": "газовые",
+    "кассовый": "кассовые",
+    "чпу": "числового",
+    "подошва": "вулканизированной",
+    # Платы и моющие средства: ретранкер иначе переворачивает верный топ-1
+    "плата": "звуковые",
+    "порошок": "моющие",
+    # Холодильное оборудование: «глухая дверь» тянет в 25.12.10 без моста
+    "холодильный": "холодильные",
+    "морозильный": "холодильные",
+    # Аккумуляторы и шины: стартерные/восстановленные против общих
+    "стартерный": "запуска",
+    "восстановленная": "восстановленные",
 }
+
+# Product words whose bridge must NOT fire when a vetoing specifier stem is
+# present in the query: the specifier points to a neighbouring position.
+BRIDGE_VETO: dict[str, set[str]] = {
+    "насос": {"роторн", "объемн", "винтов", "шестерен", "вакуумн", "плунжерн"},
+}
+
+# The opposite of a veto: the bridge fires only together with a confirming
+# context stem. (Empty for now: the "кухонный" experiment showed a raw stem
+# overlap ("вытяжка кухонная" ~ "Мебель кухонная") bypasses any bridge guard,
+# so context-dependent goods stay out of the lexicon until pair-level rules.)
+BRIDGE_REQUIRE: dict[str, set[str]] = {}
 
 # Category word -> OKPD2 code of the canonical position it bridges into.
 # Training attaches bridged product words only to this row.
@@ -189,6 +246,35 @@ CANONICAL_CODES: dict[str, str] = {
     "двери": "25.12.10.000",
     "окна": "25.12.10.000",
     "лакокрасочные": "20.30",
+    "вывода": "26.20.16",
+    "ввода": "26.20.16",
+    "бумага": "17.12",
+    "тетради": "17.23.13.194",
+    "блокноты": "17.23.13.191",
+    "витрины": "28.25.13.114",
+    "игрушки": "32.4",
+    "механизированным": "28.24.1",
+    "сменных": "25.73.40",
+    "пайки": "27.90.31.110",
+    "варочные": "27.51.28",
+    "офисов": "31.01.1",
+    "металлическая": "31.09.11",
+    "автопогрузчики": "28.22.15.110",
+    "центробежные": "28.13.14",
+    "арматура": "28.14.11",
+    "газовые": "28.13.2",
+    "кассовые": "26.20.12",
+    "числового": "26.20.40.150",
+    "вулканизированной": "22.19.73",
+    "звуковые": "26.12.2",
+    "моющие": "20.41.32",
+    "холодильные": "28.25.13.111",
+    "запуска": "27.20.21",
+    "восстановленные": "22.11.2",
+    "периферийные": "26.20.18",
+    "запоминающие": "26.20.2",
+    "видеоплаты": "26.12.2",
+    "коммутации": "26.30.11.110",
 }
 
 # Reverse index: catalog word -> source words that map to it.
@@ -206,10 +292,20 @@ for _source, _target in BRIDGES.items():
 def bridged_targets(query: str) -> dict[str, str]:
     """Map each bridged query token (normalized) to its category word."""
     found: dict[str, str] = {}
+    query_stems = {stem(token) for token in tokens(query)}
     for token in tokens(query):
         target = _BRIDGE_BY_STEM.get(token) or _BRIDGE_BY_STEM.get(stem(token))
-        if target:
-            found[token] = target
+        if not target:
+            continue
+        # A vetoing specifier ("насос роторный объёмный") means the product
+        # belongs to a neighbouring position, not the bridged one.
+        vetoes = BRIDGE_VETO.get(token) or BRIDGE_VETO.get(stem(token))
+        if vetoes and query_stems & vetoes:
+            continue
+        require = BRIDGE_REQUIRE.get(token) or BRIDGE_REQUIRE.get(stem(token))
+        if require and not query_stems & require:
+            continue
+        found[token] = target
     return found
 
 

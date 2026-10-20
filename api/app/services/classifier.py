@@ -2,16 +2,19 @@
 
 Three backends share one response contract:
 
-* ``catalog`` — offline matching against the checked-in ``data/data.csv``:
-  lexical retrieval shortlist + calibrated reranker (default, demo mode);
+* ``catalog`` — matching against the checked-in ``data/data.csv``: a *hybrid*
+  shortlist (lexical matcher + vector search over embeddings of the catalog names)
+  scored by the calibrated reranker (default). Without an embedder it degrades to
+  lexical-only;
 * ``qdrant`` — semantic search in a prebuilt Qdrant collection (``ml`` package),
   reranked with the same calibrated reranker;
 * ``mock`` — deterministic placeholder for frontend development.
 
 Both real backends return the reranker's match probability as ``confidence`` and
-map it to ``ok`` / ``review`` / ``not_found`` with the calibrated thresholds from
-``models/reranker.json``. Results are suggestions for a specialist, not a legal
-determination.
+map it to ``ok`` / ``review`` / ``not_found`` with thresholds from the active
+reranker artifact. Catalog floors may be overridden with ``CATALOG_*_FLOOR``; the
+semantic backend uses its own ``QDRANT_*_FLOOR`` pair. Results are suggestions for
+a specialist, not a legal determination.
 """
 
 from __future__ import annotations
@@ -105,6 +108,79 @@ def _apply_semantic_floors(reranker):
     return reranker
 
 
+def _apply_catalog_floors(reranker):
+    """Apply optional catalog floors without changing trained model weights.
+
+    The group confidence model decides statuses when present; heuristic/legacy
+    rerankers use their own thresholds. If either override makes ``ok <= review``,
+    discard the pair and keep the artifact's calibrated operating point intact.
+    """
+    if reranker is None:
+        return None
+    model = getattr(reranker, "confidence_model", None)
+    owner = model if model is not None else reranker
+    if not hasattr(owner, "threshold_ok") or not hasattr(owner, "threshold_review"):
+        return reranker
+
+    original_ok = owner.threshold_ok
+    original_review = owner.threshold_review
+    ok_floor = settings.catalog_ok_floor
+    review_floor = settings.catalog_review_floor
+    if ok_floor is not None:
+        owner.threshold_ok = float(ok_floor)
+    if review_floor is not None:
+        owner.threshold_review = float(review_floor)
+
+    if owner.threshold_ok <= owner.threshold_review:
+        owner.threshold_ok = original_ok
+        owner.threshold_review = original_review
+        logger.warning(
+            "Catalog floors ignored (ok %s <= review %s); artifact thresholds kept",
+            ok_floor,
+            review_floor,
+        )
+    elif (owner.threshold_ok, owner.threshold_review) != (original_ok, original_review):
+        logger.info(
+            "Catalog floors applied: ok %s -> %s, review %s -> %s",
+            original_ok,
+            owner.threshold_ok,
+            original_review,
+            owner.threshold_review,
+        )
+    return reranker
+
+
+def _qdrant_candidates(hits) -> list:
+    """Qdrant hits as reranker candidates, with their semantic score attached.
+
+    ``ml.reranker.dense_values()`` reads ``payload["dense"]`` and
+    ``payload["dense_top"]``; without them the ``dense_cosine``/``dense_gap``
+    pair features and the ``top_dense_*`` group features are always 0, so a
+    reranker trained for the semantic backend could not influence anything.
+    ``dense_top`` is the best cosine of the query over the whole catalog, which
+    is what ``ml.dense.fuse_shortlist`` puts there for the catalog backend —
+    training and serving must see the same definition.
+    """
+    from ml.reranker import RankedCandidate
+
+    scores = [float(getattr(hit, "score", 0.0) or 0.0) for hit in hits]
+    dense_top = max(scores) if scores else 0.0
+    return [
+        RankedCandidate(
+            code=hit.pp_code or None,
+            title=hit.name or "",
+            clause_ref=hit.position or hit.group or None,
+            retrieval_score=score,
+            payload={
+                "record_id": getattr(hit, "record_id", "") or "",
+                "dense": score,
+                "dense_top": dense_top,
+            },
+        )
+        for hit, score in zip(hits, scores, strict=True)
+    ]
+
+
 def _not_found(query: str) -> ClassifyResponse:
     return ClassifyResponse(
         query=query,
@@ -153,18 +229,39 @@ def _distinct_alternatives(ranked, status: str, threshold_review: float) -> list
     return alternatives
 
 
-def _load_reranker():
-    """Return the trained reranker, or a lexical fallback when artifacts are absent."""
+def _load_reranker(tag: str | None = None):
+    """Return the trained reranker, or a lexical fallback when artifacts are absent.
+
+    ``tag`` is the active embedder: the artifact trained with that embedder's vector
+    features is preferred (see ``ml.reranker.load_reranker``).
+    """
     try:
         from ml.reranker import load_reranker
     except Exception:  # ml package must never break the offline catalog backend
         logger.exception("ml.reranker недоступен — используется эвристический скоринг")
         return None
     try:
-        return load_reranker()
+        return load_reranker(tag=tag)
     except Exception:
         logger.exception("Не удалось загрузить реранкер — используется эвристический скоринг")
         return None
+
+
+def _reranker_artifact_name(reranker, tag: str | None) -> str | None:
+    """Which artifact is actually serving decisions (for /health and logs)."""
+    if reranker is None:
+        return None
+    try:
+        from ml.reranker import reranker_artifact_name, reranker_artifact_path
+    except Exception:  # pragma: no cover - ml import already failed in _load_reranker
+        return None
+    if getattr(reranker, "meta", {}).get("fallback"):
+        return "heuristic"
+    if tag:
+        name = reranker_artifact_name(tag)
+        if reranker_artifact_path(tag).is_file():
+            return name
+    return reranker_artifact_name()
 
 
 class Classifier(Protocol):
@@ -188,22 +285,71 @@ class MockClassifier:
         )
 
 
-class CatalogClassifier:
-    """Matching against the checked-in CSV catalog: lexical retrieval + reranker."""
+def _build_dense_index(rows: list[dict]):
+    """Vector index over the catalog names, or ``None`` when no embedder is available."""
+    if not settings.vector_search:
+        return None
+    try:
+        from ml.dense import DenseIndex, QdrantMirror
 
-    def __init__(self, catalog_path: Path, reranker=None) -> None:
+        mirror = None
+        if settings.vector_store == "qdrant":
+            try:
+                mirror = QdrantMirror.connect(
+                    settings.qdrant_url,
+                    settings.qdrant_api_key,
+                    f"{settings.qdrant_collection}_dense",
+                )
+            except Exception:  # noqa: BLE001 - fall back to the in-memory index
+                logger.exception("Qdrant недоступен (%s) — векторы в памяти", settings.qdrant_url)
+        cache_dir = Path(settings.data_dir).expanduser() / "dense_cache"
+        return DenseIndex.build([row["name"] for row in rows], cache_dir=cache_dir, mirror=mirror)
+    except Exception:  # noqa: BLE001 - the lexical matcher must keep working
+        logger.exception("Векторный поиск недоступен — работаем только на лексике")
+        return None
+
+
+class CatalogClassifier:
+    """Hybrid matching against the CSV catalog: lexical + vector retrieval, then reranker.
+
+    ``dense`` is ``"auto"`` (build the index when ``VECTOR_SEARCH`` is on), ``None``
+    (lexical only) or a ready ``ml.dense.DenseIndex`` aligned with ``self.index``.
+    """
+
+    def __init__(self, catalog_path: Path, reranker=None, dense="auto") -> None:
         self.catalog_path = Path(catalog_path)
         self.index: list[dict] = []
-        self._reranker = reranker if reranker is not None else _load_reranker()
         self._load()
         if not self.index:
             raise ValueError(f"В каталоге нет записей: {self.catalog_path}")
+        self._dense = _build_dense_index(self.index) if dense == "auto" else dense
+        tag = self._dense.tag if self._dense is not None else None
+        loaded_reranker = reranker if reranker is not None else _load_reranker(tag)
+        self._reranker = _apply_catalog_floors(loaded_reranker)
         logger.info(
-            "CatalogClassifier загружен: %d позиций из %s (reranker=%s)",
+            "CatalogClassifier загружен: %d позиций из %s (reranker=%s, vector=%s)",
             len(self.index),
             self.catalog_path,
             type(self._reranker).__name__ if self._reranker else "none",
+            tag or "off",
         )
+
+    @property
+    def vector_info(self) -> dict:
+        """Status of the vector layer for /health (what is actually serving requests)."""
+        if self._dense is None:
+            return {"enabled": False, "embedder": None, "dim": 0, "scoring": "lexical"}
+        return {
+            "enabled": True,
+            "embedder": self._dense.tag,
+            "dim": self._dense.dim,
+            "positions": len(self._dense.names),
+            "store": self._dense.store,
+            "reranker": _reranker_artifact_name(self._reranker, self._dense.tag),
+            "scoring": "vector-features"
+            if getattr(self._reranker, "uses_dense", False)
+            else "lexical-reranker",
+        }
 
     def _load(self) -> None:
         from ml.features import prepare_candidate
@@ -240,6 +386,10 @@ class CatalogClassifier:
                     "prepared": prepare_candidate(name),
                 }
         self.index = list(by_key.values())
+        # Stem importance table for weighted query coverage at retrieval time.
+        from ml.features import idf_table
+
+        self._idf = idf_table([row["name"] for row in self.index])
 
     @staticmethod
     def _clause_ref(row: dict) -> str | None:
@@ -252,7 +402,11 @@ class CatalogClassifier:
         return None
 
     def classify(self, query: str) -> ClassifyResponse:
-        normalized_query = query.strip()
+        # Typos ("Монитр", "Клавитура") are corrected against the catalog
+        # vocabulary first: stems and embeddings cannot rescue absent tokens.
+        from ml.fuzzy import autocorrect
+
+        normalized_query = autocorrect(query.strip())
         if not normalized_query:
             return _not_found(normalized_query)
 
@@ -283,20 +437,40 @@ class CatalogClassifier:
             return _not_found(normalized_query)
 
         shortlist = self._retrieve(normalized_query, query_tokens)
-        if not shortlist:
+        if self._dense is not None:
+            from ml.dense import fuse_shortlist
+            from ml.features import prepare_candidate
+            from ml.lexicon import expand_query
+
+            fused = fuse_shortlist(
+                self._dense,
+                self.index,
+                shortlist,
+                normalized_query,
+                prepare_candidate(expand_query(normalized_query), idf=self._idf),
+            )
+        else:
+            fused = [(score, row, 0.0, 0.0) for score, row in shortlist]
+        if not fused:
             return _not_found(normalized_query)
 
-        return self._rank_to_response(normalized_query, shortlist)
+        return self._rank_to_response(normalized_query, fused)
 
     def _retrieve(self, query: str, query_tokens: set[str]) -> list[tuple[float, dict]]:
         """Lexical shortlist as ``(retrieval_score, row)`` pairs, best first."""
-        from ml.features import lexical_score_prepared, prepare_candidate
-        from ml.lexicon import expand_query
+        from ml.features import lexical_score_prepared, prepare_candidate, stem
+        from ml.lexicon import bridged_targets, expand_query
 
-        prepared_query = prepare_candidate(expand_query(query))
+        prepared_query = prepare_candidate(expand_query(query), idf=self._idf)
+        # A bridged product word ("принтер" -> "вывода") is a deliberate lexicon
+        # decision: candidates containing the category word get a retrieval bonus
+        # so abstract official names outrank stem-accidental junk ("печать" ~ "печи").
+        bridge_stems = {stem(target) for target in set(bridged_targets(query).values())}
         scored: list[tuple[float, dict]] = []
         for row in self.index:
             score = lexical_score_prepared(prepared_query, row["prepared"])
+            if bridge_stems and bridge_stems & row["prepared"].stem_set:
+                score = min(1.0, score + 0.15)
             if score <= 0.0:
                 # Keep the historical token-substring tolerance as a safety net.
                 matched = sum(
@@ -311,9 +485,9 @@ class CatalogClassifier:
         scored.sort(key=lambda item: item[0], reverse=True)
         return scored[:_RETRIEVAL_SHORTLIST]
 
-    def _rank_to_response(
-        self, query: str, shortlist: list[tuple[float, dict]]
-    ) -> ClassifyResponse:
+    def _rank_to_response(self, query: str, shortlist: list[tuple]) -> ClassifyResponse:
+        # Entries are ``(score, row)`` (lexical) or ``(score, row, cosine, dense_top)``.
+        shortlist = [entry if len(entry) == 4 else (*entry, 0.0, 0.0) for entry in shortlist]
         try:
             from ml.reranker import RankedCandidate
         except Exception:  # pragma: no cover - fallback path
@@ -339,9 +513,13 @@ class CatalogClassifier:
                 title=row["name"],
                 clause_ref=row["clause_ref"],
                 retrieval_score=float(score),
-                payload={"record_id": row.get("record_id") or ""},
+                payload={
+                    "record_id": row.get("record_id") or "",
+                    "dense": cosine,
+                    "dense_top": dense_top,
+                },
             )
-            for score, row in shortlist
+            for score, row, cosine, dense_top in shortlist
         ]
         if self._reranker is not None:
             ranked = self._reranker.rerank(query, candidates)
@@ -410,7 +588,7 @@ class QdrantClassifier:
             raise RuntimeError(f"ML/Qdrant backend недоступен: {exc}") from exc
 
         # Load once at startup, then reuse the model and Qdrant client for requests.
-        get_encoder()
+        encoder = get_encoder()
         client = get_qdrant_client()
         if not client.collection_exists(QDRANT_COLLECTION):
             raise RuntimeError(
@@ -418,7 +596,73 @@ class QdrantClassifier:
                 "сначала выполните POST /admin/reindex."
             )
         self._search_many = search_many
-        self._reranker = _apply_semantic_floors(_load_reranker())
+        # How many points the collection holds (for /health). Counted once: a
+        # reindex rebuilds the collection with the same number of rows, and a
+        # probe must not turn into a network round trip on every poll.
+        try:
+            self._positions: int | None = int(
+                client.count(collection_name=QDRANT_COLLECTION, exact=True).count
+            )
+        except Exception:  # noqa: BLE001 - the count is diagnostic only
+            self._positions = None
+        # The embedder tag keys the reranker artifact: cosine scales differ between
+        # embedders, so a model trained with one set of vector features must never
+        # score another. Without the tag the semantic backend silently served the
+        # lexical artifact and its dense features stayed unused.
+        self._embedder_tag: str | None = getattr(encoder, "tag", None)
+        self._dim: int = int(getattr(encoder, "dim", 0) or 0)
+        if settings.semantic_reranker == "lexical":
+            logger.warning(
+                "SEMANTIC_RERANKER=lexical: семантический режим использует %s "
+                "вместо реранкера эмбеддера %s",
+                "reranker.json",
+                self._embedder_tag or "unknown",
+            )
+            reranker_tag = None
+        else:
+            reranker_tag = self._embedder_tag
+        self._reranker = _apply_semantic_floors(_load_reranker(reranker_tag))
+        self._reranker_name = _reranker_artifact_name(self._reranker, reranker_tag)
+        model = getattr(self._reranker, "confidence_model", None)
+        floors = (
+            {"ok": model.threshold_ok, "review": model.threshold_review} if model else None
+        )
+        logger.info(
+            "QdrantClassifier готов: embedder=%s dim=%d reranker=%s thresholds=%s",
+            self._embedder_tag or "unknown",
+            self._dim,
+            self._reranker_name or "none",
+            floors or "n/a",
+        )
+        if getattr(self._reranker, "uses_dense", False):
+            logger.info(
+                "Скоринг использует векторные признаки; пороги review/ok заданы "
+                "QDRANT_REVIEW_FLOOR/QDRANT_OK_FLOOR и должны быть перемерены "
+                "под активный эмбеддер (eval/threshold_sweep.py --backend qdrant)"
+            )
+
+    @property
+    def vector_info(self) -> dict:
+        """Status of the semantic layer for /health (what actually decides answers).
+
+        The catalog backend exposes the same shape; before this property existed
+        ``/health/ready`` answered ``{"enabled": false}`` for every request in the
+        ``qdrant`` backend, i.e. the probe could not see the vector layer at all.
+        """
+        from ml.config import QDRANT_COLLECTION
+
+        return {
+            "enabled": True,
+            "embedder": self._embedder_tag,
+            "dim": self._dim,
+            "positions": self._positions,
+            "store": "qdrant",
+            "collection": QDRANT_COLLECTION,
+            "reranker": self._reranker_name,
+            "scoring": "vector-features"
+            if getattr(self._reranker, "uses_dense", False)
+            else "lexical-reranker",
+        }
 
     def classify(self, query: str) -> ClassifyResponse:
         return self.classify_many([query])[0]
@@ -434,28 +678,14 @@ class QdrantClassifier:
             logger.exception("Qdrant batch search failed")
             raise
 
-        try:
-            from ml.reranker import RankedCandidate
-        except Exception:  # pragma: no cover
-            RankedCandidate = None
-
         results: list[ClassifyResponse] = []
         for query, hits in zip(normalized_queries, hit_groups, strict=True):
             if not hits:
                 results.append(_not_found(query))
                 continue
 
-            if RankedCandidate is not None and self._reranker is not None:
-                candidates = [
-                    RankedCandidate(
-                        code=hit.pp_code or None,
-                        title=hit.name or "",
-                        clause_ref=hit.position or hit.group or None,
-                        retrieval_score=float(hit.score),
-                        payload={"record_id": getattr(hit, "record_id", "") or ""},
-                    )
-                    for hit in hits
-                ]
+            if self._reranker is not None:
+                candidates = _qdrant_candidates(hits)
                 ranked = self._reranker.rerank(query, candidates)
                 best = ranked[0]
                 raw_confidence, status = self._reranker.evaluate(query, ranked)
@@ -634,24 +864,48 @@ class CachedClassifier:
 
 
 _singleton: CachedClassifier | None = None
+_singleton_signature: tuple | None = None
 _singleton_lock = RLock()
 
 
+def _catalog_signature() -> tuple | None:
+    """``(path, mtime_ns, size)`` of the catalog file in use (``None`` for non-catalog backends)."""
+    if settings.classifier_backend != "catalog":
+        return None
+    path = _resolve_catalog_path()
+    if path is None:
+        return None
+    stat = path.stat()
+    return (str(path), stat.st_mtime_ns, stat.st_size)
+
+
 def get_classifier() -> CachedClassifier:
-    """Return the single process-wide classifier and its bounded response cache."""
-    global _singleton
+    """Return the process-wide classifier and its bounded response cache.
+
+    The catalog may be replaced at runtime (``POST /admin/catalog``) by *another*
+    process sharing the data volume (the API and the Celery worker are separate), so
+    the catalog file's signature is checked on every call (one ``stat``) and the
+    classifier, including its vector index, is rebuilt when it changes.
+    """
+    global _singleton, _singleton_signature
     with _singleton_lock:
+        signature = _catalog_signature()
+        if _singleton is not None and signature != _singleton_signature:
+            logger.info("Каталог изменился на диске — пересобираем классификатор")
+            _singleton = None
         if _singleton is None:
             base_classifier = build_classifier()
             _singleton = CachedClassifier(
                 base_classifier,
                 max_entries=settings.classification_cache_size,
             )
+            _singleton_signature = signature
         return _singleton
 
 
 def reset_classifier() -> None:
     """Reset the singleton (primarily used by tests and catalog reload tooling)."""
-    global _singleton
+    global _singleton, _singleton_signature
     with _singleton_lock:
         _singleton = None
+        _singleton_signature = None

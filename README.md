@@ -5,21 +5,16 @@
 сервис находит вероятную позицию перечня и код ОКПД2, показывает уверенность и
 альтернативы. Результат — **подсказка для специалиста**, не юридическая проверка.
 
-## Быстрый старт (локально)
+## Стек
 
-```bash
-python -m pip install -r api/requirements-dev.txt
-python scripts/build_model.py          # лёгкие ML-артефакты в models/ (секунды)
-PYTHONPATH=api uvicorn app.main:app --reload --port 8000
-```
-
-- Демо-UI:  http://localhost:8000/ui/   (корень `/` ведёт туда же)
-  — экспорт батча в CSV (кнопка «Скачать CSV», те же колонки, что у
-  `/classify/batch/{id}.csv`), прогресс через SSE с автоматическим фолбэком на
-  опрос, ссылки «источник» на `GET /source/{record_id}`
-- API:      http://localhost:8000
-- Swagger:  http://localhost:8000/docs
-- Health:   http://localhost:8000/health
+| Компонент | Технология | Роль |
+| --- | --- | --- |
+| API | FastAPI | `/classify`, пакетная обработка, админ-эндпоинты, UI на `/ui/` |
+| Интерфейс | React + TypeScript + Vite | одиночный товар, загрузка списка, прогресс, экспорт |
+| БД | **PostgreSQL** | фоновые задачи и результаты батчей, журнал классификаций (`classification_log`) |
+| Очередь | **Celery + Redis** | тяжёлые пакеты обрабатывает отдельный воркер, API не блокируется |
+| Векторный поиск | **Qdrant** + эмбеддинги (multilingual-e5 → векторы spaCy → TF-IDF) | кандидаты «по смыслу» + признаки реранкера |
+| Реранкер | логистическая модель с калибровкой | порядок кандидатов, уверенность, статусы `ok`/`review`/`not_found` |
 
 ## Запуск через Docker (рекомендуемый)
 
@@ -27,23 +22,101 @@ PYTHONPATH=api uvicorn app.main:app --reload --port 8000
 docker compose up --build
 ```
 
-- UI/API:  http://localhost:8000/ui/
-- Qdrant:  http://localhost:6333 (данные в volume `qdrant_data`, каталог — в `catalog_data`)
+Поднимаются `api`, `worker` (Celery), `postgres`, `redis`, `qdrant`. Первая сборка долгая
+(PyTorch + модель эмбеддингов + обучение реранкера под неё, ~10–15 минут). Повторный
+`docker compose up --build` идёт из кэша: слой с загрузками стоит **до** копирования кода
+и опирается только на файлы требований, поэтому правки кода/UI не вызывают повторных
+загрузок, а pip- и Hugging Face-кэши лежат в BuildKit cache-mount'ах. Обычный
+`docker compose up` (без `--build`) не скачивает ничего и стартует за секунды;
+векторный кэш каталога и коллекции Qdrant переживают рестарт в volumes.
 
-Проверка стека на целевой машине: `bash scripts/docker_smoke.sh --build`
-(чек-лист: `eval/docker-target-checklist.md` — в песочнице разработки Docker
-отсутствовал, образы проверяются этим скриптом на месте).
+- UI/API:  http://localhost:8000/ui/  ·  Swagger: http://localhost:8000/docs
+- Что реально работает: `curl localhost:8000/health/ready` → блок `vector_search`
+  (`embedder`, `dim`, `store` = `qdrant`/`memory`, `reranker` — какой артефакт скорит,
+  `scoring`), `job_store`, `queue_backend`.
+- Без трансформера (быстрая сборка, ~2 мин): `INSTALL_TRANSFORMER=false docker compose up --build` —
+  векторный слой работает на офлайн-векторах spaCy.
+- Если скачивание модели при сборке не удалось, сборка **не падает**: сервис откатывается на
+  spaCy, а `/health/ready` покажет `embedder: spacy-ru_core_news_md`.
+- Чтобы трансформер запёкся, сборке нужны исходящие HTTPS на: `huggingface.co` (API и веса),
+  `*.hf.co` / `cdn-lfs.hf.co` (CDN весов), `download.pytorch.org` (torch CPU), `pypi.org` и
+  `files.pythonhosted.org` (пакеты). Антивирусный веб-фильтр или корпоративный прокси любят
+  резать именно их: сборка теперь проверяет доступность Hugging Face **до** тяжёлых скачиваний
+  и печатает в лог, какой именно шаг упал. Успех виден так: в логе сборки есть строка
+  `Model intfloat/multilingual-e5-small saved to …`, без `WARNING: transformer step failed`,
+  а `/health/ready` → `vector_search.embedder` = `st-embedder`, `dim` = 384 (у spaCy —
+  `spacy-ru_core_news_md`, `dim` = 300).
+- Сборка успешна, но `/health/ready` всё равно показывает `spacy-ru_core_news_md`? Почти
+  всегда виноват устаревший `MODEL_NAME` в вашем `.env` (например, `./models/bge-m3` из
+  старых ревизий `.env.example`): переменная из `.env` перекрывает путь `/opt/models/embedder`,
+  запечённый в образе, каталог не находится — и рантайм молча откатывается на spaCy.
+  Диагностика: `docker compose exec api ls /opt/models/embedder` (модель в образе есть?)
+  и `docker compose exec api printenv MODEL_NAME` (что реально видит сервис?). Лечение —
+  убрать строку `MODEL_NAME` из `.env` и `docker compose up -d`; пересборка не нужна.
+  Первый старт после переключения займёт минуту-другую: каталог переэмбедится в новую
+  коллекцию Qdrant (имя коллекции включает тег эмбеддера, старая удаляется автоматически).
+
+Проверка стека на целевой машине: `bash scripts/docker_smoke.sh --build`.
+
+## Быстрый старт (локально, без Docker)
+
+```bash
+python -m pip install -r api/requirements-dev.txt
+PYTHONPATH=api uvicorn app.main:app --reload --port 8000 --no-proxy-headers
+```
+
+По умолчанию локально: задачи в SQLite (`JOB_STORE=sqlite`), пакеты в процессе API
+(`QUEUE_BACKEND=inprocess`), векторы в памяти (`VECTOR_STORE=memory`). Полный стек —
+переменными окружения (см. таблицу ниже) и сервисами из `docker-compose.yml`.
+
+## Векторный поиск
+
+Классификатор в режиме `catalog` — **гибридный**: шорт-лист = лексический матчер ∪ ближайшие
+по смыслу позиции из векторного индекса (`ml/dense.py`). Векторы названий позиций строятся
+выбранным эмбеддером (`EMBEDDER_BACKEND=auto`: sentence-transformers → spaCy → TF-IDF),
+публикуются в Qdrant (коллекция адресуется содержимым каталога: новый каталог = новая
+коллекция, старая удаляется) и кэшируются на диске. Ближайших соседей отдаёт Qdrant;
+при его недоступности поиск автоматически идёт по матрице в памяти.
+
+Косинус «запрос ↔ кандидат» — признак реранкера. Шкалы косинусов у разных эмбеддеров разные,
+поэтому реранкер с векторными признаками обучается **под конкретный эмбеддер**
+(`reranker.<тег-эмбеддера>.json`), а API берёт тот, что соответствует загруженному эмбеддеру —
+в **обоих** режимах: `catalog` и `qdrant` (в семантическом косинус попадает в `dense_cosine`/
+`dense_gap`, иначе признак был бы нулевым и артефакт не влиял бы на решение).
+`SEMANTIC_RERANKER=lexical` возвращает семантический режим на общий `reranker.json`
+(откат без пересборки образа). Какой артефакт реально скорит, видно в
+`GET /health/ready` → `vector_search.reranker`; при векторных признаках пороги `QDRANT_*_FLOOR`
+надо перемерить под эмбеддер.
+
+**Предохранитель.** Векторные признаки учатся на синтетических запросах и могут ухудшить
+реальные ответы. Поэтому `scripts/build_model.py --dense --gate` оценивает такой реранкер на
+`eval/labeled_examples.csv` и **удаляет артефакт, если он не лучше лексического**; тогда
+вектора только пополняют список кандидатов. Именно так сборка Docker обращается с
+трансформером.
+
+Что измерено (размеченный набор, 166 товаров из перечня + 108 вне перечня):
+
+| Вариант | top-1 с кодом | тишина (верный `not_found`) |
+| --- | ---: | ---: |
+| лексика + лемматизация (**текущий по умолчанию в артефакте**) | 86.1% | 81.5% |
+| + кандидаты из векторов spaCy, лексический реранкер | = лексике | = лексике |
+| + векторы spaCy как признаки реранкера | 81.3% (до лемм.) | 88.9% |
+
+Статические векторы spaCy слишком грубые (500 тыс. слов делят 20 тыс. векторов), поэтому
+как признак они не помогают, и предохранитель их отклоняет. Выигрыша от **трансформера**
+(multilingual-e5) в среде разработки измерить было нельзя (Hugging Face недоступен) — его
+эффект покажет шаг `--gate` при сборке образа и `eval/run_eval.py` на вашей машине.
 
 ## Режимы классификации (`CLASSIFIER_BACKEND`)
 
 | Значение | Что делает | Когда использовать |
 | --- | --- | --- |
-| `catalog` | реальный каталог `data/data.csv`: лексическая выдача + обученный реранкер + откалиброванные пороги (**по умолчанию**) | демо, работа без весов ML |
-| `qdrant` | семантический поиск в Qdrant (`ml/`), тот же реранкер и пороги | когда в `models/` лежит модель (например `bge-m3`) |
+| `catalog` | реальный каталог `data/data.csv`: гибридная выдача (лексика + векторный поиск) + обученный реранкер + откалиброванные пороги (**по умолчанию**) | основной режим |
+| `qdrant` | чисто семантический поиск в Qdrant (`ml/`), тот же реранкер, свои пороги | эксперименты со сравнением режимов |
 | `mock` | детерминированная заглушка `MOCK-001` | разработка фронтенда |
 
 **Выбор режима для демо:** каталоговый гибрид работает офлайн и даёт
-top-1 83.7% (top-3 89.2%) на размеченном наборе из 274 строк (`eval/eval_report.md`).
+top-1 86.1% (top-3 92.2%) по товарам из перечня на размеченном наборе из 274 строк (`eval/eval_report.md`).
 Семантический режим измерен на том же наборе и настроен отдельно (эксп. 15–16,
 `eval/backend_comparison.md`): на своей рабочей точке (`review = 0.25`) он почти не
 выдумывает подсказок там, где товара нет в перечне — 97.2% против 88.0% у лексики, — но
@@ -51,24 +124,45 @@ top-1 83.7% (top-3 89.2%) на размеченном наборе из 274 ст
 (p50 ~171 мс против ~39 мс). Поэтому **по умолчанию остаётся `catalog`**, а `qdrant`
 включается флагом как второй режим с другим компромиссом. Реранкер, формат ответа и
 шкала уверенности общие; пороги решения — свои у каждого режима
-(`QDRANT_OK_FLOOR`/`QDRANT_REVIEW_FLOOR`), контракт v1.0 (`docs/api-contract.md`).
+(`QDRANT_OK_FLOOR`/`QDRANT_REVIEW_FLOOR`; для каталога — `CATALOG_*_FLOOR`), контракт v1.0 (`docs/api-contract.md`).
 
 ## Ограничение частоты запросов
 
-Ответы 429 отдают `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`;
-клиент определяется по первому адресу `X-Forwarded-For` (за прокси) или по
-сокету. `/health*`, `/metrics` и статика `/ui` не лимитируются, у `/admin/*`
-свой строгий лимит. Счётчик отказов — в `GET /metrics`
-(`rate_limited_total`, `rate_limited_by_path`).
+Ответы 429 отдают `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`.
+`/health*`, `/metrics` и статика `/ui` не лимитируются. Свои бакеты у
+`/admin/*` (строгий лимит на изменяющие операции) и у `POST /classify/file`:
+один файл — это до 100 позиций, поэтому загрузки считаются **по файлам**
+(`RATE_LIMIT_FILE_RPS=1`, `RATE_LIMIT_FILE_BURST=3`) и не тратят общий лимит
+запросов. Счётчик отказов — в `GET /metrics` (`rate_limited_total`,
+`rate_limited_by_path`).
+
+**Кто считается клиентом.** По умолчанию — адрес сокета, а `X-Forwarded-For`
+**игнорируется**: иначе любой клиент подставлял бы случайный адрес в заголовок
+и получал свежий бакет на каждый запрос. Заголовок читается только если запрос
+пришёл от прокси из `TRUSTED_PROXIES` (IP или CIDR через запятую), и берётся
+**правый непроверенный хоп** — тот, который дописал ваш прокси; всё, что клиент
+дописал слева, не учитывается. Прокси за прокси обходятся справа налево, пока
+не встретится адрес не из списка.
 
 ```bash
-# 21-й запрос подряд с одного адреса в ту же секунду (burst 20) → 429
+# Укажите фактический IP/узкую CIDR-сеть прокси (пример: 10.0.0.1).
+# 21-й запрос с одного адреса → 429.
+TRUSTED_PROXIES=10.0.0.1 docker compose up -d
 for i in $(seq 1 25); do
   curl -s -o /dev/null -w "%{http_code} " -X POST localhost:8000/classify \
     -H 'Content-Type: application/json' -H "X-Forwarded-For: 203.0.113.7" \
     -d '{"name": "Ноутбук Lenovo"}'
 done; echo
+
+# Без прокси (сервис доступен напрямую) адрес берётся из сокета, а подделанный
+# заголовок ничего не меняет — те же 429 на том же клиенте.
 ```
+
+`TRUSTED_PROXIES` обязателен при работе за прокси: без него все клиенты
+попадут в один бакет (лимит станет общим на весь сервис). У `uvicorn` в образе
+и в примерах запуска стоит `--no-proxy-headers`, чтобы он не переписывал адрес
+клиента сам: решение о доверии заголовку принимает только приложение.
+Опечатка в `TRUSTED_PROXIES` роняет старт, а не игнорируется молча.
 
 Для нагрузочных прогонов (`scripts/load_test.py`, `eval/api-load-test.md`)
 лимит отключают: `RATE_LIMIT_ENABLED=false`. Скрипт сам подсказывает это,
@@ -77,37 +171,50 @@ done; echo
 ## ML-модель и переиндексация
 
 ```bash
-# лёгкие артефакты (tfidf-эмбеддер + калиброванный реранкер) — без интернета
+# Готовые артефакты (лексический реранкер + tfidf-эмбеддер) лежат в ml/artifacts/ и входят в
+# образ. Пересборка (без интернета, ~2–3 мин на 1 CPU), затем скопировать в ml/artifacts/:
 python scripts/build_model.py
+cp models/reranker.json models/tfidf_embedder.json ml/artifacts/
 
-# полный семантический режим: положите SentenceTransformers-модель в models/
-INSTALL_ML=true CLASSIFIER_BACKEND=qdrant MODEL_NAME=./models/bge-m3 \
-  ADMIN_API_KEY=<секрет> docker compose up --build
-curl -X POST localhost:8000/admin/reindex -H "X-Admin-API-Key: <секрет>"
+# реранкер с векторными признаками под активный эмбеддер (+ проверка предохранителем)
+python scripts/build_model.py --dense --gate --models-dir models
 ```
 
-`/admin/reindex` переиндексирует каталог в Qdrant фоном и атомарно переключает
-алиас (поиск не прерывается, повторная переиндексация не оставляет мусор).
-Пороговое ПО ML устанавливается только при `INSTALL_ML=true`; без модели
-работает `EMBEDDER_BACKEND=tfidf` (офлайн-фолбэк, проверен сквозными тестами
-`api/tests/test_ml_e2e.py`).
+Лемматизация (`pymorphy3`) встроена в `ml/features.stem` — основы в артефакте построены по
+леммам, поэтому `pymorphy3` обязателен в рантайме (он в `api/requirements.txt`). После смены
+каталога/стеммера артефакт нужно пересобрать.
+
+Каталог обновляется **без передеплоя**: `POST /admin/catalog` кладёт новый `data.csv` на общий
+том, а API и воркер сами пересобирают классификатор и векторный индекс при следующем запросе
+(проверяется сигнатура файла). `POST /admin/reindex` нужен только режиму `qdrant`.
 
 ## Переменные окружения (основные)
 
 | Переменная | По умолчанию | Что делает |
 | --- | --- | --- |
 | `CLASSIFIER_BACKEND` | `catalog` | `catalog` \| `qdrant` \| `mock` (см. таблицу выше) |
-| `ML_ENABLED` | `false` | включает тяжёлый ML-стек (Qdrant-режим) |
+| `CATALOG_OK_FLOOR` / `CATALOG_REVIEW_FLOOR` | пороги из артефакта | decision floors для `catalog`; пусто — значения обученной модели, иначе `0..1` и `OK > REVIEW`; применяются при старте без переобучения |
+| `VECTOR_SEARCH` | `true` | векторный слой в режиме `catalog` (при ошибке эмбеддера — лексика, видно в `/health/ready`) |
+| `VECTOR_STORE` | `memory` (в Docker `qdrant`) | где хранятся и ищутся векторы; при недоступности Qdrant — память |
+| `SEMANTIC_RERANKER` | `auto` | реранкер режима `qdrant`: `auto` — `reranker.<тег-эмбеддера>.json`, иначе `reranker.json`; `lexical` — всегда общий (откат) |
+| `EMBEDDER_BACKEND` | `auto` | `sentence-transformers` \| `spacy` \| `tfidf`; явный выбор не откатывается молча |
+| `MODEL_NAME` / `MODEL_LOCAL_ONLY` | `/opt/models/embedder` / `true` | путь к модели эмбеддингов (в образе скачана при сборке) |
+| `ML_ENABLED` | `false` | включает чисто семантический режим `qdrant` |
 | `DATA_DIR` | `data` | каталог `data.csv`/`data.json` и `source_text.txt` |
 | `CATALOG_PATH` | — | явный путь к `data.csv` (перебивает `DATA_DIR`) |
 | `MODELS_DIR` | `models` | артефакты модели (`reranker.json`, `tfidf_embedder.json`) |
 | `QDRANT_OK_FLOOR` / `QDRANT_REVIEW_FLOOR` | `0.77` / `0.25` | пороги решения для семантического режима; пусто — взять из артефакта (эксп. 16) |
-| `JOB_STORE` | `sqlite` | хранилище фоновых задач: `sqlite` (переживает рестарт) или `memory` |
-| `JOB_STORE_PATH` | `data/jobs.sqlite` | файл sqlite-хранилища (в Docker — volume `jobs_data`) |
+| `JOB_STORE` | `sqlite` (в Docker `postgres`) | хранилище задач: `postgres` \| `sqlite` \| `memory` |
+| `DATABASE_URL` | — | строка подключения PostgreSQL (обязательна при `JOB_STORE=postgres`) |
+| `QUEUE_BACKEND` / `REDIS_URL` | `inprocess` (в Docker `celery`) / `redis://redis:6379/0` | где выполняются пакеты: в процессе API или в Celery-воркере |
+| `AUDIT_LOG` | `true` при `postgres` | журнал ответов в таблицу `classification_log` |
+| `JOB_STORE_PATH` | `data/jobs.sqlite` | файл sqlite-хранилища (локальный режим) |
 | `JOB_TTL_HOURS` | `24` | сколько хранить завершённые задачи до очистки |
 | `ADMIN_API_KEY` | — | ключ `X-Admin-API-Key`; без него админ-эндпоинты отключены |
 | `MAX_REQUEST_BODY_BYTES` | `1000000` | ограничение размера тела запроса (413) |
+| `TRUSTED_PROXIES` | — | адреса/CIDR прокси, которым доверяем `X-Forwarded-For`; пусто — заголовок игнорируется |
 | `RATE_LIMIT_ENABLED` | `true` | включает per-client rate limit (token bucket) |
+| `RATE_LIMIT_FILE_RPS` / `RATE_LIMIT_FILE_BURST` | `1` / `3` | отдельный бакет `POST /classify/file`, считается в файлах |
 | `RATE_LIMIT_RPS` / `RATE_LIMIT_BURST` | `10` / `20` | лимит публичных эндпоинтов (на клиента) |
 | `RATE_LIMIT_ADMIN_RPS` / `..._BURST` | `1` / `2` | отдельный строгий лимит на `/admin/*` |
 
@@ -225,22 +332,24 @@ api/
   app/
     main.py            # FastAPI: роуты, admin-каталог, lifespan, статика /ui
     schemas.py         # контракт v1.0 (Pydantic)
-    job_store.py       # in-memory фоновые задачи
+    job_store.py       # хранилища задач: memory / sqlite
+    job_store_postgres.py  # PostgreSQL: задачи, прогресс, журнал классификаций
+    dispatch.py        # отправка пакета: фоновая задача FastAPI или Celery
+    tasks.py           # тело пакетной задачи (общее для API и воркера)
+    worker.py          # Celery-приложение (брокер Redis)
     core/              # config, logging, correlation id, metrics
     middleware/        # observe, ограничение размера тела, rate limit
     services/          # classifier (catalog/mock/qdrant), catalog_io, source_lookup
-  tests/               # API, классификатор, контракт, ML E2E, compose
+  tests/               # API, классификатор, контракт, очередь, PostgreSQL, векторы, compose
 frontend/              # демо-UI (React + Vite; собирается в frontend/dist и отдаётся на /ui/)
-ml/                    # эмбеддеры (tfidf/sentence-transformers), индексация,
-                       # поиск, реранкер, лексические мосты, обучение
-models/                # артефакты (генерируются: scripts/build_model.py)
-data/                  # каталог ПП № 1875 (data.csv + data.json)
+ml/                    # эмбеддеры, плотный индекс + Qdrant (dense.py), реранкер, лексика, обучение
+  artifacts/           # готовые артефакты модели (входят в образ)
+data/                  # каталог ПП № 1875 (data.csv + data.json + source_text.txt)
 eval/                  # размеченный набор, метрики, эксперименты, чек-листы
 docs/                  # api-contract.md, catalog-update.md
-scripts/               # build_model, validate_catalog, load_test, docker_smoke
+scripts/               # build_model, download_model, parse_pp1875, validate_catalog, load_test, docker_smoke
 ```
 
-> Фоновые задачи хранятся в store, выбранном `JOB_STORE` (`sqlite` по умолчанию,
-> файл `JOB_STORE_PATH`): после перезапуска API незавершённые задачи помечаются
-> `failed` с `error="interrupted by restart"`, а завершённые переживают рестарт.
-> Для многопроцессного деплоя всё ещё нужен общий store (Redis/DB).
+> Задачи пакетной обработки лежат в PostgreSQL (в Docker), поэтому переживают перезапуск и
+> API, и воркера. Задачи, которые никто не трогал дольше `JOB_STALE_SECONDS` (воркер умер),
+> помечаются `failed`, а не висят вечно; недоступная очередь даёт `503`.

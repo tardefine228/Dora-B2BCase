@@ -20,23 +20,24 @@ from fastapi import (
     Header,
     HTTPException,
     Query,
+    Request,
     Response,
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.log_config import configure_logging
 from app.core.metrics import metrics as metrics_store
+from app.dispatch import enqueue_batch
 from app.job_store import (
     BatchJob,
     JobStoreCapacityError,
     ReindexAlreadyRunningError,
     ReindexJob,
-    add_batch_result,
-    complete_batch,
+    audit_classifications,
     complete_reindex,
     create_job,
     create_reindex_job,
@@ -81,9 +82,30 @@ from app.services.source_lookup import (
     get_source_lookup,
     reset_source_lookup,
 )
+from app.tasks import run_batch_job
 
 configure_logging(settings.log_level)
 logger = logging.getLogger("dora.api")
+
+# Where the specialist can verify the decree text served from data/source_text.txt:
+# (title, url, note) triplets rendered on the /source/{record_id} HTML page.
+DECREE_OFFICIAL_SOURCES: tuple[tuple[str, str, str], ...] = (
+    (
+        "Официальный интернет-портал правовой информации",
+        "http://publication.pravo.gov.ru/document/0001202412250018",
+        "Официальное опубликование 25.12.2024, № 0001202412250018",
+    ),
+    (
+        "Портал Правительства России",
+        "http://government.ru/docs/all/157130/",
+        "Подписан 23.12.2024; там же PDF-оригинал (32 МБ)",
+    ),
+    (
+        "Действующая редакция (Контур.Норматив)",
+        "https://normativ.kontur.ru/document?moduleId=1&documentId=507717",
+        "Текст с изменениями — сверяйте дату редакции перед применением",
+    ),
+)
 
 
 @asynccontextmanager
@@ -133,6 +155,7 @@ app.add_middleware(RateLimitMiddleware)
 # Add the observer last so it also measures and logs requests rejected by the
 # rate limiter and the size limiter.
 app.add_middleware(ObserveMiddleware)
+
 
 def _resolve_frontend_dir(module_file: str | Path = __file__) -> Path | None:
     """Find static UI files in both the source tree and the Docker image.
@@ -199,13 +222,14 @@ def _batch_status(job: BatchJob) -> BatchJobStatusResponse:
     )
 
 
-# CSV export of a finished batch (matches the client-side exporter in frontend/app.js).
+# CSV export of a finished batch (matches the client-side exporter in frontend/src).
 CSV_COLUMNS: tuple[str, ...] = (
     "query",
     "code",
     "title",
     "status",
     "confidence",
+    "confidence_raw",
     "clause_ref",
     "clause_url",
     "alt1_code",
@@ -219,7 +243,7 @@ _CSV_ALTERNATIVES = 3
 # Excel on a Russian locale expects ";" separators and a BOM in an UTF-8 file.
 BATCH_CSV_BOM = "\ufeff"
 
-# Server-sent events for batch progress (see frontend/app.js for the client).
+# Server-sent events for batch progress (see frontend/src for the client).
 SSE_POLL_SECONDS = 0.25
 SSE_HEARTBEAT_SECONDS = 15.0
 
@@ -235,6 +259,7 @@ def _build_batch_csv(results: list[ClassifyResponse]) -> str:
             result.title or "",
             result.status,
             f"{result.confidence:.4f}",
+            f"{result.confidence_raw:.4f}" if result.confidence_raw is not None else "",
             result.clause_ref or "",
             result.clause_url or "",
         ]
@@ -251,30 +276,8 @@ def _sse_event(event: str, payload: dict) -> str:
 
 
 def _run_batch_job(job_id: str) -> None:
-    """Classify a batch off the event loop and publish progress in bounded chunks."""
-    snapshot = get_job(job_id)
-    if not isinstance(snapshot, BatchJob) or not start_job(job_id):
-        return
-
-    try:
-        classifier = _classifier_or_503()
-        chunk_size = 16
-        for offset in range(0, len(snapshot.items), chunk_size):
-            names = snapshot.items[offset : offset + chunk_size]
-            started = time.perf_counter()
-            results = classifier.classify_many(names)
-            per_item_latency = (time.perf_counter() - started) * 1000 / max(len(names), 1)
-            for name, result in zip(names, results, strict=True):
-                add_batch_result(
-                    job_id,
-                    result.model_copy(
-                        update={"query": name, "latency_ms": round(per_item_latency, 3)}
-                    ),
-                )
-        complete_batch(job_id)
-    except Exception:
-        logger.exception("Batch job failed: %s", job_id)
-        fail_job(job_id, "Не удалось обработать список товаров; проверьте логи сервиса")
+    """In-process runner (``QUEUE_BACKEND=inprocess``); Celery runs the same body."""
+    run_batch_job(job_id, _classifier_or_503)
 
 
 def _run_reindex_job(job_id: str) -> None:
@@ -357,6 +360,13 @@ def health() -> dict:
     }
 
 
+def _vector_info() -> dict:
+    """What the vector layer is actually doing (embedder, dimension, scoring mode)."""
+    inner = getattr(get_classifier(), "_classifier", None)
+    info = getattr(inner, "vector_info", None)
+    return info if isinstance(info, dict) else {"enabled": False}
+
+
 @app.get("/health/ready", tags=["system"], summary="Readiness probe")
 def readiness() -> dict:
     """Ready only when the configured classifier and its required resources are usable."""
@@ -382,6 +392,9 @@ def readiness() -> dict:
         "service": "dora-api",
         "classifier_backend": settings.classifier_backend,
         "version": app.version,
+        "vector_search": _vector_info(),
+        "job_store": settings.job_store,
+        "queue_backend": settings.queue_backend,
     }
 
 
@@ -400,7 +413,9 @@ def classify(request: ClassifyRequest) -> ClassifyResponse:
     started = time.perf_counter()
     result = _classifier_or_503().classify(request.name)
     latency_ms = (time.perf_counter() - started) * 1000
-    return result.model_copy(update={"query": request.name, "latency_ms": round(latency_ms, 3)})
+    answer = result.model_copy(update={"query": request.name, "latency_ms": round(latency_ms, 3)})
+    audit_classifications("single", [answer])
+    return answer
 
 
 @app.post(
@@ -421,7 +436,7 @@ def classify_batch(
         raise HTTPException(status_code=429, detail=str(exc), headers={"Retry-After": "5"}) from exc
 
     logger.info("Batch job accepted job_id=%s batch_size=%d", job.job_id, len(job.items))
-    background_tasks.add_task(_run_batch_job, job.job_id)
+    enqueue_batch(job.job_id, background_tasks, _run_batch_job)
     return BatchJobAccepted(
         job_id=job.job_id,
         status="queued",
@@ -471,7 +486,7 @@ async def classify_file(
         len(job.items),
         extracted.total_found,
     )
-    background_tasks.add_task(_run_batch_job, job.job_id)
+    enqueue_batch(job.job_id, background_tasks, _run_batch_job)
     return FileBatchJobAccepted(
         job_id=job.job_id,
         status="queued",
@@ -602,12 +617,15 @@ def stream_batch_events(job_id: str) -> StreamingResponse:
     tags=["sources"],
     summary="Фрагмент текста ПП № 1875 по позиции каталога",
 )
-def get_source_fragment(record_id: str, response: Response) -> SourceFragment:
+def get_source_fragment(
+    record_id: str, request: Request, response: Response
+) -> SourceFragment | HTMLResponse:
     """Human-readable source of record behind ``clause_url`` of a classification.
 
     ``pp_link`` in the catalog is a citation, not a URL, so the service serves the
     pages of ``data/source_text.txt`` recorded in ``pdf_page_start``/``pdf_page_end``
-    for the row ``record_id``.
+    for the row ``record_id``. Browsers (``Accept: text/html``) get a readable page
+    because the classification table links here for people; API clients keep JSON.
     """
     try:
         fragment = get_source_lookup().fragment(record_id)
@@ -619,7 +637,129 @@ def get_source_fragment(record_id: str, response: Response) -> SourceFragment:
             detail="Позиция каталога с таким record_id не найдена",
         )
     response.headers["Cache-Control"] = "public, max-age=3600"
+    if "text/html" in request.headers.get("accept", ""):
+        return HTMLResponse(
+            _source_page(fragment), headers={"Cache-Control": "public, max-age=3600"}
+        )
     return fragment
+
+
+def _render_decree(text: str, code: str) -> str:
+    """Structure the decree pages: numbered positions, codes as badges."""
+    import re
+    from html import escape
+
+    entry_re = re.compile(r"^(\d{1,5})\.\s+(.*)$")
+    code_re = re.compile(r"\s(\d+(?:\.\d+){1,4})$")
+    out: list[str] = []
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        if not line.strip():
+            continue
+        page = re.match(r"^=== СТРАНИЦА (\d+) ===$", line.strip())
+        if page:
+            out.append(f'<div class="page-break">страница {escape(page.group(1))}</div>')
+            continue
+        entry = entry_re.match(line.strip())
+        if entry:
+            body = entry.group(2)
+            hit_code = ""
+            coded = code_re.search(body)
+            if coded:
+                hit_code = coded.group(1)
+                body = body[: coded.start()]
+            hit = " hit" if hit_code and hit_code == code else ""
+            badge = f'<span class="code">{escape(hit_code)}</span>' if hit_code else ""
+            out.append(
+                f'<div class="pos{hit}"><span class="num">{escape(entry.group(1))}.</span>'
+                f'<span class="name">{escape(body.strip())}</span>{badge}</div>'
+            )
+        else:
+            out.append(f'<div class="cont">{escape(line.strip())}</div>')
+    return "\n".join(out)
+
+
+def _source_page(fragment: SourceFragment) -> str:
+    from html import escape
+
+    meta_items = "".join(
+        f"<li>{part}</li>"
+        for part in (
+            escape(fragment.okpd2) if fragment.okpd2 else "",
+            escape(fragment.clause_ref) if fragment.clause_ref else "",
+            f"стр. {fragment.pages.start}–{fragment.pages.end}" if fragment.pages.end else "",
+        )
+        if part
+    )
+    sources = "\n".join(
+        f'<li><a href="{url}" target="_blank" rel="noopener noreferrer">{escape(title)}</a>'
+        f"<span>{escape(note)}</span></li>"
+        for title, url, note in DECREE_OFFICIAL_SOURCES
+    )
+    decree = _render_decree(fragment.text, fragment.okpd2 or "")
+    return f"""<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{escape(fragment.name or fragment.record_id)} — ПП № 1875</title>
+<style>
+body{{margin:0;background:#f4f6fc;color:#141c3b;font:16px/1.6 Inter,Arial,sans-serif}}
+main{{max-width:1020px;margin:0 auto;padding:28px 20px 60px}}
+.topline{{display:flex;justify-content:space-between;align-items:center;gap:12px;
+flex-wrap:wrap;margin-bottom:22px}}
+.back{{color:#454cff;text-decoration:none;font-weight:600}}
+.decree-badge{{background:#eef0ff;color:#3a3fd6;border-radius:30px;padding:8px 18px;
+font-size:13px;font-weight:600}}
+h1{{font-size:27px;line-height:1.35;margin:0 0 10px;letter-spacing:-.3px}}
+.meta{{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 22px;padding:0;list-style:none}}
+.meta li{{background:#fff;border:1px solid #dbe1ef;border-radius:10px;padding:7px 14px;
+font-size:14px;color:#4c5f94;font-weight:600}}
+.verify{{background:#fff;border:1px solid #dbe1ef;border-radius:16px;padding:20px 24px;
+margin:0 0 26px}}
+.verify h2{{font-size:16px;margin:0 0 6px}}
+.verify p{{margin:0 0 12px;color:#657293;font-size:14px}}
+.verify ul{{margin:0;padding:0;list-style:none;display:grid;gap:10px}}
+.verify a{{color:#454cff;font-weight:600;text-decoration:none}}
+.verify a:hover{{text-decoration:underline}}
+.verify li span{{display:block;color:#7584a8;font-size:13px;margin-top:2px}}
+.doc{{background:#fff;border:1px solid #dbe1ef;border-radius:16px;padding:26px 30px}}
+.doc h3{{margin:0 0 18px;font-size:15px;color:#657293;font-weight:600;
+text-transform:uppercase;letter-spacing:.06em}}
+.page-break{{margin:26px 0 12px;color:#9aa3bd;font-size:12px;letter-spacing:.12em;
+text-transform:uppercase;border-bottom:1px dashed #e1e6f1;padding-bottom:6px}}
+.page-break:first-child{{margin-top:0}}
+.pos{{display:flex;align-items:baseline;gap:10px;padding:7px 12px;border-radius:10px;
+border:1px solid transparent}}
+.pos .num{{color:#9aa3bd;min-width:2.6em;font-variant-numeric:tabular-nums}}
+.pos .name{{flex:1}}
+.pos .code{{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:#eef0ff;
+color:#3a3fd6;border-radius:7px;padding:2px 9px;white-space:nowrap}}
+.pos.hit{{background:#fff3bf;border-color:#f0d264}}
+.pos.hit .name{{font-weight:700}}
+.cont{{color:#55618a;padding:0 12px 6px 4.4em;font-size:15px}}
+.hint{{color:#7584a8;font-size:13px;margin:16px 2px 0}}
+@media print{{.topline,.verify{{display:none}} body{{background:#fff}}
+.doc{{border:0;padding:0}}}}
+</style></head>
+<body><main>
+<div class="topline">
+<a class="back" href="javascript:history.back()">← назад к результатам</a>
+<span class="decree-badge">ПП РФ № 1875 от 23.12.2024</span>
+</div>
+<h1>{escape(fragment.name or fragment.record_id)}</h1>
+<ul class="meta">{meta_items}</ul>
+<section class="verify">
+<h2>Удостовериться в подлинности</h2>
+<p>Ниже — рабочий файл постановления; первоисточники и действующая редакция:</p>
+<ul>
+{sources}
+</ul>
+</section>
+<section class="doc">
+<h3>Текст перечня (фрагмент страниц {fragment.pages.start}–{fragment.pages.end})</h3>
+{decree}
+</section>
+<p class="hint">Позиция, к которой привела классификация, подсвечена жёлтым.</p>
+</main></body></html>"""
 
 
 @app.post(

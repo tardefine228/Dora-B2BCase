@@ -20,7 +20,7 @@ import logging
 import os
 import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.schemas import CatalogInfo, CatalogIssue
@@ -316,8 +316,6 @@ def catalog_facts(data_dir: Path) -> CatalogInfo:
         rows=rows,
         columns=columns,
         sha256=digest.hexdigest(),
-        modified_at=datetime.fromtimestamp(latest_mtime, tz=timezone.utc).isoformat(
-            timespec="seconds"
-        ),
+        modified_at=datetime.fromtimestamp(latest_mtime, tz=UTC).isoformat(timespec="seconds"),
         source_files=[path.name for path in existing],
     )

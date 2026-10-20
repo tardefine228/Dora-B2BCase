@@ -85,6 +85,10 @@ class BatchJobAccepted(APIModel):
     status: Literal["queued"]
     total: int = Field(ge=1, le=100)
     status_url: str
+    contract_version: str = Field(
+        default=CONTRACT_VERSION,
+        description="Версия формата ответа batch-задачи.",
+    )
 
 
 class FileBatchJobAccepted(BatchJobAccepted):
@@ -109,6 +113,10 @@ class BatchJobStatusResponse(APIModel):
     progress_percent: float = Field(ge=0, le=100)
     results: list[ClassifyResponse] = Field(default_factory=list)
     error: str | None = None
+    contract_version: str = Field(
+        default=CONTRACT_VERSION,
+        description="Версия формата ответа batch-задачи.",
+    )
 
 
 class ReindexJobAccepted(APIModel):

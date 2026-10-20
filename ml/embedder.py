@@ -1,15 +1,20 @@
 """Embedding backends for the PP-1875 semantic index.
 
-Two interchangeable backends implement the same ``encode()`` contract:
+Three interchangeable backends implement the same ``encode()`` contract:
 
-* ``sentence-transformers`` — a real transformer model (for example ``BAAI/bge-m3``)
-  from a local SentenceTransformers directory. Heavy, optional, best quality.
+* ``sentence-transformers`` — a real transformer model (for example
+  ``intfloat/multilingual-e5-small``) from a local SentenceTransformers directory.
+  Heavy, optional, best quality.
+* ``spacy`` — static Russian word vectors (``ru_core_news_md``), IDF-weighted
+  mean per phrase. Offline, no torch; semantic but coarse.
 * ``tfidf`` — a self-contained hashing TF-IDF embedder fitted on the catalog
   itself. No downloads, no torch; it keeps the ML/Qdrant pipeline testable
   offline and works as a calibrated fallback for demos.
 
 ``EMBEDDER_BACKEND`` selects the backend (``auto`` prefers the transformer when
-its dependencies and weights are available, otherwise falls back to ``tfidf``).
+it loads, then spaCy vectors, then ``tfidf``). Every backend has a stable
+``tag`` (see :func:`encoder_tag`) that keys cached vectors and trained rerankers:
+cosine scales differ between embedders, so artifacts are never shared.
 Vectors are L2-normalized, so Qdrant cosine similarity is a plain dot product.
 """
 
@@ -18,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import time
 from functools import lru_cache
 from math import log
@@ -25,6 +31,7 @@ from pathlib import Path
 from typing import Protocol
 
 from ml.config import (
+    ARTIFACTS_DIR,
     DEBUG,
     EMBEDDER_BACKEND,
     MODEL_BATCH_SIZE,
@@ -32,6 +39,7 @@ from ml.config import (
     MODEL_LOCAL_ONLY,
     MODEL_NAME,
     MODELS_DIR,
+    SPACY_MODEL,
     TFIDF_DIM,
     TFIDF_NGRAMS,
 )
@@ -64,6 +72,9 @@ class TfidfEncoder:
     Document frequencies live in ``dim`` hash buckets, which keeps the artifact
     tiny (a few kilobytes) while still downweighting ubiquitous fragments.
     """
+
+    backend = "tfidf"
+    tag = "tfidf"
 
     def __init__(
         self,
@@ -155,12 +166,23 @@ class TfidfEncoder:
         )
 
 
+def _e5_prefixes(model_name: str) -> tuple[str, str]:
+    """E5 models are trained with ``query: `` / ``passage: `` prefixes; others use none."""
+    if "e5" in model_name.lower():
+        return "query: ", "passage: "
+    return "", ""
+
+
 class SentenceTransformerEncoder:
     """Adapter around a SentenceTransformers model; imports stay lazy."""
+
+    backend = "sentence-transformers"
 
     def __init__(self) -> None:
         from sentence_transformers import SentenceTransformer
 
+        self.tag = "st-" + Path(MODEL_NAME.rstrip("/\\")).name.lower()
+        self._query_prefix, self._doc_prefix = _e5_prefixes(MODEL_NAME)
         logger.info("Loading embedding model %s on %s", MODEL_NAME, MODEL_DEVICE)
         started = time.perf_counter()
         self._model = SentenceTransformer(
@@ -173,16 +195,125 @@ class SentenceTransformerEncoder:
             logger.info("Embedding model loaded in %.1f seconds", time.perf_counter() - started)
 
     def encode(self, texts: list[str], normalize: bool = True) -> list[list[float]]:
+        return self._encode(texts, self._doc_prefix, normalize)
+
+    def encode_queries(self, texts: list[str], normalize: bool = True) -> list[list[float]]:
+        return self._encode(texts, self._query_prefix, normalize)
+
+    def encode_documents(self, texts: list[str], normalize: bool = True) -> list[list[float]]:
+        return self._encode(texts, self._doc_prefix, normalize)
+
+    def _encode(self, texts: list[str], prefix: str, normalize: bool) -> list[list[float]]:
         if not texts:
             return []
         vectors = self._model.encode(
-            texts,
+            [prefix + text for text in texts],
             batch_size=MODEL_BATCH_SIZE,
             normalize_embeddings=normalize,
             show_progress_bar=DEBUG,
             convert_to_numpy=True,
         )
         return vectors.tolist()
+
+
+_WORD_RE = re.compile(r"[а-яёa-z]+", re.IGNORECASE)
+
+
+class SpacyVectorEncoder:
+    """IDF-weighted mean of static Russian word vectors (spaCy ``ru_core_news_md``).
+
+    Only the vector table of the spaCy package is used (no pipeline), so loading
+    takes a couple of seconds and ~400 MB of RAM. Words missing from the table
+    fall back to their pymorphy3 lemma. IDF weights come from the catalog itself,
+    so decisive words (\"чайник\") outweigh ubiquitous ones (\"прочие\").
+    """
+
+    backend = "spacy"
+
+    def __init__(self, model_name: str = SPACY_MODEL, documents: list[str] | None = None) -> None:
+        import spacy
+
+        self._nlp = spacy.load(
+            model_name,
+            exclude=[
+                "tagger",
+                "parser",
+                "senter",
+                "attribute_ruler",
+                "lemmatizer",
+                "ner",
+                "morphologizer",
+            ],
+        )
+        if not self._nlp.vocab.vectors.shape[0]:
+            raise RuntimeError(f"В модели spaCy {model_name} нет векторов слов")
+        try:
+            import pymorphy3
+
+            self._morph = pymorphy3.MorphAnalyzer()
+        except Exception:  # lemma fallback is optional
+            self._morph = None
+        self.tag = f"spacy-{model_name}"
+        self.dim = int(self._nlp.vocab.vectors.shape[1])
+        self._idf: dict[str, float] = {}
+        self._default_idf = 1.0
+        self._word_cache: dict[str, object] = {}
+        if documents:
+            self.fit(documents)
+
+    def fit(self, documents: list[str]) -> None:
+        frequencies: dict[str, int] = {}
+        for text in documents:
+            for word in {w for w in self._words(text)}:
+                frequencies[word] = frequencies.get(word, 0) + 1
+        count = len(documents)
+        self._idf = {w: log((count + 1) / (df + 1)) + 1.0 for w, df in frequencies.items()}
+        self._default_idf = log(count + 1) + 1.0  # unseen words are as rare as it gets
+
+    @staticmethod
+    def _words(text: str) -> list[str]:
+        return [word for word in _WORD_RE.findall(text.lower()) if len(word) > 2]
+
+    def _word_vector(self, word: str):
+        import numpy as np
+
+        if word in self._word_cache:
+            return self._word_cache[word]
+        vector = None
+        candidates = [word]
+        if self._morph is not None:
+            candidates.append(self._morph.parse(word)[0].normal_form)
+        for candidate in candidates:
+            lexeme = self._nlp.vocab[candidate]
+            if lexeme.has_vector:
+                raw = lexeme.vector
+                norm = float(np.linalg.norm(raw))
+                if norm > 0.0:
+                    vector = raw / norm
+                    break
+        self._word_cache[word] = vector
+        return vector
+
+    def encode(self, texts: list[str], normalize: bool = True) -> list[list[float]]:
+        import numpy as np
+
+        output: list[list[float]] = []
+        for text in texts:
+            vectors, weights = [], []
+            for word in self._words(text):
+                vector = self._word_vector(word)
+                if vector is None:
+                    continue
+                vectors.append(vector)
+                weights.append(self._idf.get(word, self._default_idf))
+            if vectors:
+                mean = np.average(np.stack(vectors), axis=0, weights=weights)
+                if normalize:
+                    mean = mean / (float(np.linalg.norm(mean)) + 1e-9)
+            else:
+                mean = np.zeros(self.dim, dtype=np.float32)
+            output.append(mean.astype(float).tolist())
+        return output
 
 
 def sentence_transformers_available() -> bool:
@@ -192,7 +323,11 @@ def sentence_transformers_available() -> bool:
 
 
 def tfidf_artifact_path() -> Path:
-    return MODELS_DIR / TFIDF_ARTIFACT_NAME
+    """MODELS_DIR first, then the artifact shipped in ml/artifacts."""
+    custom = MODELS_DIR / TFIDF_ARTIFACT_NAME
+    if custom.is_file():
+        return custom
+    return ARTIFACTS_DIR / TFIDF_ARTIFACT_NAME
 
 
 def _build_tfidf_encoder() -> TfidfEncoder:
@@ -215,21 +350,77 @@ def _build_tfidf_encoder() -> TfidfEncoder:
     return encoder
 
 
+def spacy_available() -> bool:
+    import importlib.util
+
+    return (
+        importlib.util.find_spec("spacy") is not None
+        and importlib.util.find_spec(SPACY_MODEL) is not None
+    )
+
+
 def resolve_backend() -> str:
     backend = EMBEDDER_BACKEND.strip().lower()
     if backend == "auto":
-        return "sentence-transformers" if sentence_transformers_available() else "tfidf"
+        # `auto` never downloads a model at run time: the transformer is used only when
+        # its weights are already on disk (baked into the image or mounted). Ask for a
+        # hub download explicitly with EMBEDDER_BACKEND=sentence-transformers.
+        if sentence_transformers_available() and Path(MODEL_NAME).is_dir():
+            return "sentence-transformers"
+        return "spacy" if spacy_available() else "tfidf"
     return backend
+
+
+def _build_spacy_encoder() -> SpacyVectorEncoder:
+    from ml.catalog_loader import load_catalog
+
+    return SpacyVectorEncoder(documents=[item["name"] for item in load_catalog()])
 
 
 @lru_cache(maxsize=1)
 def get_encoder() -> Encoder:
     backend = resolve_backend()
-    if backend == "sentence-transformers":
-        return SentenceTransformerEncoder()
-    if backend == "tfidf":
-        return _build_tfidf_encoder()
-    raise ValueError(f"Неизвестный EMBEDDER_BACKEND: {EMBEDDER_BACKEND}")
+    explicit = EMBEDDER_BACKEND.strip().lower() != "auto"
+    chain = {
+        "sentence-transformers": ["sentence-transformers", "spacy", "tfidf"],
+        "spacy": ["spacy", "tfidf"],
+        "tfidf": ["tfidf"],
+    }.get(backend)
+    if chain is None:
+        raise ValueError(f"Неизвестный EMBEDDER_BACKEND: {EMBEDDER_BACKEND}")
+    if explicit:
+        chain = chain[:1]  # an explicit choice must not silently degrade
+    last_error: Exception | None = None
+    for name in chain:
+        try:
+            if name == "sentence-transformers":
+                return SentenceTransformerEncoder()
+            if name == "spacy":
+                return _build_spacy_encoder()
+            return _build_tfidf_encoder()
+        except Exception as exc:  # noqa: BLE001 - degrade to the next backend
+            last_error = exc
+            logger.warning("Эмбеддер %s недоступен (%s) — пробуем следующий", name, exc)
+    raise RuntimeError(f"Ни один эмбеддер не загрузился: {last_error}")
+
+
+def encoder_tag() -> str:
+    """Stable identifier of the active embedder (keys caches and rerankers)."""
+    return getattr(get_encoder(), "tag", "unknown")
+
+
+def encode_queries(texts: list[str], normalize: bool = True) -> list[list[float]]:
+    """Encode search queries (applies the query prefix of asymmetric models like e5)."""
+    encoder = get_encoder()
+    method = getattr(encoder, "encode_queries", None)
+    return method(texts, normalize=normalize) if method else encoder.encode(texts, normalize)
+
+
+def encode_documents(texts: list[str], normalize: bool = True) -> list[list[float]]:
+    """Encode catalog entries (applies the passage prefix of asymmetric models)."""
+    encoder = get_encoder()
+    method = getattr(encoder, "encode_documents", None)
+    return method(texts, normalize=normalize) if method else encoder.encode(texts, normalize)
 
 
 def encode_texts(texts: list[str], normalize: bool = True) -> list[list[float]]:

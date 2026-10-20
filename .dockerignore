@@ -7,7 +7,9 @@ __pycache__
 node_modules
 frontend/node_modules
 frontend/dist
-eval
+eval/*
+!eval/run_eval.py
+!eval/labeled_examples.csv
 data/*
 !data/data.csv
 !data/data.json
@@ -16,8 +18,5 @@ models
 models_cache
 qdrant_storage
 *.md
-/source_text.txt
-/warnings.csv
-/report.json
 .env
 .env.*

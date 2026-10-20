@@ -44,14 +44,14 @@ PR-1/PR-2/PR-3 сохранены в описании PR #16. Если разд�
 Полные процедуры — `eval/docker-target-checklist.md`; кратко:
 
 - [ ] **Docker / compose**: `bash scripts/docker_smoke.sh --build` — проверить
-      чек-лист (healthcheck обоих сервисов, volume `jobs_data`, `catalog_data`,
+      чек-лист (healthcheck обоих сервисов, volume `postgres_data`, `catalog_data`,
       `qdrant_data` переживают перезапуск, `POST /admin/reindex` → `completed`).
       Заполнить колонку «Факт» и таблицу размеров/потребления RAM.
-- [ ] **bge-m3 + qdrant**: запустить `INSTALL_ML=true MODEL_NAME=./models/bge-m3
+- [ ] **bge-m3 + qdrant**: запустить `ML_ENABLED=true MODEL_NAME=./models/bge-m3
       CLASSIFIER_BACKEND=qdrant`, сделать `POST /admin/reindex`, затем переснять
       метрики и свип для семантических скоров:
       `PYTHONPATH=api CLASSIFIER_BACKEND=qdrant python eval/run_eval.py --sweep`.
-      Если плато порога то же (0.16–0.18) — оставить `REVIEW_CONFIDENCE_FLOOR = 0.165`;
+      Если плато порога то же (0.16–0.18) — оставить `REVIEW_CONFIDENCE_FLOOR = 0.14`;
       иначе пересобрать модель с новым floor и обновить `eval/experiments.md`.
       Дополнительно прогнать бенчмарк в семантическом режиме
       (`CLASSIFIER_BACKEND=qdrant python eval/synthetic_eval.py`) — он показывает,

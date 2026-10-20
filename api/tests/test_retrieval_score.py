@@ -49,18 +49,26 @@ def test_reranker_receives_lexical_scores_not_zeros() -> None:
 
 
 def test_retrieval_score_matches_the_lexical_shortlist() -> None:
-    from ml.features import lexical_score_prepared, prepare_candidate
-    from ml.lexicon import expand_query
+    from ml.features import lexical_score_prepared, prepare_candidate, stem
+    from ml.lexicon import bridged_targets, expand_query
 
     spy = SpyReranker()
     classifier = CatalogClassifier(CATALOG, reranker=spy)
     query = "Ноутбук Lenovo"
     classifier.classify(query)
 
-    prepared_query = prepare_candidate(expand_query(query))
+    # Same contract as CatalogClassifier._retrieve: weighted query coverage plus
+    # the lexicon-bridge bonus for candidates holding the category word.
+    prepared_query = prepare_candidate(expand_query(query), idf=classifier._idf)
+    bridge_stems = {stem(target) for target in set(bridged_targets(query).values())}
     top = max(spy.calls[0], key=lambda c: c.retrieval_score)
     expected = max(
-        lexical_score_prepared(prepared_query, row["prepared"]) for row in classifier.index
+        min(
+            1.0,
+            lexical_score_prepared(prepared_query, row["prepared"])
+            + (0.15 if bridge_stems & row["prepared"].stem_set else 0.0),
+        )
+        for row in classifier.index
     )
     assert top.retrieval_score == max(c.retrieval_score for c in spy.calls[0])
     assert abs(top.retrieval_score - expected) < 1e-9

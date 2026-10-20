@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from ml.config import MODELS_DIR
+from ml.config import ARTIFACTS_DIR, MODELS_DIR
 from ml.features import (
     LOW_SIGNAL_STEMS,
     best_match_weight,
@@ -66,6 +66,11 @@ FEATURE_NAMES: tuple[str, ...] = (
     "digit_overlap",
     "oov_cyr_share",
     "code_match",
+    # Vector search (ml.dense): cosine of query/candidate embeddings and how far it
+    # is from the nearest catalog position. Zero (and zero-weighted) without a
+    # dense index, so lexical-only artifacts keep working unchanged.
+    "dense_cosine",
+    "dense_gap",
 )
 
 # Second stage: confidence that the top-1 candidate is the right position for
@@ -79,6 +84,15 @@ GROUP_FEATURE_NAMES: tuple[str, ...] = (
     "top_known_coverage",
     "top_query_head_match",
     "retrieval_margin",
+    "top_dense_cosine",
+    "top_dense_gap",
+    "query_dense_top",
+    # Bridge-rescued candidates ("принтер" -> "Устройства ввода или вывода…") have
+    # almost zero stem overlap with the official name, so coverage features alone
+    # starve their confidence. The pair model already sees the lexicon bridge;
+    # these two features let the group model trust it too.
+    "top_bridge_canonical",
+    "top_bridge_cover",
 )
 SOFTMAX_TEMPERATURE = 0.15
 
@@ -102,6 +116,8 @@ def extract_features(
     candidate_code: str = "",
     known_stems: set[str] | None = None,
     idf: dict[str, float] | None = None,
+    dense_cosine: float = 0.0,
+    dense_gap: float = 0.0,
 ) -> dict[str, float]:
     """Interpretable similarity features for one (query, candidate) pair.
 
@@ -207,7 +223,16 @@ def extract_features(
         "digit_overlap": jaccard_digits(query, candidate_title),
         "oov_cyr_share": oov_cyr_share(set(query_stems), idf) if idf else 0.0,
         "code_match": code_match,
+        "dense_cosine": float(dense_cosine),
+        "dense_gap": float(dense_gap),
     }
+
+
+def dense_values(candidate: RankedCandidate) -> tuple[float, float]:
+    """``(cosine, gap_to_nearest)`` from the candidate payload; zeros without a dense index."""
+    cosine = float(candidate.payload.get("dense", 0.0) or 0.0)
+    top = float(candidate.payload.get("dense_top", cosine) or 0.0)
+    return cosine, min(cosine - top, 0.0)
 
 
 class Reranker(Protocol):
@@ -253,6 +278,11 @@ def extract_group_features(query: str, ranked: list[RankedCandidate]) -> dict[st
         "top_known_coverage": top.features.get("known_coverage", 0.0),
         "top_query_head_match": top.features.get("query_head_match", 0.0),
         "retrieval_margin": retrieval_scores[0] - second_retrieval,
+        "top_dense_cosine": top.features.get("dense_cosine", 0.0),
+        "top_dense_gap": top.features.get("dense_gap", 0.0),
+        "query_dense_top": float(top.payload.get("dense_top", 0.0) or 0.0),
+        "top_bridge_canonical": top.features.get("bridge_canonical", 0.0),
+        "top_bridge_cover": top.features.get("bridge_cover", 0.0),
     }
 
 
@@ -419,12 +449,24 @@ class LogisticReranker:
     def rerank(self, query: str, candidates: list[RankedCandidate]) -> list[RankedCandidate]:
         """Score and stably sort candidates by descending match probability."""
         for candidate in candidates:
+            cosine, gap = dense_values(candidate)
             candidate.features = extract_features(
-                query, candidate.title, candidate.code or "", self.known_stems, self.idf
+                query,
+                candidate.title,
+                candidate.code or "",
+                self.known_stems,
+                self.idf,
+                dense_cosine=cosine,
+                dense_gap=gap,
             )
             candidate.probability = self.probability(candidate.features)
         candidates.sort(key=lambda item: (-item.probability, item.title))
         return candidates
+
+    @property
+    def uses_dense(self) -> bool:
+        """True when the artifact was trained with vector-search features."""
+        return any(abs(self.weights.get(name, 0.0)) > 0.0 for name in ("dense_cosine", "dense_gap"))
 
     def evaluate(self, query: str, ranked: list[RankedCandidate]) -> tuple[float, str]:
         """Return (raw confidence, status) for a whole query after reranking.
@@ -551,12 +593,42 @@ class HeuristicReranker:
         return "not_found"
 
 
-def reranker_artifact_path() -> Path:
-    return MODELS_DIR / RERANKER_ARTIFACT_NAME
+def reranker_artifact_name(tag: str | None = None) -> str:
+    """``reranker.json`` (lexical) or ``reranker.<embedder-tag>.json`` (vector features)."""
+    if not tag:
+        return RERANKER_ARTIFACT_NAME
+    safe = "".join(c if c.isalnum() or c in "-._" else "_" for c in tag)
+    return f"reranker.{safe}.json"
 
 
-def load_reranker(path: Path | None = None) -> LogisticReranker | HeuristicReranker:
-    """Load the trained artifact when present; otherwise use the heuristic."""
+def reranker_artifact_path(tag: str | None = None) -> Path:
+    """MODELS_DIR first (user-provided/rebuilt), then the artifact shipped in ml/artifacts."""
+    name = reranker_artifact_name(tag)
+    custom = MODELS_DIR / name
+    if custom.is_file():
+        return custom
+    return ARTIFACTS_DIR / name
+
+
+def load_reranker(
+    path: Path | None = None, tag: str | None = None
+) -> LogisticReranker | HeuristicReranker:
+    """Load the trained artifact when present; otherwise use the heuristic.
+
+    With ``tag`` (the active embedder) the artifact trained with that embedder's
+    vector features is preferred; without one the lexical ``reranker.json`` is used.
+    """
+    if path is None and tag:
+        tagged = reranker_artifact_path(tag)
+        if tagged.is_file():
+            path = tagged
+        else:
+            logger.warning(
+                "Нет реранкера для эмбеддера %s — используем лексический reranker.json "
+                "(векторный поиск пополнит кандидатов, но не влияет на скоринг). "
+                "Соберите модель: python scripts/build_model.py --dense",
+                tag,
+            )
     artifact = path or reranker_artifact_path()
     if artifact.is_file():
         reranker = LogisticReranker.load(artifact)
