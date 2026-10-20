@@ -181,7 +181,9 @@ BRIDGES: dict[str, str] = {
     "тетрадь": "тетради",
     "блокнот": "блокноты",
     "витрина": "витрины",
-    "конструктор": "игрушки",
+    # «конструктор» раньше мостил в «Игры и игрушки» (32.4), но перечень
+    # 1875 строительные наборы не содержит — это ложный друг с уверенностью
+    # 0.66. Пара запрещена в PAIR_VETO, мост удалён (ML-3).
     # Ручной инструмент: якорные слова официальных названий уникальны
     "дрель": "механизированным",
     "сверло": "сменных",
@@ -223,6 +225,111 @@ BRIDGE_VETO: dict[str, set[str]] = {
 # so context-dependent goods stay out of the lexicon until pair-level rules.)
 BRIDGE_REQUIRE: dict[str, set[str]] = {}
 
+# --- Pair-level bans (ML-3) -------------------------------------------------
+# The five "confident false friends" (raw confidence >= 0.50 on the labeled
+# set) cannot be fixed by a threshold or an embedder: the query and the
+# position legitimately share words ("Шредер для бумаги" ~ "Бумага и
+# картон", "камера" ~ "Шины, покрышки и камеры резиновые"). Each entry bans
+# a (query anchor word, candidate position) pair: when the anchor's stem is
+# in the query, candidates under the listed OKPD2 prefixes are removed from
+# the shortlist before reranking, so the pair can never be suggested.
+#
+# Rules of the table (same discipline as BRIDGES):
+# * one anchor word -> the OKPD2 prefixes it must never resolve to;
+# * every entry is a deliberate, reviewable decision with a reason;
+# * a veto removes candidates from the answer — it never rewrites the query.
+PAIR_VETO: dict[str, frozenset[str]] = {
+    # "Шредер для бумаги" -> 17.12 «Бумага и картон» (raw 0.69): a shredder
+    # is office equipment, not paper; the word «бумага» in the query is a
+    # specifier, not the goods.
+    "шредер": frozenset({"17.12"}),
+    # "Конструктор детский" -> 32.4 «Игры и игрушки» (raw 0.66): building
+    # sets are not enumerated by the decree; the bridge was removed with it.
+    "конструктор": frozenset({"32.4"}),
+    # "Огнетушитель порошковый" -> 20.41.32 «Средства моющие…» (raw 0.55):
+    # the «порошок»->«моющие» bridge fires on the specifier «порошковый».
+    "огнетушитель": frozenset({"20.41.32"}),
+}
+
+# Context-gated bans: the anchor is ambiguous ("камера" is a tire tube AND
+# a surveillance camera), so the ban fires only when a context stem points
+# at the *other* meaning. "Камера велосипедная" (22.11.1) and "Камера
+# холодильная сборная" (28.25.13.112) stay answerable.
+PAIR_VETO_CONTEXT: dict[str, tuple[frozenset[str], frozenset[str]]] = {
+    "камера": (
+        frozenset(
+            {
+                "видеонаблюд",  # камера видеонаблюдения
+                "наблюд",
+                "веб",  # веб-камера (exact stem: «веб» 3 letters)
+                "web",
+                "видео",  # видеокамера, цифровое видео
+                "цифров",
+                "ip",  # IP-камера (exact stem)
+                "охранн",  # охранная камера
+                "фото",  # фотоаппарат, фотокамера
+            }
+        ),
+        frozenset({"22.11.1"}),  # «Шины, покрышки и камеры резиновые»
+    ),
+}
+
+# Stems of the anchor words, precomputed for inflection-proof lookup.
+# Keyed by the *stemmed* anchor: the light stemmer trims endings
+# ("камера" -> "камер", "огнетушитель" -> "огнетушител"), and the
+# query stems must match the anchor on the same scale.
+_VETO_ANCHOR_STEMS: dict[str, str] = {}
+for _anchor in (*PAIR_VETO, *PAIR_VETO_CONTEXT):
+    _VETO_ANCHOR_STEMS[stem(_anchor)] = _anchor
+
+
+def _stem_hit(anchor: str, query_stems: set[str]) -> bool:
+    """True when a query stem is the anchor or contains it.
+
+    Containment catches compounds the tokenizer never splits
+    ("видеокамера" carries "камер", "огнетушитель порошковый" is two words).
+    Short anchors (< 4 chars) must match exactly: "ip" inside "пипетка"
+    is a coincidence, not a camera.
+    """
+    if len(anchor) < 4:
+        return anchor in query_stems
+    return any(anchor in stem_value for stem_value in query_stems)
+
+
+def vetoed_codes(query: str) -> set[str]:
+    """OKPD2 prefixes banned for this query by the pair-level rules."""
+    query_stems = {stem(token) for token in tokens(query)}
+    banned: set[str] = set()
+    for anchor_stem, anchor in _VETO_ANCHOR_STEMS.items():
+        if not _stem_hit(anchor_stem, query_stems):
+            continue
+        codes = PAIR_VETO.get(anchor)
+        if codes:
+            banned.update(codes)
+        gated = PAIR_VETO_CONTEXT.get(anchor)
+        if gated:
+            context, codes = gated
+            if any(
+                context_stem in query_stems
+                or (
+                    len(context_stem) >= 4
+                    and any(context_stem in stem_value for stem_value in query_stems)
+                )
+                for context_stem in context
+            ):
+                banned.update(codes)
+    return banned
+
+
+def code_is_vetoed(query: str, code: str) -> bool:
+    """True when the (query, candidate code) pair is banned by PAIR_VETO."""
+    if not code:
+        return False
+    return any(
+        code == prefix or code.startswith(prefix + ".")
+        for prefix in vetoed_codes(query)
+    )
+
 # Category word -> OKPD2 code of the canonical position it bridges into.
 # Training attaches bridged product words only to this row.
 CANONICAL_CODES: dict[str, str] = {
@@ -252,7 +359,6 @@ CANONICAL_CODES: dict[str, str] = {
     "тетради": "17.23.13.194",
     "блокноты": "17.23.13.191",
     "витрины": "28.25.13.114",
-    "игрушки": "32.4",
     "механизированным": "28.24.1",
     "сменных": "25.73.40",
     "пайки": "27.90.31.110",

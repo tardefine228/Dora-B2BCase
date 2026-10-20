@@ -60,6 +60,11 @@ def _tokenize(text: str) -> list[str]:
     return [token for token in TOKEN_RE.findall(text.lower()) if len(token) > 1]
 
 
+def _code_matches_prefix(code: str, prefixes: set[str]) -> bool:
+    """True when ``code`` sits under any of the OKPD2 ``prefixes``."""
+    return any(code == prefix or code.startswith(prefix + ".") for prefix in prefixes)
+
+
 def _display_confidence(reranker, raw_confidence: float) -> float:
     """Calibrated scale for display; the raw value still decides the status."""
     calibrate = getattr(reranker, "display_confidence", None)
@@ -259,7 +264,11 @@ def _reranker_artifact_name(reranker, tag: str | None) -> str | None:
         return "heuristic"
     if tag:
         name = reranker_artifact_name(tag)
-        if reranker_artifact_path(tag).is_file():
+        resolved = reranker_artifact_path(tag)
+        # ``reranker_artifact_path`` falls back to the lexical artifact when the
+        # tagged one is missing or the gate rejected it, so the resolved *name*
+        # is what tells which model actually serves decisions.
+        if resolved.is_file() and resolved.name == name:
             return name
     return reranker_artifact_name()
 
@@ -436,6 +445,8 @@ class CatalogClassifier:
         if not query_tokens:
             return _not_found(normalized_query)
 
+        from ml.lexicon import vetoed_codes
+
         shortlist = self._retrieve(normalized_query, query_tokens)
         if self._dense is not None:
             from ml.dense import fuse_shortlist
@@ -451,6 +462,18 @@ class CatalogClassifier:
             )
         else:
             fused = [(score, row, 0.0, 0.0) for score, row in shortlist]
+        # Pair-level bans (ml.lexicon.PAIR_VETO): a query word and a
+        # position that legitimately shares it ("камера видеонаблюдения"
+        # vs "Шины, покрышки и камеры резиновые") must never meet in an
+        # answer. Vetoed candidates are dropped before reranking, so
+        # neither the top-1 nor the alternatives can carry them.
+        banned = vetoed_codes(normalized_query)
+        if banned:
+            fused = [
+                entry
+                for entry in fused
+                if not _code_matches_prefix(entry[1]["okpd2"], banned)
+            ]
         if not fused:
             return _not_found(normalized_query)
 
@@ -678,8 +701,23 @@ class QdrantClassifier:
             logger.exception("Qdrant batch search failed")
             raise
 
+        from ml.lexicon import vetoed_codes
+
         results: list[ClassifyResponse] = []
         for query, hits in zip(normalized_queries, hit_groups, strict=True):
+            if not hits:
+                results.append(_not_found(query))
+                continue
+
+            # Pair-level bans apply to the semantic backend too:
+            # a vetoed (query word, position) pair must never be answered.
+            banned = vetoed_codes(query)
+            if banned:
+                hits = [
+                    hit
+                    for hit in hits
+                    if not _code_matches_prefix(hit.pp_code or "", banned)
+                ]
             if not hits:
                 results.append(_not_found(query))
                 continue
