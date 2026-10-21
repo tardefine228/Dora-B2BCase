@@ -16,6 +16,7 @@ export default defineConfig({
     proxy: {
       '/classify': { target: apiTarget, changeOrigin: true },
       '/source': { target: apiTarget, changeOrigin: true },
+      '/feedback': { target: apiTarget, changeOrigin: true },
     },
   },
 });

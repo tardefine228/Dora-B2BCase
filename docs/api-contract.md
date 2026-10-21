@@ -189,3 +189,26 @@ X-RateLimit-Remaining: 0
 
 Успешные ответы несут `X-RateLimit-Limit` и `X-RateLimit-Remaining`; отказы
 считаются в `GET /metrics` (`rate_limited_total`, `rate_limited_by_path`).
+
+
+## Обратная связь по результатам (добавлено для фронтенда)
+
+`POST /feedback` — опциональный вердикт специалиста; HTTP 201 означает, что
+вердикт **сохранён**. В Docker данные записываются в PostgreSQL
+`classification_feedback`, при локальном запуске с SQLite — в
+`classification_feedback.sqlite` рядом с файлом заданий.
+
+```json
+{
+  "query": "Электрочайники",
+  "predicted_code": "27.51.24.110",
+  "verdict": "incorrect",
+  "corrected_code": "27.51.24"
+}
+```
+
+`verdict`: `correct` | `incorrect` | `absent`. Для `incorrect` нужен
+`corrected_code`; сервер отклоняет его отсутствие кодом 422. Ответ:
+`{"id":"uuid", "saved":true}`. Публичного эндпоинта просмотра всех отзывов
+**нет**: названия товаров могут содержать внутренние данные закупок.
+Локальная история самого пользователя включается добровольно на клиенте.
