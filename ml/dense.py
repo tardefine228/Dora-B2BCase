@@ -101,6 +101,23 @@ class QdrantMirror:
         )
         return [(int(point.id), float(point.score)) for point in response.points]
 
+    def ping(self, timeout: float = 2.0) -> bool:
+        """Cheap reachability probe for health checks (``/metrics``, readiness).
+
+        Bounded on purpose: a scraper or a Docker healthcheck polls often and
+        must not hang for the client's full request timeout while Qdrant is
+        down. The local (in-memory/on-disk) client rejects unknown kwargs, so
+        it is retried without one — a local probe cannot hang anyway.
+        """
+        try:
+            try:
+                self._client.get_collections(timeout=timeout)
+            except (AssertionError, TypeError):
+                self._client.get_collections()
+            return True
+        except Exception:  # noqa: BLE001 - an unreachable store is the answer, not an error
+            return False
+
 
 class DenseIndex:
     """Exact cosine search over L2-normalized catalog vectors."""
@@ -184,6 +201,53 @@ class DenseIndex:
             if len(self._cache) > _QUERY_CACHE_SIZE:
                 self._cache.popitem(last=False)
         return vector
+
+    def warm_queries(self, queries: list[str]) -> int:
+        """Encode all uncached queries in ONE encoder call; returns the new count.
+
+        Batch classification (``CatalogClassifier.classify_many``) needs a query
+        vector per product name. A heavy transformer amortizes its overhead only
+        when the texts reach it as one batch, so the whole chunk is encoded here
+        up front and ``query_vector``/``top`` then serve every hit from the
+        cache. Duplicate names in a batch (files with repeated positions) are
+        encoded once as well.
+        """
+        missing: list[str] = []
+        seen: set[str] = set()
+        with self._lock:
+            for query in queries:
+                if not query or query in seen or query in self._cache:
+                    continue
+                seen.add(query)
+                missing.append(query)
+        if not missing:
+            return 0
+        started = time.perf_counter()
+        vectors = np.asarray(embedder_module.encode_queries(missing), dtype=np.float32)
+        if vectors.ndim != 2 or vectors.shape[0] != len(missing):
+            raise RuntimeError("Эмбеддер вернул неверное число векторов при пакетном кодировании")
+        with self._lock:
+            for query, vector in zip(missing, vectors, strict=True):
+                self._cache[query] = vector
+                self._cache.move_to_end(query)
+            while len(self._cache) > _QUERY_CACHE_SIZE:
+                self._cache.popitem(last=False)
+        logger.debug(
+            "Пакетно закодировано %d запросов за %.1f мс",
+            len(missing),
+            (time.perf_counter() - started) * 1000,
+        )
+        return len(missing)
+
+    def health(self) -> dict:
+        """Live state of the store backing this index (for /metrics and readiness).
+
+        ``store_up`` is ``True`` for the in-memory index (there is nothing
+        external to fail) and a bounded ping for the Qdrant mirror.
+        """
+        if self.mirror is None:
+            return {"store": self.store, "store_up": True}
+        return {"store": self.store, "store_up": self.mirror.ping()}
 
     def scores(self, query: str) -> np.ndarray:
         """Cosine similarity of ``query`` to every catalog position."""

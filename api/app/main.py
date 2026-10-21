@@ -25,12 +25,19 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.log_config import configure_logging
-from app.core.metrics import metrics as metrics_store
+from app.core.metrics import (
+    metrics as metrics_store,
+)
+from app.core.metrics import (
+    prometheus_latest,
+    refresh_health_gauges,
+    set_build_info,
+)
 from app.dispatch import enqueue_batch
 from app.job_store import (
     BatchJob,
@@ -70,7 +77,12 @@ from app.services.catalog_io import (
     validate_rows,
     write_catalog,
 )
-from app.services.classifier import CachedClassifier, get_classifier, reset_classifier
+from app.services.classifier import (
+    CachedClassifier,
+    get_classifier,
+    reset_classifier,
+    vector_layer_health,
+)
 from app.services.file_items import (
     SUPPORTED_EXTENSIONS,
     FileParseError,
@@ -156,6 +168,10 @@ app.add_middleware(RateLimitMiddleware)
 # rate limiter and the size limiter.
 app.add_middleware(ObserveMiddleware)
 
+# Pin the running build/configuration as an info gauge at import time so it is
+# present in every scrape, even before the lifespan has run (BE-6).
+set_build_info(app.version)
+
 
 def _resolve_frontend_dir(module_file: str | Path = __file__) -> Path | None:
     """Find static UI files in both the source tree and the Docker image.
@@ -223,6 +239,8 @@ def _batch_status(job: BatchJob) -> BatchJobStatusResponse:
 
 
 # CSV export of a finished batch (matches the client-side exporter in frontend/src).
+# ``code_role``/``catalog_review_required`` (BE-9) are catalog facts the specialist
+# must see in the export as well; empty cells mean "catalog does not say".
 CSV_COLUMNS: tuple[str, ...] = (
     "query",
     "code",
@@ -232,6 +250,8 @@ CSV_COLUMNS: tuple[str, ...] = (
     "confidence_raw",
     "clause_ref",
     "clause_url",
+    "code_role",
+    "catalog_review_required",
     "alt1_code",
     "alt1_title",
     "alt2_code",
@@ -242,6 +262,10 @@ CSV_COLUMNS: tuple[str, ...] = (
 _CSV_ALTERNATIVES = 3
 # Excel on a Russian locale expects ";" separators and a BOM in an UTF-8 file.
 BATCH_CSV_BOM = "\ufeff"
+
+
+def _csv_flag(value: bool | None) -> str:
+    return "" if value is None else ("True" if value else "False")
 
 # Server-sent events for batch progress (see frontend/src for the client).
 SSE_POLL_SECONDS = 0.25
@@ -262,6 +286,8 @@ def _build_batch_csv(results: list[ClassifyResponse]) -> str:
             f"{result.confidence_raw:.4f}" if result.confidence_raw is not None else "",
             result.clause_ref or "",
             result.clause_url or "",
+            result.code_role or "",
+            _csv_flag(result.catalog_review_required),
         ]
         alternatives = result.alternatives[:_CSV_ALTERNATIVES]
         for alternative in alternatives:
@@ -393,14 +419,37 @@ def readiness() -> dict:
         "classifier_backend": settings.classifier_backend,
         "version": app.version,
         "vector_search": _vector_info(),
+        # Live health of the embedder and the vector store (BE-6): TTL-cached,
+        # informational — a degraded store does not make the service unready
+        # (search falls back to memory), but it must be visible to operators.
+        "vector_health": vector_layer_health(),
         "job_store": settings.job_store,
         "queue_backend": settings.queue_backend,
     }
 
 
-@app.get("/metrics", tags=["system"])
-def metrics_endpoint() -> dict:
-    return metrics_store.snapshot()
+@app.get("/metrics", tags=["system"], summary="Метрики: Prometheus (по умолчанию) или JSON")
+def metrics_endpoint(request: Request) -> Response:
+    """Operational metrics for scraping (BE-6).
+
+    Default exposition is the Prometheus text format (``text/plain;
+    version=0.0.4``): counters by path/method/status, a latency histogram,
+    rate-limit rejections, classification answers by status, batch job events
+    and health gauges of the classifier, embedder and vector store. Clients
+    sending ``Accept: application/json`` get the legacy in-process snapshot
+    plus the same health block under ``vector_health``.
+
+    The health probe is TTL-cached (10 s), so scraping never turns into a
+    network ping per scrape even when Qdrant is down.
+    """
+    health = vector_layer_health()
+    refresh_health_gauges(health)
+    if "application/json" in request.headers.get("accept", ""):
+        payload = metrics_store.snapshot()
+        payload["vector_health"] = health
+        return JSONResponse(payload)
+    body, content_type = prometheus_latest()
+    return Response(content=body, media_type=content_type)
 
 
 @app.post(
@@ -414,6 +463,7 @@ def classify(request: ClassifyRequest) -> ClassifyResponse:
     result = _classifier_or_503().classify(request.name)
     latency_ms = (time.perf_counter() - started) * 1000
     answer = result.model_copy(update={"query": request.name, "latency_ms": round(latency_ms, 3)})
+    metrics_store.record_classification("single", answer.status)
     audit_classifications("single", [answer])
     return answer
 
@@ -436,6 +486,7 @@ def classify_batch(
         raise HTTPException(status_code=429, detail=str(exc), headers={"Retry-After": "5"}) from exc
 
     logger.info("Batch job accepted job_id=%s batch_size=%d", job.job_id, len(job.items))
+    metrics_store.record_batch_job("accepted")
     enqueue_batch(job.job_id, background_tasks, _run_batch_job)
     return BatchJobAccepted(
         job_id=job.job_id,
@@ -486,6 +537,7 @@ async def classify_file(
         len(job.items),
         extracted.total_found,
     )
+    metrics_store.record_batch_job("accepted")
     enqueue_batch(job.job_id, background_tasks, _run_batch_job)
     return FileBatchJobAccepted(
         job_id=job.job_id,

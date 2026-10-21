@@ -65,6 +65,10 @@ def _rows_to_items(rows: list[dict]) -> list[dict]:
                     f"стр. {row.get('pdf_page_start')}–{row.get('pdf_page_end')}"
                 ),
                 "code_role": row.get("code_role"),
+                # OCR-doubt flag from the PDF parsing stage (DA-7): carried into
+                # the Qdrant payload so the semantic backend can expose it in the
+                # API response. Informational only — it does not change statuses.
+                "review_required": bool(row.get("review_required", False)),
             }
         )
 
