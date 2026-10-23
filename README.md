@@ -55,8 +55,15 @@ docker compose up --build
   Диагностика: `docker compose exec api ls /opt/models/embedder` (модель в образе есть?)
   и `docker compose exec api printenv MODEL_NAME` (что реально видит сервис?). Лечение —
   убрать строку `MODEL_NAME` из `.env` и `docker compose up -d`; пересборка не нужна.
-  Первый старт после переключения займёт минуту-другую: каталог переэмбедится в новую
-  коллекцию Qdrant (имя коллекции включает тег эмбеддера, старая удаляется автоматически).
+  Первый старт после переключения займёт минуту-другую: каталог переэмбедится заново
+  (кэш векторов и коллекция-зеркало в Qdrant именуются по тегу эмбеддера, поэтому
+  старые векторы не переиспользуются и удаляются автоматически).
+- Другая модель эмбеддингов (например `BAAI/bge-m3`, 1024 измерения) ставится build-arg'ом:
+  `EMBEDDER_MODEL=BAAI/bge-m3 docker compose build`. Что учесть: 568M параметров требуют
+  **4 ГБ** на `api` и `worker` (`API_MEMORY_LIMIT`/`WORKER_MEMORY_LIMIT`) и
+  `MODEL_BATCH_SIZE=4..8`; реранкер нужно пересобрать под новый эмбеддер
+  (`scripts/build_model.py --dense --gate`), иначе векторные признаки останутся с весом 0.
+  Разбор готовности, ограничений и порядка шагов — [`docs/bge-m3-readiness.md`](docs/bge-m3-readiness.md).
 
 Проверка стека на целевой машине: `bash scripts/docker_smoke.sh --build`.
 
@@ -223,6 +230,7 @@ python scripts/build_model.py --dense --gate --models-dir models
 | `SEMANTIC_RERANKER` | `auto` | реранкер режима `qdrant`: `auto` — `reranker.<тег-эмбеддера>.json`, иначе `reranker.json`; `lexical` — всегда общий (откат) |
 | `EMBEDDER_BACKEND` | `auto` | `sentence-transformers` \| `spacy` \| `tfidf`; явный выбор не откатывается молча |
 | `MODEL_NAME` / `MODEL_LOCAL_ONLY` | `/opt/models/embedder` / `true` | путь к модели эмбеддингов (в образе скачана при сборке) |
+| `MODEL_MAX_SEQ_LENGTH` | `512` | обрезка входа по токенам (`0` — значение модели); у моделей с длинным контекстом (bge-m3 — 8192) буферы съедают память, а названия товаров короткие |
 | `ML_ENABLED` | `false` | включает чисто семантический режим `qdrant` |
 | `DATA_DIR` | `data` | каталог `data.csv`/`data.json` и `source_text.txt` |
 | `CATALOG_PATH` | — | явный путь к `data.csv` (перебивает `DATA_DIR`) |
