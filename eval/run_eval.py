@@ -55,7 +55,10 @@ from eval.dense_gate import Counts  # noqa: E402
 LABELED = ROOT / "eval" / "labeled_examples.csv"
 CATALOG_CSV = ROOT / "data" / "data.csv"
 EXACT_NAME_STEP = 10  # every 10th catalog row → ~110 literal queries
-SWEEP_THRESHOLDS = (0.10, 0.12, 0.14, 0.16, 0.165, 0.18, 0.20, 0.22, 0.25, 0.30)
+# The sweep grid is derived from the answers themselves (see ``sweep_thresholds``): a
+# fixed list can only describe one confidence scale, and the calibrated catalog scale
+# (review ~0.62-0.68) is nowhere near the raw qdrant one (~0.10-0.30).
+SWEEP_POINTS = 6
 ECE_BINS = 5
 
 
@@ -117,6 +120,29 @@ def evaluate_exact_names(classifier, names: list[tuple[str, str]]) -> list[dict]
     return exact
 
 
+def sweep_thresholds(
+    confidences: list[float], own: float | None, points: int = SWEEP_POINTS
+) -> list[float]:
+    """Thresholds that can actually change an answer, spread over the observed range.
+
+    Only the confidences the model reported matter: a threshold between two of them
+    is the same decision as the one just above. Quantiles keep the table readable for
+    any scale (raw qdrant, calibrated catalog, a future embedder) instead of hard-coding
+    a grid that silently stops making sense.
+    """
+    values = sorted(value for value in confidences if value > 0)
+    if not values:
+        return []
+    last = len(values) - 1
+    quantiles = {
+        round(values[min(last, int(index / points * last))], 3)
+        for index in range(points + 1)
+    }
+    if own is not None:
+        quantiles.add(round(own, 3))
+    return sorted(quantiles)
+
+
 def _review_threshold(classifier) -> float | None:
     reranker = getattr(classifier, "_reranker", None)
     model = getattr(reranker, "confidence_model", None)
@@ -135,10 +161,23 @@ def run(backend: str, *, sweep: bool = False) -> dict:
     sweep_rows: list[dict] = []
     original_threshold = _review_threshold(classifier)
     if sweep and original_threshold is not None:
-        for threshold in SWEEP_THRESHOLDS:
+        probe = _classify_rows(classifier, rows)
+        seen: set[tuple] = set()
+        for threshold in sweep_thresholds(
+            [row["confidence"] for row in probe], original_threshold
+        ):
             _set_review_threshold(classifier, threshold)
             point = summarize({"results": _classify_rows(classifier, rows)})
             point["threshold"] = threshold
+            # Keep decision points, not arithmetic: a threshold whose answers are
+            # identical to the previous row is noise in the table.
+            signature = tuple(
+                point[key]
+                for key in ("top1_expected", "top3_expected", "correct_silence", "top1_all")
+            )
+            if signature in seen and abs(threshold - original_threshold) > 1e-9:
+                continue
+            seen.add(signature)
             sweep_rows.append(point)
         _set_review_threshold(classifier, original_threshold)
 
@@ -290,7 +329,14 @@ def render_markdown(report: dict) -> str:
         f"**Примеров:** {summary['total']} "
         f"(с ожидаемым кодом: {summary['expected_rows']}, "
         f"ожидается `not_found`: {summary['not_found_rows']})",
-        "",
+    ]
+    info = getattr(report.get("classifier"), "vector_info", None) or {}
+    if info:
+        lines.append(
+            f"**Скорит:** `{info.get('reranker') or '—'}` · {info.get('scoring')} · "
+            f"эмбеддер: {info.get('embedder') or 'выключен'}"
+        )
+    lines += ["",
         "## Метрики",
         "",
         "| Метрика | Значение |",
