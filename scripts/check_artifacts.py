@@ -22,7 +22,9 @@ import json
 import sys
 from pathlib import Path
 
-TOLERANCE = 1e-6
+# Real trainer changes move weights by ~0.1 (and change the run description), while a
+# different BLAS/library build moves the last few digits. 1e-4 separates the two.
+TOLERANCE = 1e-4
 # Everything that ties an artifact to one training run. A different trainer changes at
 # least one of these (the retired file differed in all of them).
 RUN_KEYS = (

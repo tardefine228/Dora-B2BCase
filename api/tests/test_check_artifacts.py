@@ -41,7 +41,7 @@ def test_a_weight_rounded_differently_by_blas_is_still_the_same_run():
 def test_a_different_weight_is_a_different_model():
     artifact = json.loads(json.dumps(_artifact()))
     name = next(iter(artifact["weights"]))
-    artifact["weights"][name] += 1e-3
+    artifact["weights"][name] += 1e-3  # ten times the tolerance
     problems = compare(artifact, _artifact())
     assert any(name in problem for problem in problems)
 
