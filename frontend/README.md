@@ -14,7 +14,6 @@
 
 ## Для разработчика
 
-<<<<<<< Updated upstream
 Нужен Node.js 22 или новее.
 
 ```bash
@@ -22,9 +21,6 @@
 PYTHONPATH=api uvicorn app.main:app --port 8000 --no-proxy-headers
 
 # терминал 2
-=======
-```powershell
->>>>>>> Stashed changes
 cd frontend
 npm ci
 npm run dev

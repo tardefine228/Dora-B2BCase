@@ -12,6 +12,7 @@ import logging
 import time
 from collections.abc import Callable
 
+from app.core.metrics import metrics as metrics_store
 from app.job_store import (
     BatchJob,
     add_batch_result,
@@ -24,11 +25,21 @@ from app.job_store import (
 
 logger = logging.getLogger("dora.tasks")
 
+# Chunk size bounds two things at once: how often batch progress is published
+# (SSE/polling granularity) and how many queries reach the embedder in one
+# batched encoding call (BE-7). 16 keeps progress smooth on a 100-item batch
+# (~7 updates) while a single chunk of a full batch would publish once;
+# load-test results: eval/api-load-test.md.
 BATCH_CHUNK_SIZE = 16
 
 
 def run_batch_job(job_id: str, classifier_provider: Callable[[], object]) -> None:
-    """Classify a batch in bounded chunks and publish progress after each product."""
+    """Classify a batch in bounded chunks and publish progress after each product.
+
+    The classifier is fetched ONCE per job (BE-7): the provider returns the
+    process-wide singleton warmed at startup (FastAPI lifespan / Celery
+    ``worker_process_init``), so no chunk pays model or index loading.
+    """
     snapshot = get_job(job_id)
     if not isinstance(snapshot, BatchJob) or not start_job(job_id):
         return
@@ -47,8 +58,11 @@ def run_batch_job(job_id: str, classifier_provider: Callable[[], object]) -> Non
                 )
                 add_batch_result(job_id, item)
                 published.append(item)
+                metrics_store.record_classification("batch", item.status)
             audit_classifications("batch", published)
         complete_batch(job_id)
+        metrics_store.record_batch_job("completed")
     except Exception:
         logger.exception("Batch job failed: %s", job_id)
+        metrics_store.record_batch_job("failed")
         fail_job(job_id, "Не удалось обработать список товаров; проверьте логи сервиса")

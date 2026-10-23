@@ -39,7 +39,9 @@ function download(blob: Blob, name: string) {
 
 export function exportResultsCsv(results: Result[]) {
   const esc = (value: string | number | null) => {
-    const s = value === null || value === undefined ? '' : String(value);
+    let s = value === null || value === undefined ? '' : String(value);
+    // Quoting a CSV field does not prevent spreadsheet formula evaluation.
+    if (typeof value === 'string' && /^(?:\s*[=+@-]|[\t\r\n])/.test(s)) s = `'${s}`;
     return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const lines = [['query', 'code', 'title', 'status', 'confidence', 'confidence_raw', 'clause_ref', 'clause_url', 'user_verdict', 'corrected_code'].join(';')];
@@ -49,21 +51,4 @@ export function exportResultsCsv(results: Result[]) {
     esc(r.userVerdict ?? null), esc(r.correctedCode ?? null),
   ].join(';')));
   download(new Blob([`\uFEFF${lines.join('\r\n')}\r\n`], { type: 'text/csv;charset=utf-8' }), 'classification-results.csv');
-}
-
-// Тот же формат, что отдаёт серверный эндпоинт /classify/batch/{job_id}.csv:
-// «;», UTF-8 с BOM, CRLF — Excel русской локали открывает без мастеров импорта.
-export function exportResultsCsv(results: Result[]) {
-  const esc = (value: string | number | null) => {
-    const s = value === null || value === undefined ? '' : String(value);
-    return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const lines = [['query', 'code', 'title', 'status', 'confidence', 'clause_ref', 'clause_url'].join(';')];
-  results.forEach(r => lines.push([
-    esc(r.name), esc(r.code), esc(r.title), esc(r.status), esc(r.confidence), esc(r.clauseRef), esc(absoluteUrl(r.url)),
-  ].join(';')));
-  const blob = new Blob([`\uFEFF${lines.join('\r\n')}\r\n`], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = 'classification-results.csv'; a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

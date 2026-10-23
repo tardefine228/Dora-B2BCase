@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from qdrant_client.http.models import QueryRequest
 from qdrant_client.models import ScoredPoint
 
+from ml import indexer
 from ml.config import DEBUG, DEFAULT_TOP_K, QDRANT_COLLECTION
-from ml.embedder import encode_texts
-from ml.indexer import get_qdrant_client
+from ml.embedder import encode_queries
 
 logger = logging.getLogger("dora.ml.search")
 
@@ -26,12 +26,21 @@ class SearchResult:
     score: float
     record_id: str = ""
     position: str = ""
+    # Catalog facts stored in the point payload (BE-9). ``None`` means the
+    # collection predates these payload keys; the API then falls back to the
+    # catalog file on disk.
+    code_role: str | None = None
+    review_required: bool | None = None
 
 
 def _to_results(hits: list[ScoredPoint]) -> list[SearchResult]:
     results: list[SearchResult] = []
     for hit in hits:
         payload = hit.payload or {}
+        code_role = payload.get("code_role")
+        review_required = (
+            bool(payload["review_required"]) if "review_required" in payload else None
+        )
         results.append(
             SearchResult(
                 item_id=hit.id,
@@ -42,6 +51,8 @@ def _to_results(hits: list[ScoredPoint]) -> list[SearchResult]:
                 record_id=payload.get("record_id", ""),
                 position=payload.get("position", ""),
                 score=float(hit.score),
+                code_role=(code_role or None) if isinstance(code_role, str) else None,
+                review_required=review_required,
             )
         )
     return results
@@ -60,8 +71,11 @@ def search_many(queries: list[str], top_k: int = DEFAULT_TOP_K) -> list[list[Sea
         return []
 
     started = time.perf_counter()
-    vectors = encode_texts(queries)
-    client = get_qdrant_client()
+    vectors = encode_queries(queries)
+    # Attribute lookup at call time (not an import-time ``from`` binding): the
+    # client factory is lru_cached and tests replace it per fixture — a stale
+    # binding here once leaked a stub client across test modules.
+    client = indexer.get_qdrant_client()
     requests = [QueryRequest(query=vector, limit=top_k, with_payload=True) for vector in vectors]
     responses = client.query_batch_points(
         collection_name=QDRANT_COLLECTION,
@@ -101,3 +115,4 @@ if __name__ == "__main__":
         "ноутбук для работы",
     ):
         search_and_print(query, top_k=3)
+

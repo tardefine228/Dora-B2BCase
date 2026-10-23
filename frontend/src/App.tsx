@@ -1,11 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-<<<<<<< Updated upstream
-import { api, type Result, type Status } from './api';
-import { readTable, namesFrom, exportResults, exportResultsCsv, type Table } from './files';
-=======
 import { api, followBatch, type Result, type Status, type UploadAccepted, type Verdict } from './api';
 import { exportResults, exportResultsCsv } from './files';
 
+// Browser persistence is optional and must not interrupt classification.
+const storage = {
+  getItem(key: string): string | null {
+    try { return localStorage.getItem(key); } catch { return null; }
+  },
+  setItem(key: string, value: string): boolean {
+    try { localStorage.setItem(key, value); return true; } catch { return false; }
+  },
+  removeItem(key: string): void {
+    try { localStorage.removeItem(key); } catch { /* Storage may be blocked. */ }
+  },
+};
 const HISTORY_KEY = 'dora:local-history:v1';
 const HISTORY_ENABLED_KEY = 'dora:history-enabled:v1';
 const ACTIVE_JOB_KEY = 'dora:active-job:v1';
@@ -20,7 +28,6 @@ const STATUS_HELP: Record<Status, string> = {
 const message = (error: unknown) => error instanceof Error ? error.message : 'Ошибка. Попробуйте ещё раз.';
 const percent = (value: number | null) => value === null ? '—' : `${Math.round(value * 100)}%`;
 const isSafeUrl = (url: string | null): url is string => !!url && (/^\/source\/[\w-]+$/.test(url) || /^https?:\/\//i.test(url));
->>>>>>> Stashed changes
 
 function Icon({ kind = 'search' }: { kind?: 'search' | 'upload' }) {
   return <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
@@ -50,7 +57,7 @@ function Feedback({ result, onSaved }: { result: Result; onSaved: (r: Result, ve
   const [choice, setChoice] = useState<Verdict | null>(null);
   const [corrected, setCorrected] = useState('');
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState(!!result.userVerdict);
   const [error, setError] = useState('');
   const submit = async (verdict: Verdict) => {
     setChoice(verdict); setSent(false); setError('');
@@ -82,6 +89,8 @@ function ResultCard({ result, compact = false, onSaved }: { result: Result; comp
   return <div className={compact ? 'compact-result' : ''}>
     {compact ? <>
       <div className="nowrap">{result.code ?? '—'}</div><small>{STATUS_LABEL[result.status]}</small>
+      {result.title && <p className="title">{result.title}</p>}
+      {result.clauseRef && <p className="muted">{result.clauseRef}</p>}
     </> : <>
       <div className="result-heading"><h2>Результат</h2><span className={`badge status-${result.status}`}>{STATUS_LABEL[result.status]}</span></div>
       <div className="result-grid">
@@ -107,7 +116,7 @@ function ResultCard({ result, compact = false, onSaved }: { result: Result; comp
 }
 
 function readLocalHistory(): Result[] {
-  try { const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]'); return Array.isArray(raw) ? raw.slice(0, 30) as Result[] : []; }
+  try { const raw = JSON.parse(storage.getItem(HISTORY_KEY) ?? '[]'); return Array.isArray(raw) ? raw.slice(0, 30) as Result[] : []; }
   catch { return []; }
 }
 
@@ -123,17 +132,17 @@ export default function App() {
   const [sort, setSort] = useState<'original' | 'name' | 'confidence'>('original');
   const [drag, setDrag] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [historyEnabled, setHistoryEnabled] = useState(() => localStorage.getItem(HISTORY_ENABLED_KEY) === 'yes');
+  const [historyEnabled, setHistoryEnabled] = useState(() => storage.getItem(HISTORY_ENABLED_KEY) === 'yes');
   const [history, setHistory] = useState<Result[]>(readLocalHistory);
   const input = useRef<HTMLInputElement>(null);
   const abort = useRef<AbortController | null>(null);
   const locked = useRef(false);
 
   function saveHistory(items: Result[]) {
-    if (localStorage.getItem(HISTORY_ENABLED_KEY) !== 'yes') return;
+    if (storage.getItem(HISTORY_ENABLED_KEY) !== 'yes') return;
     setHistory(old => {
       const next = [...items, ...old].slice(0, 30);
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      storage.setItem(HISTORY_KEY, JSON.stringify(next));
       return next;
     });
   }
@@ -144,8 +153,8 @@ export default function App() {
     setResults(old => old.map(mark));
     setHistory(old => {
       const updated = old.map(mark);
-      if (localStorage.getItem(HISTORY_ENABLED_KEY) === 'yes') {
-        localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+      if (storage.getItem(HISTORY_ENABLED_KEY) === 'yes') {
+        storage.setItem(HISTORY_KEY, JSON.stringify(updated));
       }
       return updated;
     });
@@ -166,22 +175,25 @@ export default function App() {
       setResults(done.results);
       if (done.status === 'completed') saveHistory(done.results);
       else setError(done.error ?? 'Не удалось обработать все товары. Частичные результаты сохранены.');
-      localStorage.removeItem(ACTIVE_JOB_KEY);
+      storage.removeItem(ACTIVE_JOB_KEY);
     } catch (e) {
-      if (!controller.signal.aborted) setError(message(e));
+      if (!controller.signal.aborted) {
+        setError(message(e));
+        setProgress(old => old ? { ...old, state: 'failed' } : old);
+      }
       // Keep job ID on timeout/connection failure: user may restore the batch.
     } finally {
       if (!controller.signal.aborted) { locked.current = false; setBusy(null); }
     }
   }
   useEffect(() => {
-    const existing = localStorage.getItem(ACTIVE_JOB_KEY);
+    const existing = storage.getItem(ACTIVE_JOB_KEY);
     if (existing) {
       try {
         const v = JSON.parse(existing) as { id: string; total: number };
         if (v.id && Number.isInteger(v.total) && v.total > 0 && v.total <= 100) void follow(v.id, v.total);
-        else localStorage.removeItem(ACTIVE_JOB_KEY);
-      } catch { localStorage.removeItem(ACTIVE_JOB_KEY); }
+        else storage.removeItem(ACTIVE_JOB_KEY);
+      } catch { storage.removeItem(ACTIVE_JOB_KEY); }
     }
     return () => { abort.current?.abort(); locked.current = false; };
   }, []);
@@ -206,7 +218,7 @@ export default function App() {
     try {
       const accepted = await api.uploadFile(file);
       setFilename(file.name); setFileInfo(accepted);
-      localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ id: accepted.job_id, total: accepted.total }));
+      storage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ id: accepted.job_id, total: accepted.total }));
       locked.current = false;
       await follow(accepted.job_id, accepted.total);
     } catch (e) { setError(message(e)); }
@@ -257,11 +269,6 @@ export default function App() {
       </div>
       {error && <div className="error" role="alert">{error}</div>}
       <div aria-live="polite" aria-busy={!!busy}>
-<<<<<<< Updated upstream
-      {progress && <section className="card progress"><strong>{progress.state === 'running' ? 'Обрабатываем список…' : progress.state === 'done' ? 'Обработка завершена' : 'Обработка остановлена'}</strong><span>{progress.processed} из {progress.total}</span><progress max={progress.total} value={progress.processed}/></section>}
-      {result && <section className="card result"><div className="result-heading"><h2>Результат</h2><span className="badge">{STATUS_LABEL[result.status]}</span></div><div className="result-grid"><div><p className="muted">Предполагаемый код ОКПД2</p>{result.status === 'not_found' ? <p className="title">Надёжного совпадения в перечне не найдено</p> : <><div className="code">{result.code ?? '—'}</div><p className="title">{result.title}</p>{result.clauseRef && <p className="muted">{result.clauseRef}</p>}</>}</div><div className="confidence"><strong>{percent(result)}</strong><p>Уверенность модели</p>{result.confidence !== null && <progress max={1} value={result.confidence}/>}</div></div><div className="source"><Source result={result}/></div></section>}
-      {results.length > 0 && <section className="card result"><div className="result-heading"><h2>Результаты списка</h2></div><div className="toolbar"><label>Сортировка <select value={sort} onChange={e => setSort(e.target.value as typeof sort)}><option value="original">Как в файле</option><option value="name">По названию</option><option value="confidence">По уверенности</option></select></label><span className="toolbar-actions"><button className="outline" disabled={exporting} onClick={async () => { setExporting(true); try { await exportResults(sorted); } catch (e) { setError(message(e)); } finally { setExporting(false); } }}>{exporting ? 'Сохраняем…' : 'Скачать Excel'}</button><button className="outline" disabled={exporting} onClick={() => { try { exportResultsCsv(sorted); } catch (e) { setError(message(e)); } }}>Скачать CSV</button></span></div><div className="table-scroll"><table><thead><tr><th>Товар</th><th>Код ОКПД2</th><th>Уверенность</th><th>Результат</th></tr></thead><tbody>{sorted.map((r, i) => <tr key={i}><td>{r.name}</td><td className="nowrap">{r.code ?? '—'}</td><td>{percent(r)}<div className="muted">{STATUS_LABEL[r.status]}</div></td><td>{r.status === 'not_found' ? 'Надёжного совпадения в перечне не найдено' : r.title}{r.clauseRef && <div className="muted">{r.clauseRef}</div>}<div><Source result={r}/></div></td></tr>)}</tbody></table></div></section>}
-=======
         {progress && <section className="card progress" aria-label="Прогресс обработки">
           <strong>{progress.state === 'running' ? 'Обрабатываем список…' : progress.state === 'done' ? 'Обработка завершена' : 'Обработка остановлена'}</strong>
           <span>{progress.processed} из {progress.total}</span>
@@ -284,13 +291,12 @@ export default function App() {
             </span>
           </div>
           <div className="table-scroll"><table><thead><tr><th scope="col">Товар</th><th scope="col">Код и статус</th><th scope="col">Уверенность</th><th scope="col">Подробности</th></tr></thead>
-            <tbody>{sorted.map((r, i) => <tr key={`${r.name}-${i}`}>
+            <tbody>{sorted.map(r => <tr key={results.indexOf(r)}>
               <td>{r.name}</td><td>{r.code ?? '—'}<span className="muted cell-status">{STATUS_LABEL[r.status]}</span></td>
               <td>{percent(r.confidence)}</td><td><SourceLink url={r.url}/>
                 <details className="details"><summary>Проверить результат</summary><ResultCard result={r} compact onSaved={saveVerdict}/></details></td>
             </tr>)}</tbody></table></div>
         </section>}
->>>>>>> Stashed changes
       </div>
       <section className="card history">
         <div className="toolbar"><h2>История проверок на этом устройстве</h2>
@@ -300,13 +306,14 @@ export default function App() {
               finally { setExporting(false); }
             }}>Экспорт истории</button>
             <button type="button" className="outline small" onClick={() => {
-              localStorage.removeItem(HISTORY_KEY); setHistory([]);
+              storage.removeItem(HISTORY_KEY); setHistory([]);
             }}>Очистить историю</button>
           </span>}
         </div>
         <label className="history-optin"><input type="checkbox" checked={historyEnabled} onChange={e => {
-          const enabled = e.target.checked; setHistoryEnabled(enabled);
-          localStorage.setItem(HISTORY_ENABLED_KEY, enabled ? 'yes' : 'no');
+          const enabled = e.target.checked;
+          if (storage.setItem(HISTORY_ENABLED_KEY, enabled ? 'yes' : 'no')) setHistoryEnabled(enabled);
+          else setError('Не удалось изменить настройку истории: хранилище браузера недоступно.');
         }}/> Сохранять новые проверки в истории этого браузера (необязательно)</label>
         <p className="hint">Названия товаров могут содержать рабочую информацию. По умолчанию история выключена; записи остаются только в этом браузере.</p>
         {history.length === 0 ? <p className="muted">История пуста.</p> :
@@ -320,3 +327,4 @@ export default function App() {
     </main>
   </>;
 }
+

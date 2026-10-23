@@ -115,7 +115,7 @@ function toResult(item: ApiClassify): Result {
     status: invalidCode ? 'review' : item.status,
     clauseRef: notFound || invalidCode ? null : item.clause_ref,
     url: notFound || invalidCode ? null : item.clause_url,
-    alternatives: notFound ? [] : (item.alternatives ?? []).slice(0, 3).map(alt => ({
+    alternatives: (item.alternatives ?? []).slice(0, 3).map(alt => ({
       code: alt.code, title: alt.title, confidence: alt.confidence,
       clauseRef: alt.clause_ref, url: alt.clause_url,
     })),
@@ -152,17 +152,22 @@ export const api = {
 export async function followBatch(
   id: string, onProgress: (job: Job) => void, signal: AbortSignal,
 ): Promise<Job> {
+  signal.throwIfAborted();
   const deadline = Date.now() + 180_000;
   const eventUrl = `/classify/batch/${encodeURIComponent(id)}/events`;
   if ('EventSource' in window) {
     const done = await new Promise<boolean>((resolve, reject) => {
       const source = new EventSource(eventUrl);
-      const finish = (value: boolean) => { source.close(); signal.removeEventListener('abort', abort); resolve(value); };
-      const abort = () => { source.close(); reject(new DOMException('Запрос отменён', 'AbortError')); };
+      const cleanup = () => {
+        window.clearTimeout(timeout);
+        source.close();
+        signal.removeEventListener('abort', abort);
+      };
+      const close = (value: boolean) => { cleanup(); resolve(value); };
+      const abort = () => { cleanup(); reject(new DOMException('Запрос отменён', 'AbortError')); };
+      const timeout = window.setTimeout(() => close(false), 140_000);
       if (signal.aborted) { abort(); return; }
       signal.addEventListener('abort', abort, { once: true });
-      const timeout = window.setTimeout(() => { window.clearTimeout(timeout); finish(false); }, 140_000);
-      const close = (value: boolean) => { window.clearTimeout(timeout); finish(value); };
       source.addEventListener('progress', event => {
         try {
           const v = JSON.parse((event as MessageEvent).data) as { status: JobStatus; total: number; completed: number };
@@ -175,6 +180,7 @@ export async function followBatch(
     });
     if (done && !signal.aborted) {
       const job = await api.getBatch(id);
+      signal.throwIfAborted();
       onProgress(job);
       return job;
     }
@@ -187,8 +193,14 @@ export async function followBatch(
     onProgress(job);
     if (job.status === 'completed' || job.status === 'failed') return job;
     await new Promise<void>(resolve => {
-      const timer = window.setTimeout(resolve, 700);
-      signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+      const finish = () => {
+        window.clearTimeout(timer);
+        signal.removeEventListener('abort', finish);
+        resolve();
+      };
+      const timer = window.setTimeout(finish, 700);
+      signal.addEventListener('abort', finish, { once: true });
+      if (signal.aborted) finish();
     });
   }
   throw new DOMException('Запрос отменён', 'AbortError');
