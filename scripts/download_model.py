@@ -27,12 +27,21 @@ IGNORE_PATTERNS = [
     "*.msgpack",
     "*.ot",
     "pytorch_model.bin",
+    "pytorch_model-*.bin",
     "tf_model.h5",
     "rust_model.ot",
 ]
 
 # Files that actually carry the encoder weights (single-file or sharded layouts).
-_ENCODER_WEIGHT_FILES = ("model.safetensors", "pytorch_model.bin", "model.safetensors.index.json")
+_ENCODER_WEIGHT_FILES = (
+    "model.safetensors",
+    "pytorch_model.bin",
+    "model.safetensors.index.json",
+    "pytorch_model.bin.index.json",
+)
+
+# Ignore rules that hide the encoder weights and are therefore conditional.
+_TORCH_BIN_PATTERNS = ("pytorch_model.bin", "pytorch_model-*.bin")
 
 
 def is_encoder_weight(name: str) -> bool:
@@ -54,11 +63,17 @@ def ignore_patterns_for(file_names: Sequence[str]) -> list[str]:
     not from a hardcoded preference.
     """
     patterns = list(IGNORE_PATTERNS)
-    has_safetensors = any(name.endswith(".safetensors") for name in file_names)
-    if has_safetensors:
+    if any(name.endswith(".safetensors") for name in file_names):
         return patterns
-    if "pytorch_model.bin" in file_names and "pytorch_model.bin" in patterns:
-        patterns.remove("pytorch_model.bin")
+    torch_bin = [
+        name
+        for name in file_names
+        if name in _TORCH_BIN_PATTERNS
+        or (name.startswith("pytorch_model-") and name.endswith(".bin"))
+    ]
+    if torch_bin:
+        # The only weight files in the repository: keep them.
+        patterns = [pattern for pattern in patterns if pattern not in _TORCH_BIN_PATTERNS]
     return patterns
 
 

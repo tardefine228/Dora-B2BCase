@@ -154,3 +154,31 @@ def test_usage_is_printed_for_a_wrong_argument_count(downloader):
     with pytest.raises(SystemExit) as excinfo:
         downloader.main(["BAAI/bge-m3"])
     assert "Usage:" in str(excinfo.value)
+
+
+def test_sharded_torch_bin_only_repository_keeps_every_shard(downloader):
+    files = [
+        "config.json",
+        "pytorch_model.bin.index.json",
+        "pytorch_model-00001-of-00002.bin",
+        "pytorch_model-00002-of-00002.bin",
+        "tokenizer.json",
+    ]
+    patterns = downloader.ignore_patterns_for(files)
+    assert "pytorch_model.bin" not in patterns
+    assert "pytorch_model-*.bin" not in patterns
+    assert downloader.is_encoder_weight("pytorch_model.bin.index.json")
+    assert downloader.is_encoder_weight("pytorch_model-00002-of-00002.bin")
+
+
+def test_sharded_safetensors_let_the_torch_shards_go(downloader):
+    files = [
+        "model.safetensors.index.json",
+        "model-00001-of-00002.safetensors",
+        "model-00002-of-00002.safetensors",
+        "pytorch_model.bin",
+        "tokenizer.json",
+    ]
+    patterns = downloader.ignore_patterns_for(files)
+    assert "pytorch_model.bin" in patterns
+    assert "pytorch_model-*.bin" in patterns
