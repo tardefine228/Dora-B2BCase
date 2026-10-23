@@ -64,6 +64,8 @@ from app.schemas import (
     CatalogUploadResponse,
     ClassifyRequest,
     ClassifyResponse,
+    FeedbackRequest,
+    FeedbackSaved,
     FileBatchJobAccepted,
     ReindexJobAccepted,
     ReindexJobStatusResponse,
@@ -83,6 +85,7 @@ from app.services.classifier import (
     reset_classifier,
     vector_layer_health,
 )
+from app.services.feedback_store import save_feedback
 from app.services.file_items import (
     SUPPORTED_EXTENSIONS,
     FileParseError,
@@ -466,6 +469,33 @@ def classify(request: ClassifyRequest) -> ClassifyResponse:
     metrics_store.record_classification("single", answer.status)
     audit_classifications("single", [answer])
     return answer
+
+
+@app.post(
+    "/feedback",
+    response_model=FeedbackSaved,
+    tags=["classification"],
+    summary="Сохранить проверку кода специалистом",
+    status_code=201,
+)
+def submit_feedback(payload: FeedbackRequest) -> FeedbackSaved:
+    if payload.verdict == "incorrect" and not (payload.corrected_code or "").strip():
+        raise HTTPException(status_code=422, detail="Введите правильный код ОКПД2")
+    try:
+        record_id = save_feedback(
+            payload.query,
+            payload.predicted_code,
+            payload.verdict,
+            payload.corrected_code.strip()
+            if payload.verdict == "incorrect" and payload.corrected_code
+            else None,
+        )
+    except Exception as exc:
+        logger.exception("Не удалось сохранить feedback")
+        raise HTTPException(
+            status_code=503, detail="Не удалось сохранить оценку. Повторите позже."
+        ) from exc
+    return FeedbackSaved(id=record_id)
 
 
 @app.post(
