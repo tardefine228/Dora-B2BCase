@@ -7,7 +7,7 @@ never renamed or removed within a major version.
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 CONTRACT_VERSION = "1.0"
 
@@ -28,6 +28,18 @@ class ClassifyRequest(APIModel):
         examples=["Ноутбук Lenovo IdeaPad"],
     )
 
+
+
+class FeedbackRequest(APIModel):
+    query: ProductName
+    predicted_code: str | None = Field(default=None, max_length=32)
+    verdict: Literal["correct", "incorrect", "absent"]
+    corrected_code: str | None = Field(default=None, max_length=32)
+
+
+class FeedbackSaved(APIModel):
+    id: str
+    saved: bool = True
 
 class BatchClassifyRequest(APIModel):
     items: list[ProductName] = Field(
@@ -72,12 +84,46 @@ class ClassifyResponse(APIModel):
         default=None,
         description="URL фрагмента источника (GET /source/{record_id}); null, если неизвестен.",
     )
+    code_role: str | None = Field(
+        default=None,
+        description=(
+            "Роль кода позиции по каталогу: «Включён», «Исключение», «Не указан». "
+            "Информационный флаг (BE-9): входит ли позиция-исключение в выдачу и как "
+            "она обрабатывается — продуктовое решение (см. docs/api-contract.md); "
+            "null, если каталог не даёт роли."
+        ),
+    )
+    catalog_review_required: bool | None = Field(
+        default=None,
+        description=(
+            "Строка каталога помечена к перепроверке при разборе PDF (сомнения OCR). "
+            "Информационный флаг, НЕ связан со статусом ответа «review»; null, если "
+            "каталог не даёт флага."
+        ),
+    )
     alternatives: list[Alternative] = Field(default_factory=list)
     latency_ms: float = Field(ge=0)
     contract_version: str = Field(
         default=CONTRACT_VERSION,
         description="Версия формата результата (командный контракт, см. docs/api-contract.md).",
     )
+
+    @model_validator(mode="after")
+    def _answered_statuses_require_code(self) -> "ClassifyResponse":
+        """Contract v1.0 invariant 5 (BE-9): ``ok``/``review`` are answers WITH a code.
+
+        ``not_found`` is the only status allowed without ``code``: a catalog
+        position without an OKPD2 code («Не указан») can be a hint but never an
+        answer, so the classifier downgrades such results to ``not_found`` and
+        keeps the position in ``alternatives``. Enforcing it in the schema means
+        no code path (catalog, semantic, mock, future) can ship a violation.
+        """
+        if self.status in {"ok", "review"} and not (self.code or "").strip():
+            raise ValueError(
+                "status 'ok'/'review' требует непустой code (контракт v1.0, инвариант 5): "
+                "для позиции без кода используйте status 'not_found'"
+            )
+        return self
 
 
 class BatchJobAccepted(APIModel):

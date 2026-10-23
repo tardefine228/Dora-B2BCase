@@ -15,6 +15,7 @@ client = TestClient(app)
 
 CSV_HEADER = (
     "query;code;title;status;confidence;confidence_raw;clause_ref;clause_url;"
+    "code_role;catalog_review_required;"
     "alt1_code;alt1_title;alt2_code;alt2_title;alt3_code;alt3_title"
 )
 

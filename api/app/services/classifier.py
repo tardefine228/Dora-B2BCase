@@ -22,6 +22,7 @@ from __future__ import annotations
 import csv
 import logging
 import re
+import time
 from collections import OrderedDict
 from contextlib import contextmanager
 from pathlib import Path
@@ -58,6 +59,18 @@ def exclusive_inference():
 
 def _tokenize(text: str) -> list[str]:
     return [token for token in TOKEN_RE.findall(text.lower()) if len(token) > 1]
+
+
+def _parse_review_flag(raw: object) -> bool | None:
+    """Catalog ``review_required`` (OCR doubt) as ``True``/``False``/``None`` (unknown)."""
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        return raw
+    text = str(raw).strip().lower()
+    if not text:
+        return None
+    return text in {"true", "1", "yes", "on"}
 
 
 def _display_confidence(reranker, raw_confidence: float) -> float:
@@ -175,6 +188,11 @@ def _qdrant_candidates(hits) -> list:
                 "record_id": getattr(hit, "record_id", "") or "",
                 "dense": score,
                 "dense_top": dense_top,
+                # Catalog facts from the point payload; None when the collection
+                # was indexed before these keys existed (BE-9) — the classifier
+                # then falls back to the catalog file.
+                "code_role": getattr(hit, "code_role", None),
+                "catalog_review_required": getattr(hit, "review_required", None),
             },
         )
         for hit, score in zip(hits, scores, strict=True)
@@ -197,6 +215,23 @@ def _not_found(query: str) -> ClassifyResponse:
 
 
 _MAX_ALTERNATIVES = 3
+
+
+def _codeless_hint(best, confidence: float) -> Alternative:
+    """A top-1 position without an OKPD2 code, kept visible as a hint (BE-9).
+
+    Contract invariant 5 forbids answering ``ok``/``review`` without a code, so
+    such results are downgraded to ``not_found`` — but the position itself is
+    valuable for the specialist (it exists in the decree, its code is simply
+    «Не указан»), so it stays in ``alternatives`` with its title and source.
+    """
+    return Alternative(
+        code=None,
+        title=best.title,
+        confidence=round(min(max(confidence, 0.0), 1.0), 4),
+        clause_ref=best.clause_ref,
+        clause_url=clause_url_for(best.payload.get("record_id")),
+    )
 
 
 def _distinct_alternatives(ranked, status: str, threshold_review: float) -> list[Alternative]:
@@ -351,6 +386,16 @@ class CatalogClassifier:
             else "lexical-reranker",
         }
 
+    def ping_store(self) -> bool:
+        """Bounded probe of the vector store behind the dense index (BE-6).
+
+        Without a Qdrant mirror the index is exact in-memory search — there is
+        nothing external to fail, so the store counts as up.
+        """
+        if self._dense is None:
+            return True
+        return bool(self._dense.health().get("store_up", True))
+
     def _load(self) -> None:
         from ml.features import prepare_candidate
 
@@ -367,12 +412,17 @@ class CatalogClassifier:
                 okpd2 = (row.get("okpd2") or "").strip()
                 clause_ref = self._clause_ref(row)
                 key = (okpd2, name)
+                review_flag = _parse_review_flag(row.get("review_required"))
                 existing = by_key.get(key)
                 if existing is not None:
                     # The same position often appears in several appendices; keep
                     # one entry and cite all of them so ranking margins stay sane.
                     if clause_ref and clause_ref not in (existing["clause_ref"] or ""):
                         existing["clause_ref"] = f"{existing['clause_ref']}; {clause_ref}"
+                    # Data-quality signals merge conservatively: if ANY copy of the
+                    # position is marked for re-verification, the merged entry is too.
+                    if review_flag and not existing["catalog_review_required"]:
+                        existing["catalog_review_required"] = True
                     continue
                 by_key[key] = {
                     "okpd2": okpd2,
@@ -382,6 +432,12 @@ class CatalogClassifier:
                     # Source of record: /source/{record_id} renders the pages of
                     # data/source_text.txt this position was parsed from.
                     "record_id": (row.get("record_id") or "").strip(),
+                    # Catalog facts exposed as explicit flags in the response (BE-9).
+                    # Informational only: whether «Исключение» positions may be
+                    # answered and how OCR-doubt rows are processed are product and
+                    # data decisions (PO-1/DA-6/DA-7), not classifier behavior.
+                    "code_role": (row.get("code_role") or "").strip() or None,
+                    "catalog_review_required": review_flag,
                     # Precomputed once: retrieval scores every row per request.
                     "prepared": prepare_candidate(name),
                 }
@@ -406,7 +462,32 @@ class CatalogClassifier:
         # vocabulary first: stems and embeddings cannot rescue absent tokens.
         from ml.fuzzy import autocorrect
 
-        normalized_query = autocorrect(query.strip())
+        return self._classify_normalized(autocorrect(query.strip()))
+
+    def classify_many(self, queries: list[str]) -> list[ClassifyResponse]:
+        """Batch path (BE-7): one autocorrect pass, ONE batched encoding call.
+
+        With vector search the heavy part of a chunk is embedding the queries: a
+        transformer amortizes its overhead only when the texts reach it as one
+        batch, so all query vectors are computed up front and land in the
+        ``DenseIndex`` query cache; the per-query pipeline then never encodes.
+        Repeated names in a batch are encoded once as well.
+        """
+        if not queries:
+            return []
+        from ml.fuzzy import autocorrect
+
+        normalized = [autocorrect(query.strip()) for query in queries]
+        if self._dense is not None:
+            try:
+                self._dense.warm_queries([name for name in normalized if name])
+            except Exception:  # noqa: BLE001 - per-query encoding still works
+                logger.exception(
+                    "Пакетное кодирование запросов не удалось — кодируем по одному"
+                )
+        return [self._classify_normalized(name) for name in normalized]
+
+    def _classify_normalized(self, normalized_query: str) -> ClassifyResponse:
         if not normalized_query:
             return _not_found(normalized_query)
 
@@ -493,6 +574,27 @@ class CatalogClassifier:
         except Exception:  # pragma: no cover - fallback path
             logger.exception("ml.reranker недоступен — отдаём лучший lexical-кандидат")
             best = shortlist[0][1]
+            if not best["okpd2"]:
+                # Invariant 5 holds on every path: a codeless position is a hint,
+                # not an answer.
+                return ClassifyResponse(
+                    query=query,
+                    code=None,
+                    title=None,
+                    confidence=0.0,
+                    confidence_raw=0.0,
+                    status="not_found",
+                    alternatives=[
+                        Alternative(
+                            code=None,
+                            title=best["name"],
+                            confidence=0.5,
+                            clause_ref=best["clause_ref"],
+                            clause_url=clause_url_for(best.get("record_id")),
+                        )
+                    ],
+                    latency_ms=0.0,
+                )
             return ClassifyResponse(
                 query=query,
                 code=best["okpd2"] or None,
@@ -501,6 +603,8 @@ class CatalogClassifier:
                 status="review",
                 clause_ref=best["clause_ref"],
                 clause_url=clause_url_for(best.get("record_id")),
+                code_role=best.get("code_role"),
+                catalog_review_required=best.get("catalog_review_required"),
                 alternatives=[],
                 latency_ms=0.0,
             )
@@ -517,6 +621,10 @@ class CatalogClassifier:
                     "record_id": row.get("record_id") or "",
                     "dense": cosine,
                     "dense_top": dense_top,
+                    # Catalog facts ride along so the response can expose them
+                    # without a second lookup (BE-9).
+                    "code_role": row.get("code_role"),
+                    "catalog_review_required": row.get("catalog_review_required"),
                 },
             )
             for score, row, cosine, dense_top in shortlist
@@ -535,11 +643,24 @@ class CatalogClassifier:
         confidence = round(_display_confidence(self._reranker, raw_confidence), 4)
 
         threshold_review = getattr(self._reranker, "threshold_review", 0.45)
-        alternatives = _distinct_alternatives(ranked, status, threshold_review)
 
-        if status == "not_found":
-            # Too weak to suggest a position: report "не найдено" and keep at most
-            # plausible near-misses in alternatives for the specialist.
+        if status == "not_found" or not best.code:
+            # Too weak to suggest a position — or the winning position has no
+            # OKPD2 code («Не указан») and invariant 5 forbids ok/review without
+            # one. Report "не найдено"; keep at most plausible near-misses in
+            # alternatives, and a demoted codeless winner stays visible as the
+            # first hint (with its title and source) for the specialist.
+            alternatives = _distinct_alternatives(ranked, "not_found", threshold_review)
+            if status != "not_found":
+                logger.info(
+                    "Позиция без кода ОКПД2 понижена до not_found: query=%r title=%r",
+                    query,
+                    best.title,
+                )
+                alternatives = [
+                    _codeless_hint(best, confidence),
+                    *alternatives[: _MAX_ALTERNATIVES - 1],
+                ]
             return ClassifyResponse(
                 query=query,
                 code=None,
@@ -553,6 +674,7 @@ class CatalogClassifier:
                 latency_ms=0.0,
             )
 
+        alternatives = _distinct_alternatives(ranked, status, threshold_review)
         return ClassifyResponse(
             query=query,
             code=best.code,
@@ -562,12 +684,44 @@ class CatalogClassifier:
             status=status,
             clause_ref=best.clause_ref,
             clause_url=clause_url_for(best.payload.get("record_id")),
+            code_role=best.payload.get("code_role"),
+            catalog_review_required=best.payload.get("catalog_review_required"),
             alternatives=alternatives,
             latency_ms=0.0,
         )
 
-    def classify_many(self, queries: list[str]) -> list[ClassifyResponse]:
-        return [self.classify(query) for query in queries]
+
+def _catalog_flags_lookup() -> dict[str, tuple[str | None, bool | None]]:
+    """``record_id -> (code_role, review_required)`` from the catalog CSV.
+
+    Fallback for Qdrant collections whose payload predates the catalog facts
+    (BE-9); best effort — without the file the map stays empty and the flags in
+    the response are simply ``null``.
+    """
+    flags: dict[str, tuple[str | None, bool | None]] = {}
+    path = _resolve_catalog_path()
+    if path is None:
+        return flags
+    try:
+        with path.open(encoding="utf-8-sig", newline="") as csv_file:
+            for row in csv.DictReader(csv_file, delimiter=";"):
+                record_id = (row.get("record_id") or "").strip()
+                if not record_id:
+                    continue
+                code_role = (row.get("code_role") or "").strip() or None
+                review_flag = _parse_review_flag(row.get("review_required"))
+                existing = flags.get(record_id)
+                if existing is not None:
+                    # Any copy marked for re-verification marks the position.
+                    flags[record_id] = (
+                        existing[0] or code_role,
+                        True if (existing[1] or review_flag) else existing[1],
+                    )
+                else:
+                    flags[record_id] = (code_role, review_flag)
+    except OSError:
+        logger.exception("Каталог для чтения code_role/review_required недоступен")
+    return flags
 
 
 class QdrantClassifier:
@@ -596,6 +750,11 @@ class QdrantClassifier:
                 "сначала выполните POST /admin/reindex."
             )
         self._search_many = search_many
+        # Kept for the bounded health probe behind /metrics and /health/ready (BE-6).
+        self._client = client
+        # Collections indexed before the catalog facts landed in the payload carry
+        # no code_role/review_required; the CSV on the shared volume fills the gap.
+        self._catalog_flags = _catalog_flags_lookup()
         # How many points the collection holds (for /health). Counted once: a
         # reindex rebuilds the collection with the same number of rows, and a
         # probe must not turn into a network round trip on every poll.
@@ -664,8 +823,36 @@ class QdrantClassifier:
             else "lexical-reranker",
         }
 
+    def ping_store(self) -> bool:
+        """Bounded reachability probe of Qdrant for the health gauges (BE-6)."""
+        client = getattr(self, "_client", None)
+        if client is None:  # partially built instance: nothing to probe
+            return False
+        try:
+            try:
+                client.get_collections(timeout=2.0)
+            except (AssertionError, TypeError):
+                # Local (on-disk/in-memory) clients reject the timeout kwarg.
+                client.get_collections()
+            return True
+        except Exception:  # noqa: BLE001 - an unreachable store is the answer
+            return False
+
     def classify(self, query: str) -> ClassifyResponse:
         return self.classify_many([query])[0]
+
+    def _catalog_flags_for(self, payload: dict) -> tuple[str | None, bool | None]:
+        """``(code_role, review_required)`` of a hit: payload first, then the CSV."""
+        code_role = payload.get("code_role")
+        review_flag = payload.get("catalog_review_required")
+        if code_role is None and review_flag is None:
+            record_id = payload.get("record_id") or ""
+            if record_id:
+                # ``getattr``: partially built instances (tests via ``__new__``)
+                # have no lookup map; flags then stay ``None``.
+                fallback = getattr(self, "_catalog_flags", None) or {}
+                code_role, review_flag = fallback.get(record_id, (None, None))
+        return code_role, review_flag
 
     def classify_many(self, queries: list[str]) -> list[ClassifyResponse]:
         normalized_queries = [query.strip() for query in queries]
@@ -684,6 +871,8 @@ class QdrantClassifier:
                 results.append(_not_found(query))
                 continue
 
+            code_role: str | None = None
+            review_flag: bool | None = None
             if self._reranker is not None:
                 candidates = _qdrant_candidates(hits)
                 ranked = self._reranker.rerank(query, candidates)
@@ -692,13 +881,41 @@ class QdrantClassifier:
                 raw_confidence = round(min(max(raw_confidence, 0.0), 1.0), 4)
                 confidence = round(_display_confidence(self._reranker, raw_confidence), 4)
                 threshold_review = getattr(self._reranker, "threshold_review", 0.45)
+                code_role, review_flag = self._catalog_flags_for(best.payload)
+                if status == "not_found" or not best.code:
+                    # Invariant 5 (BE-9): ok/review without a code is forbidden, so
+                    # a codeless winner («Не указан») is demoted and stays visible
+                    # as the first alternative.
+                    alternatives = _distinct_alternatives(ranked, "not_found", threshold_review)
+                    if status != "not_found":
+                        logger.info(
+                            "Позиция без кода ОКПД2 понижена до not_found: query=%r title=%r",
+                            query,
+                            best.title,
+                        )
+                        alternatives = [
+                            _codeless_hint(best, confidence),
+                            *alternatives[: _MAX_ALTERNATIVES - 1],
+                        ]
+                    results.append(
+                        ClassifyResponse(
+                            query=query,
+                            code=None,
+                            title=None,
+                            confidence=0.0,
+                            confidence_raw=0.0,
+                            status="not_found",
+                            clause_ref=None,
+                            clause_url=None,
+                            alternatives=alternatives,
+                            latency_ms=0.0,
+                        )
+                    )
+                    continue
                 alternatives = _distinct_alternatives(ranked, status, threshold_review)
                 clause_ref = best.clause_ref
                 clause_url = clause_url_for(best.payload.get("record_id"))
                 code, title = best.code, best.title
-                if status == "not_found":
-                    code, title, clause_ref, clause_url = None, None, None, None
-                    confidence, raw_confidence = 0.0, 0.0
             else:  # pragma: no cover - fallback when the reranker is unavailable
                 top = hits[0]
                 confidence = max(0.0, min(float(top.score), 1.0))
@@ -715,6 +932,32 @@ class QdrantClassifier:
                 clause_ref = top.position or top.group or None
                 clause_url = clause_url_for(top.record_id)
                 code, title = top.pp_code or None, top.name or None
+                fallback = getattr(self, "_catalog_flags", None) or {}
+                code_role, review_flag = fallback.get(top.record_id or "", (None, None))
+                if code is None:  # pragma: no cover - invariant on the fallback path
+                    alternatives = [
+                        Alternative(
+                            code=None,
+                            title=title,
+                            confidence=confidence,
+                            clause_ref=clause_ref,
+                            clause_url=clause_url,
+                        ),
+                        *alternatives[: _MAX_ALTERNATIVES - 1],
+                    ]
+                    results.append(
+                        ClassifyResponse(
+                            query=query,
+                            code=None,
+                            title=None,
+                            confidence=0.0,
+                            confidence_raw=0.0,
+                            status="not_found",
+                            alternatives=alternatives,
+                            latency_ms=0.0,
+                        )
+                    )
+                    continue
 
             results.append(
                 ClassifyResponse(
@@ -728,6 +971,8 @@ class QdrantClassifier:
                     # The source citation itself lives in clause_ref; the URL points
                     # at the fragment served by GET /source/{record_id}.
                     clause_url=clause_url,
+                    code_role=code_role,
+                    catalog_review_required=review_flag,
                     alternatives=alternatives,
                     latency_ms=0.0,
                 )
@@ -905,7 +1150,93 @@ def get_classifier() -> CachedClassifier:
 
 def reset_classifier() -> None:
     """Reset the singleton (primarily used by tests and catalog reload tooling)."""
-    global _singleton, _singleton_signature
+    global _singleton, _singleton_signature, _health_cache
     with _singleton_lock:
         _singleton = None
         _singleton_signature = None
+    with _health_lock:
+        _health_cache = None
+
+
+# --- health of the embedder and the vector store (BE-6) ----------------------
+#
+# /metrics scrapes and the Docker healthcheck poll /health/ready every ~10 s.
+# The embedder part of the probe reads already-loaded state (free); the store
+# part can be a network ping, so the whole snapshot is cached for a short TTL.
+_HEALTH_TTL_SECONDS = 10.0
+_health_cache: tuple[float, dict] | None = None
+_health_lock = RLock()
+
+
+def _probe_vector_health() -> dict:
+    """One uncached measurement of the vector layer's live state."""
+    health: dict = {
+        "classifier_up": False,
+        "vector_search_enabled": False,
+        "embedder_up": False,
+        "embedder": None,
+        "dim": 0,
+        "store": None,
+        "store_up": False,
+        "positions": 0,
+        "degraded": False,
+    }
+    try:
+        classifier = get_classifier()
+    except Exception as exc:  # noqa: BLE001 - a broken classifier is the finding
+        health["error"] = str(exc)
+        return health
+    health["classifier_up"] = True
+
+    inner = getattr(classifier, "_classifier", None)
+    info = getattr(inner, "vector_info", None)
+    info = info if isinstance(info, dict) else {"enabled": False}
+    health["vector_search_enabled"] = bool(info.get("enabled"))
+    health["embedder"] = info.get("embedder")
+    health["dim"] = int(info.get("dim") or 0)
+    health["store"] = info.get("store")
+    health["positions"] = int(info.get("positions") or 0)
+
+    # What the configuration *asked for*; silent degradation (a vector layer that
+    # wanted to be there but failed to load) is exactly what operators must see.
+    wants_vectors = settings.vector_search and settings.classifier_backend == "catalog"
+    wants_qdrant = settings.vector_store == "qdrant"
+
+    ping_store = getattr(inner, "ping_store", None)
+    if health["vector_search_enabled"]:
+        health["embedder_up"] = bool(info.get("embedder"))
+        health["store_up"] = bool(ping_store()) if callable(ping_store) else True
+        if health["store"] == "memory" and (
+            wants_qdrant or settings.classifier_backend == "qdrant"
+        ):
+            # The mirror dropped to memory after a Qdrant failure (or never
+            # connected): the requested store is not serving.
+            health["store_up"] = False
+    else:
+        # No vector layer: healthy when it was not requested; degraded when
+        # VECTOR_SEARCH=true but no embedder loaded (lexical-only fallback).
+        health["embedder_up"] = not wants_vectors
+        health["store_up"] = not (wants_vectors and wants_qdrant)
+
+    health["degraded"] = (wants_vectors and not health["vector_search_enabled"]) or not health[
+        "store_up"
+    ]
+    return health
+
+
+def vector_layer_health(force: bool = False) -> dict:
+    """TTL-cached health of the embedder and the vector store.
+
+    Cheap enough to call on every scrape and readiness poll: inside the TTL the
+    cached snapshot is returned, so a dead Qdrant adds at most one bounded ping
+    (2 s) per interval, never one per request.
+    """
+    global _health_cache
+    now = time.monotonic()
+    with _health_lock:
+        if not force and _health_cache is not None and now - _health_cache[0] < _HEALTH_TTL_SECONDS:
+            return _health_cache[1]
+    health = _probe_vector_health()
+    with _health_lock:
+        _health_cache = (now, health)
+    return health

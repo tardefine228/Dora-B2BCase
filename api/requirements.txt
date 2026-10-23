@@ -12,6 +12,9 @@ psycopg[binary,pool]>=3.2,<4
 celery>=5.4,<6
 redis>=5.0,<9
 
+# Monitoring: /metrics in the Prometheus text exposition format (BE-6)
+prometheus-client>=0.20,<1.0
+
 # Text matching and vector search
 numpy>=1.26,<3
 pymorphy3>=2.0,<3
