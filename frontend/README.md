@@ -14,17 +14,13 @@
 
 ## Для разработчика
 
-<<<<<<< Updated upstream
-Нужен Node.js 22 или новее.
+Нужен Node.js 22.18 или новее.
 
 ```bash
 # терминал 1, из корня репозитория
 PYTHONPATH=api uvicorn app.main:app --port 8000 --no-proxy-headers
 
 # терминал 2
-=======
-```powershell
->>>>>>> Stashed changes
 cd frontend
 npm ci
 npm run dev
@@ -32,6 +28,7 @@ npm run dev
 
 В отдельном терминале или Docker должен работать API на `http://127.0.0.1:8000`.
 Сборка: `npm run build`. Сборка фронтенда входит в `api/Dockerfile`.
+Проверки API-клиента, отмены задач, хранилища и CSV-экспорта: `npm test`.
 
 Код: `src/api.ts` — API и SSE; `src/App.tsx` — компоненты и состояние;
 `src/files.ts` — экспорт; `src/styles.css` — оформление.

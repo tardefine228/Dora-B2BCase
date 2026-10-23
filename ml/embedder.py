@@ -173,6 +173,28 @@ def _e5_prefixes(model_name: str) -> tuple[str, str]:
     return "", ""
 
 
+def _model_identity(model_name: str) -> str:
+    """Recover the hub ID saved by download_model.py, independently of its path."""
+    metadata = Path(model_name) / "dora_model.json"
+    if metadata.is_file():
+        data = json.loads(metadata.read_text(encoding="utf-8"))
+        model_id = data.get("model_id")
+        if not isinstance(model_id, str) or not model_id.strip():
+            raise ValueError(f"Missing model_id in {metadata}")
+        return model_id.strip()
+    return model_name
+
+
+def _transformer_spec(model_name: str) -> tuple[str, str, str]:
+    identity = _model_identity(model_name)
+    query_prefix, doc_prefix = _e5_prefixes(identity)
+    # New namespace: never reuse vectors/rerankers made with the old prefix bug.
+    signature = json.dumps([identity, query_prefix, doc_prefix, "prefix-v2"])
+    fingerprint = hashlib.sha256(signature.encode("utf-8")).hexdigest()[:12]
+    label = Path(identity.rstrip("/\\")).name.lower()
+    return f"st-{label}-v2-{fingerprint}", query_prefix, doc_prefix
+
+
 class SentenceTransformerEncoder:
     """Adapter around a SentenceTransformers model; imports stay lazy."""
 
@@ -181,8 +203,7 @@ class SentenceTransformerEncoder:
     def __init__(self) -> None:
         from sentence_transformers import SentenceTransformer
 
-        self.tag = "st-" + Path(MODEL_NAME.rstrip("/\\")).name.lower()
-        self._query_prefix, self._doc_prefix = _e5_prefixes(MODEL_NAME)
+        self.tag, self._query_prefix, self._doc_prefix = _transformer_spec(MODEL_NAME)
         logger.info("Loading embedding model %s on %s", MODEL_NAME, MODEL_DEVICE)
         started = time.perf_counter()
         self._model = SentenceTransformer(

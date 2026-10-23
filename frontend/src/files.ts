@@ -39,7 +39,9 @@ function download(blob: Blob, name: string) {
 
 export function exportResultsCsv(results: Result[]) {
   const esc = (value: string | number | null) => {
-    const s = value === null || value === undefined ? '' : String(value);
+    let s = value === null || value === undefined ? '' : String(value);
+    // CSV quoting alone does not stop spreadsheet programs from evaluating formulas.
+    if (typeof value === 'string' && /^(?:\s*[=+@-]|[\t\r\n])/.test(s)) s = `'${s}`;
     return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const lines = [['query', 'code', 'title', 'status', 'confidence', 'confidence_raw', 'clause_ref', 'clause_url', 'user_verdict', 'corrected_code'].join(';')];

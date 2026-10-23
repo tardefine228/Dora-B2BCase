@@ -31,7 +31,7 @@ from __future__ import annotations
 import argparse
 import random
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ml.catalog_loader import load_catalog
@@ -40,6 +40,7 @@ from ml.features import (
     build_known_stems,
     idf_table,
     lexical_score_prepared,
+    normalize,
     prepare_candidate,
     stem,
     stems,
@@ -474,7 +475,7 @@ def bridge_sources_by_name(catalog: list[dict]) -> dict[str, list[str]]:
 
     sources: dict[str, list[str]] = {}
     for source, target in BRIDGES.items():
-        if target in canonical:
+        if target in canonical and target in bridged_targets(source).values():
             sources.setdefault(canonical[target][1], []).append(source)
     return sources
 
@@ -778,14 +779,10 @@ def calibration_index(catalog: list[dict]) -> list[dict]:
     return list(by_key.values())
 
 
-def calibration_confidence(
+def calibration_ranked(
     reranker: LogisticReranker, index: list[dict], query: str, dense: DenseIndex | None = None
-) -> tuple[float, str, str | None]:
-    """Score one query exactly as the API's catalog backend does.
-
-    Returns ``(raw_confidence, status, predicted_code)``. ``status ==
-    "not_found"`` corresponds to the API's zeroed confidence.
-    """
+) -> list[RankedCandidate]:
+    """Retrieve and rank the complete candidate set used by the API."""
     from ml.features import idf_table, lexical_score_prepared, prepare_candidate, stem
     from ml.fuzzy import autocorrect
 
@@ -797,7 +794,7 @@ def calibration_confidence(
     bridge_stems = {stem(target) for target in set(bridged_targets(query).values())}
     query_tokens = set(calibration_tokens(query))
     if not query_tokens:
-        return 0.0, "not_found", None
+        return []
     scored: list[tuple[float, dict]] = []
     for row in index:
         score = lexical_score_prepared(prepared_query, row["prepared"])
@@ -821,7 +818,7 @@ def calibration_confidence(
     else:
         fused = [(score, row, 0.0, 0.0) for score, row in shortlist]
     if not fused:
-        return 0.0, "not_found", None
+        return []
     # Same retrieval scores the API hands the reranker (retrieval_margin).
     candidates = [
         RankedCandidate(
@@ -834,6 +831,15 @@ def calibration_confidence(
         for score, row, cosine, dense_top in fused
     ]
     ranked = reranker.rerank(query, candidates)
+    return ranked
+
+
+def calibration_confidence(
+    reranker: LogisticReranker, index: list[dict], query: str, dense: DenseIndex | None = None
+) -> tuple[float, str, str | None]:
+    ranked = calibration_ranked(reranker, index, query, dense)
+    if not ranked:
+        return 0.0, "not_found", None
     raw_confidence, status = reranker.evaluate(query, ranked)
     return min(max(raw_confidence, 0.0), 1.0), status, ranked[0].code
 
@@ -876,6 +882,7 @@ def fit_display_calibration(
     catalog: list[dict],
     rng: random.Random,
     use_dense: bool = False,
+    excluded_queries: set[str] | None = None,
 ) -> tuple[Calibration, dict]:
     """Fit the display map on the calibration platform; returns (map, stats).
 
@@ -884,7 +891,8 @@ def fit_display_calibration(
     """
     index = calibration_index(catalog)
     dense = DenseIndex.build([row["name"] for row in index]) if use_dense else None
-    cases = build_calibration_cases(catalog, rng)
+    cases = [case for case in build_calibration_cases(catalog, rng)
+             if normalize(case[0]) not in (excluded_queries or set())]
     confidences: list[float] = []
     labels: list[int] = []
     for query, expected in cases:
@@ -998,6 +1006,32 @@ def _groups(pairs: list[TrainingPair]) -> dict[str, list[TrainingPair]]:
     return by_query
 
 
+def split_query_groups(pairs, rng, validation_share=0.25):
+    """Keep all candidates for a query in one partition; merge duplicate labels.
+
+    A candidate marked positive by any source must not also be a negative for
+    the same normalized query. This is training preparation, not evaluation.
+    """
+    merged = {}
+    for pair in pairs:
+        key = (normalize(pair.query), pair.title, pair.code)
+        old = merged.get(key)
+        if old is None or pair.label > old.label:
+            merged[key] = replace(pair, query=key[0])
+    groups = {}
+    for (query, _title, _code), pair in merged.items():
+        groups.setdefault(query, []).append(pair)
+    if len(groups) < 2:
+        raise ValueError("At least two query groups are required")
+    keys = sorted(groups)
+    rng.shuffle(keys)
+    count = max(1, min(len(keys) - 1, round(len(keys) * validation_share)))
+    validation = set(keys[:count])
+    training_pairs = [p for q in keys if q not in validation for p in groups[q]]
+    validation_pairs = [p for q in keys if q in validation for p in groups[q]]
+    return training_pairs, validation_pairs
+
+
 def _as_candidates(group: list[TrainingPair]) -> list[RankedCandidate]:
     return [
         RankedCandidate(
@@ -1018,6 +1052,8 @@ def train(
     seed: int = SEED,
     validation_share: float = 0.25,
     use_dense: bool = False,
+    dataset_output: Path | None = None,
+    excluded_queries: set[str] | None = None,
 ) -> LogisticReranker:
     rng = random.Random(seed)
     catalog = load_catalog()
@@ -1038,9 +1074,20 @@ def train(
         negative_queries=negative_queries,
         dense=dense,
     )
-    rng.shuffle(pairs)
-    split = int(len(pairs) * (1 - validation_share))
-    train_pairs, validation_pairs = pairs[:split], pairs[split:]
+    excluded_queries = {normalize(q) for q in (excluded_queries or set())}
+    pairs = [p for p in pairs if normalize(p.query) not in excluded_queries]
+    train_pairs, validation_pairs = split_query_groups(pairs, rng, validation_share)
+    if dataset_output is not None:
+        import csv
+        dataset_output.parent.mkdir(parents=True, exist_ok=True)
+        with dataset_output.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["query", "title", "code", "label", "split", "source"])
+            for partition, values in (("train", train_pairs), ("validation", validation_pairs)):
+                for pair in values:
+                    writer.writerow([pair.query, pair.title, pair.code, pair.label,
+                                     partition, "catalog_synthetic"])
+
 
     # --- Stage 1: pairwise reranker ---------------------------------------
     feature_rows = []
@@ -1073,9 +1120,19 @@ def train(
     group_labels: list[int] = []
     pair_probabilities: list[float] = []
     pair_correct: list[bool] = []
+    confidence_index = calibration_index(catalog)
+    confidence_dense = (
+        DenseIndex.build([r["name"] for r in confidence_index]) if use_dense else None
+    )
+    if confidence_dense is not None:
+        confidence_dense.warm_queries(list(by_query))
     for query, group in by_query.items():
-        ranked = reranker.rerank(query, _as_candidates(group))
-        top_label = int(ranked[0].payload.get("label", 0))
+        # Do not force a positive into this list: retrieval failures are failures.
+        ranked = calibration_ranked(reranker, confidence_index, query, confidence_dense)
+        if not ranked:
+            continue
+        positives = {pair.title for pair in group if pair.label}
+        top_label = int(ranked[0].title in positives)
         features = extract_group_features(query, ranked)
         group_rows.append([features[name] for name in GROUP_FEATURE_NAMES])
         group_labels.append(top_label)
@@ -1102,9 +1159,9 @@ def train(
         )
         for row in group_rows
     ]
-    conf_ok, _conf_review = calibrate_thresholds(confidences, [bool(y) for y in group_labels])
+    conf_ok, calibrated_review = calibrate_thresholds(confidences, [bool(y) for y in group_labels])
     conf_ok = max(conf_ok, OK_CONFIDENCE_FLOOR)
-    conf_review = REVIEW_CONFIDENCE_FLOOR
+    conf_review = max(calibrated_review, REVIEW_CONFIDENCE_FLOOR)
 
     reranker.threshold_ok = pair_threshold_ok
     reranker.threshold_review = pair_threshold_review
@@ -1120,7 +1177,7 @@ def train(
     # groups; eval/labeled_examples.csv stays a pure measurement set.
     platform_rng = random.Random(seed + 1)
     calibration, platform_stats = fit_display_calibration(
-        reranker, catalog, platform_rng, use_dense=use_dense
+        reranker, catalog, platform_rng, use_dense=use_dense, excluded_queries=excluded_queries
     )
     confidence_model.calibration = calibration
 
@@ -1139,6 +1196,9 @@ def train(
     reranker.meta = {
         "seed": seed,
         "train_pairs": len(train_pairs),
+        "split_strategy": "normalized_query_groups",
+        "confidence_candidates": "serving_retrieval_no_forced_positive",
+        "train_queries": len({normalize(p.query) for p in train_pairs}),
         "validation_queries": len(by_query),
         "pair_thresholds": {"ok": pair_threshold_ok, "review": pair_threshold_review},
         "confidence_thresholds": {"ok": conf_ok, "review": conf_review},

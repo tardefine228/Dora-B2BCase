@@ -132,3 +132,40 @@ def test_lemma_stems_unify_inflected_forms():
     assert stems("Станки") == stems("станок")
     assert stems("Гобои") == stems("Гобой")
     assert stems("Счётчики") == stems("счетчик")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Камера видеонаблюдения сетевая",
+        "Камеры телевизионные",
+        "Огнетушитель порошковый",
+        "Порошок металлический",
+    ],
+)
+def test_ambiguous_products_do_not_bridge_to_unrelated_categories(query):
+    assert not ({"покрышки", "моющие"} & set(bridged_targets(query).values()))
+
+
+@pytest.mark.parametrize(
+    ("query", "target"),
+    [
+        ("Камера велосипедная", "покрышки"),
+        ("Камеры резиновые", "покрышки"),
+        ("Порошок стиральный", "моющие"),
+    ],
+)
+def test_ambiguous_products_keep_bridges_in_confirmed_context(query, target):
+    assert target in bridged_targets(query).values()
+
+
+def test_training_does_not_label_ambiguous_bare_words_as_positive():
+    from ml.train_reranker import bridge_sources_by_name
+    catalog = [
+        {"name": "Шины, покрышки и камеры резиновые новые", "pp_code": "22.11.1"},
+        {"name": "Средства моющие и стиральные", "pp_code": "20.41.32"},
+    ]
+    sources = {word for words in bridge_sources_by_name(catalog).values() for word in words}
+    assert "камера" not in sources
+    assert "порошок" not in sources
+    assert "шина" in sources

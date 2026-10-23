@@ -9,7 +9,7 @@ from qdrant_client.models import ScoredPoint
 
 from ml import indexer
 from ml.config import DEBUG, DEFAULT_TOP_K, QDRANT_COLLECTION
-from ml.embedder import encode_texts
+from ml.embedder import encode_queries
 
 logger = logging.getLogger("dora.ml.search")
 
@@ -71,7 +71,7 @@ def search_many(queries: list[str], top_k: int = DEFAULT_TOP_K) -> list[list[Sea
         return []
 
     started = time.perf_counter()
-    vectors = encode_texts(queries)
+    vectors = encode_queries(queries)
     # Attribute lookup at call time (not an import-time ``from`` binding): the
     # client factory is lru_cached and tests replace it per fixture — a stale
     # binding here once leaked a stub client across test modules.

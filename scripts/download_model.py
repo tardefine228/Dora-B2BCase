@@ -6,6 +6,7 @@ The directory is later passed as ``MODEL_NAME`` with ``MODEL_LOCAL_ONLY=true``, 
 running containers never need internet access.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -31,6 +32,11 @@ def main() -> None:
             "tf_model.h5",
             "rust_model.ot",
         ],
+    )
+    # Preserve identity when Docker copies the model to /opt/models/embedder.
+    # The directory name is not a reliable way to select E5 input prefixes.
+    (destination / "dora_model.json").write_text(
+        json.dumps({"model_id": repo_id}, ensure_ascii=False), encoding="utf-8"
     )
     print(f"Model {repo_id} saved to {destination}")
 
