@@ -29,6 +29,18 @@ class ClassifyRequest(APIModel):
     )
 
 
+
+class FeedbackRequest(APIModel):
+    query: ProductName
+    predicted_code: str | None = Field(default=None, max_length=32)
+    verdict: Literal["correct", "incorrect", "absent"]
+    corrected_code: str | None = Field(default=None, max_length=32)
+
+
+class FeedbackSaved(APIModel):
+    id: str
+    saved: bool = True
+
 class BatchClassifyRequest(APIModel):
     items: list[ProductName] = Field(
         min_length=1,

@@ -16,6 +16,8 @@
 | Векторный поиск | **Qdrant** + эмбеддинги (multilingual-e5 → векторы spaCy → TF-IDF) | кандидаты «по смыслу» + признаки реранкера |
 | Реранкер | логистическая модель с калибровкой | порядок кандидатов, уверенность, статусы `ok`/`review`/`not_found` |
 
+**Windows + Docker Desktop: подробная пошаговая инструкция — [`docs/START_WINDOWS_DOCKER.md`](docs/START_WINDOWS_DOCKER.md).**
+
 ## Запуск через Docker (рекомендуемый)
 
 ```bash
