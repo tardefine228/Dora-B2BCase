@@ -25,23 +25,33 @@ def test_models_dir_overrides_shipped_artifacts(tmp_path, monkeypatch):
     assert reranker.reranker_artifact_path() == custom
 
 
-# --- vector-feature artifact and the gate report that let it ship ----------------------
+# --- shipped artifacts, their provenance and the gate that let the dense one ship -------
 #
-# The shipped lexical ``reranker.json`` predates the current trainer and is *not*
-# reproducible from this repository (it stores 29277 pairs and thresholds
-# 0.621/0.097 while a fresh build stores 27858 pairs and 0.306/0.227). It stays as
-# is until the product owner picks a working point; see eval/experiments.md, exp. 17.
-# The tfidf pair below is reproducible and is what the vector path actually loads.
+# Both rerankers now come from the same trainer: ``reranker.json`` (lexical) is
+# reproducible byte for byte, ``reranker.tfidf.json`` (vector features) passes the gate
+# in ``eval/dense_gate.py`` and is what the catalog backend actually loads when the
+# tfidf embedder is active. The retired, non-reproducible artifact is documented in
+# ml/artifacts/README.md and can be recovered from git; see eval/experiments.md, exp. 17.
 
 import hashlib  # noqa: E402
 import json  # noqa: E402
+import re  # noqa: E402
 
+ARTIFACTS_README = config.ARTIFACTS_DIR / "README.md"
 DENSE_ARTIFACT = "reranker.tfidf.json"
 GATE_REPORT = "dense-gate.json"
 
 
+def _load(name: str) -> dict:
+    return json.loads((config.ARTIFACTS_DIR / name).read_text(encoding="utf-8"))
+
+
 def _dense_artifact() -> dict:
-    return json.loads((config.ARTIFACTS_DIR / DENSE_ARTIFACT).read_text(encoding="utf-8"))
+    return _load(DENSE_ARTIFACT)
+
+
+def _sha256(name: str) -> str:
+    return hashlib.sha256((config.ARTIFACTS_DIR / name).read_bytes()).hexdigest()
 
 
 def test_shipped_dense_artifact_actually_uses_vector_features():
@@ -63,10 +73,8 @@ def test_dense_artifact_is_found_by_the_active_embedder_tag(tmp_path, monkeypatc
 
 def test_gate_report_matches_the_shipped_artifact_and_kept_it():
     report = json.loads((config.ARTIFACTS_DIR / GATE_REPORT).read_text(encoding="utf-8"))
-    artifact_bytes = (config.ARTIFACTS_DIR / DENSE_ARTIFACT).read_bytes()
-
     assert report["artifact"] == DENSE_ARTIFACT
-    assert report["artifact_sha256"] == hashlib.sha256(artifact_bytes).hexdigest()
+    assert report["artifact_sha256"] == _sha256(DENSE_ARTIFACT)
     assert report["keep"] is True and report["reasons"] == []
     # The baseline must have been produced by the same code, not the stale shipped file.
     assert report["baseline"]["trained_in_run"] is True
@@ -96,14 +104,44 @@ def test_shipped_tfidf_embedder_is_fitted_on_the_current_catalog():
     assert shipped["doc_frequencies"] == current.doc_frequencies
 
 
-def test_dense_artifact_was_trained_by_the_current_trainer():
+def test_both_rerankers_were_trained_by_the_current_trainer():
     """Cheap guard against shipping an artifact from an older trainer.
 
-    The shipped lexical ``reranker.json`` is exactly this case (it has no
-    ``split_strategy``), which is why the gate retrains its baseline instead of
-    trusting whatever file is in the models directory.
+    The retired lexical file had no ``split_strategy`` and could not be rebuilt at
+    all; both shipped rerankers must carry the current trainer's provenance.
     """
-    meta = _dense_artifact()["meta"]
-    assert meta["seed"] == 1875
-    assert meta["split_strategy"] == "normalized_query_groups"
-    assert meta["confidence_candidates"] == "serving_retrieval_no_forced_positive"
+    for name in (reranker.RERANKER_ARTIFACT_NAME, DENSE_ARTIFACT):
+        meta = _load(name)["meta"]
+        assert meta["seed"] == 1875, name
+        assert meta["split_strategy"] == "normalized_query_groups", name
+        assert meta["confidence_candidates"] == "serving_retrieval_no_forced_positive", name
+
+
+def test_shipped_lexical_artifact_has_no_vector_features():
+    artifact = _load(reranker.RERANKER_ARTIFACT_NAME)
+    assert artifact["weights"]["dense_cosine"] == 0.0
+    assert artifact["weights"]["dense_gap"] == 0.0
+
+
+def test_gate_baseline_is_the_shipped_lexical_artifact():
+    """The gate retrains its baseline; that file is now shipped, so the two must agree.
+
+    If they diverge, either the artifact was rebuilt without updating the report or
+    the trainer stopped being deterministic — both are worth failing the build for.
+    """
+    report = json.loads((config.ARTIFACTS_DIR / GATE_REPORT).read_text(encoding="utf-8"))
+    assert report["baseline"]["sha256"] == _sha256(reranker.RERANKER_ARTIFACT_NAME)
+
+
+def test_provenance_table_lists_every_shipped_artifact_with_its_hash():
+    """ml/artifacts/README.md is the only record of where these files came from.
+
+    The retired artifact's hash appears in prose (it is not shipped), so only rows of
+    the "what is here now" table are checked.
+    """
+    text = ARTIFACTS_README.read_text(encoding="utf-8")
+    listed = dict(re.findall(r"\| `([^`]+\.json)` \| `([0-9a-f]{64})` \|", text))
+    shipped = {path.name for path in config.ARTIFACTS_DIR.glob("*.json")}
+    assert set(listed) == shipped, "таблица провенанса расходится с содержимым каталога"
+    for name, expected in listed.items():
+        assert _sha256(name) == expected, f"обновите sha256 для {name} в ml/artifacts/README.md"

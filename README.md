@@ -92,10 +92,16 @@ PYTHONPATH=api uvicorn app.main:app --reload --port 8000 --no-proxy-headers
 (`reranker.<тег-эмбеддера>.json`), а API берёт тот, что соответствует загруженному эмбеддеру —
 в **обоих** режимах: `catalog` и `qdrant` (в семантическом косинус попадает в `dense_cosine`/
 `dense_gap`, иначе признак был бы нулевым и артефакт не влиял бы на решение).
-`SEMANTIC_RERANKER=lexical` возвращает семантический режим на общий `reranker.json`
-(откат без пересборки образа). Какой артефакт реально скорит, видно в
-`GET /health/ready` → `vector_search.reranker`; при векторных признаках пороги `QDRANT_*_FLOOR`
-надо перемерить под эмбеддер.
+`SEMANTIC_RERANKER=lexical` — откат без пересборки образа: **оба** режима (`catalog` и `qdrant`)
+переходят на общий `reranker.json`, а векторный поиск продолжает пополнять кандидатов (иначе
+откат заодно снизил бы полноту шорт-листа). Какой артефакт реально скорит, видно в
+`GET /health/ready` → `vector_search.reranker` и `vector_search.scoring`; при векторных
+признаках пороги `QDRANT_*_FLOOR` надо перемерить под эмбеддер.
+
+**Что скорит по умолчанию.** Когда векторный поиск включён и для активного эмбеддера есть
+обученный артефакт, решение принимает он (`reranker.tfidf.json` для tfidf), а `reranker.json` —
+запасной вариант для эмбеддеров без своего артефакта. Оба файла и их происхождение описаны в
+[`ml/artifacts/README.md`](ml/artifacts/README.md).
 
 **Предохранитель.** Векторные признаки учатся на синтетических запросах и могут ухудшить
 реальные ответы. Поэтому `scripts/build_model.py --dense --gate` оценивает такой реранкер на
@@ -245,7 +251,7 @@ cp models/reranker.tfidf.json models/dense-gate.json ml/artifacts/   # если 
 | `CATALOG_OK_FLOOR` / `CATALOG_REVIEW_FLOOR` | пороги из артефакта | decision floors для `catalog`; пусто — значения обученной модели, иначе `0..1` и `OK > REVIEW`; применяются при старте без переобучения |
 | `VECTOR_SEARCH` | `true` | векторный слой в режиме `catalog` (при ошибке эмбеддера — лексика, видно в `/health/ready`) |
 | `VECTOR_STORE` | `memory` (в Docker `qdrant`) | где хранятся и ищутся векторы; при недоступности Qdrant — память |
-| `SEMANTIC_RERANKER` | `auto` | реранкер режима `qdrant`: `auto` — `reranker.<тег-эмбеддера>.json`, иначе `reranker.json`; `lexical` — всегда общий (откат) |
+| `SEMANTIC_RERANKER` | `auto` | какой артефакт скорит при включённых векторах (оба режима): `auto` — `reranker.<тег-эмбеддера>.json`, иначе `reranker.json`; `lexical` — всегда общий (откат, векторы остаются кандидатами) |
 | `EMBEDDER_BACKEND` | `auto` | `sentence-transformers` \| `spacy` \| `tfidf`; явный выбор не откатывается молча |
 | `MODEL_NAME` / `MODEL_LOCAL_ONLY` | `/opt/models/embedder` / `true` | путь к модели эмбеддингов (в образе скачана при сборке) |
 | `MODEL_MAX_SEQ_LENGTH` | `512` | обрезка входа по токенам (`0` — значение модели); у моделей с длинным контекстом (bge-m3 — 8192) буферы съедают память, а названия товаров короткие |

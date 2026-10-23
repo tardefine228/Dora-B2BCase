@@ -359,7 +359,21 @@ class CatalogClassifier:
             raise ValueError(f"В каталоге нет записей: {self.catalog_path}")
         self._dense = _build_dense_index(self.index) if dense == "auto" else dense
         tag = self._dense.tag if self._dense is not None else None
-        loaded_reranker = reranker if reranker is not None else _load_reranker(tag)
+        # Same escape hatch as the qdrant backend: a wrong or untested artifact must
+        # be rollable back without rebuilding the image, and without losing vector
+        # candidates (VECTOR_SEARCH=false would drop those too).
+        reranker_tag = tag
+        if tag and settings.semantic_reranker == "lexical":
+            logger.warning(
+                "SEMANTIC_RERANKER=lexical: каталоговый режим скорит %s, а не "
+                "реранкером эмбеддера %s (векторы остаются кандидатами)",
+                "reranker.json",
+                tag,
+            )
+            reranker_tag = None
+        loaded_reranker = (
+            reranker if reranker is not None else _load_reranker(reranker_tag)
+        )
         self._reranker = _apply_catalog_floors(loaded_reranker)
         logger.info(
             "CatalogClassifier загружен: %d позиций из %s (reranker=%s, vector=%s)",
@@ -368,6 +382,7 @@ class CatalogClassifier:
             type(self._reranker).__name__ if self._reranker else "none",
             tag or "off",
         )
+        self._reranker_name = _reranker_artifact_name(self._reranker, reranker_tag)
 
     @property
     def vector_info(self) -> dict:
@@ -380,7 +395,7 @@ class CatalogClassifier:
             "dim": self._dense.dim,
             "positions": len(self._dense.names),
             "store": self._dense.store,
-            "reranker": _reranker_artifact_name(self._reranker, self._dense.tag),
+            "reranker": self._reranker_name,
             "scoring": "vector-features"
             if getattr(self._reranker, "uses_dense", False)
             else "lexical-reranker",

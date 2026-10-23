@@ -65,6 +65,20 @@ jobs:
         if: steps.model-cache.outputs.cache-hit != 'true'
         run: python scripts/build_model.py
 
+      - name: Shipped artifacts match a rebuild
+        # The shipped lexical reranker used to be a file the current trainer could not
+        # reproduce (29277 pairs vs 27858), so its numbers could never be re-verified.
+        # A full build is deterministic for the lexical artifact: it must be identical.
+        # For the vector artifact only the metrics are stable, so it is guarded by
+        # ml/artifacts/dense-gate.json + api/tests/test_shipped_artifacts.py instead.
+        run: |
+          cmp models/reranker.json ml/artifacts/reranker.json || {
+            echo "::error::ml/artifacts/reranker.json не совпадает со свежей сборкой."
+            echo "Пересоберите и отгрузите артефакт: python scripts/build_model.py"
+            echo "и обновите sha256 в ml/artifacts/README.md."
+            exit 1
+          }
+
       - name: Model tests (trained artifact)
         env:
           PYTHONPATH: api
