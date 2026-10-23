@@ -224,7 +224,12 @@ BRIDGE_VETO: dict[str, set[str]] = {
 BRIDGE_REQUIRE: dict[str, set[str]] = {
     # Ambiguous nouns need positive context; a video camera is not a tyre,
     # and a powder extinguisher is not laundry detergent.
-    stem("камера"): set(stems("шина колесо автомобиль автомобильный велосипед велосипедный резина резиновый покрышка")),
+    stem("камера"): set(
+        stems(
+            "шина колесо автомобиль автомобильный велосипед велосипедный "
+            "резина резиновый покрышка"
+        )
+    ),
     stem("порошок"): set(stems("стирка стиральный моющий белье")),
 }
 
