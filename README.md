@@ -295,6 +295,11 @@ cp models/reranker.tfidf.json models/dense-gate.json ml/artifacts/   # если 
 - Синтетический бенчмарк без разметки: `PYTHONPATH=api python eval/synthetic_eval.py`
 - Абляция расхождений обучения и API (шортлист, fallback): `PYTHONPATH=api python eval/serving_ablation.py`
   → `eval/synthetic_report.md` (информационный, CI-гейт его не проверяет).
+- Сравнение артефактов **при равной тишине**, а не при равном пороге:
+  `PYTHONPATH=api python eval/pareto.py --detail [--extra имя=путь[:dense]]` — для каждого
+  артефакта берёт его собственные уверенности как сетку порогов и печатает «при тишине не ниже
+  N — самый разговорчивый порог, который её держит». Так отвечается вопрос «какой артефакт
+  лучше», который нельзя решить сравнением заголовочных процентов (эксп. 18).
 - Сравнение режимов `catalog` и `qdrant` на одном наборе:
   `PYTHONPATH=api python eval/backend_comparison.py --markdown eval/backend_comparison.md`
   → `eval/backend_comparison.csv` + отчёт; семантический прогон со свипом —
