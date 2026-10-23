@@ -1,8 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-<<<<<<< Updated upstream
-import { api, type Result, type Status } from './api';
-import { readTable, namesFrom, exportResults, exportResultsCsv, type Table } from './files';
-=======
 import { api, followBatch, type Result, type Status, type UploadAccepted, type Verdict } from './api';
 import { exportResults, exportResultsCsv } from './files';
 
@@ -20,7 +16,6 @@ const STATUS_HELP: Record<Status, string> = {
 const message = (error: unknown) => error instanceof Error ? error.message : 'Ошибка. Попробуйте ещё раз.';
 const percent = (value: number | null) => value === null ? '—' : `${Math.round(value * 100)}%`;
 const isSafeUrl = (url: string | null): url is string => !!url && (/^\/source\/[\w-]+$/.test(url) || /^https?:\/\//i.test(url));
->>>>>>> Stashed changes
 
 function Icon({ kind = 'search' }: { kind?: 'search' | 'upload' }) {
   return <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
@@ -257,11 +252,6 @@ export default function App() {
       </div>
       {error && <div className="error" role="alert">{error}</div>}
       <div aria-live="polite" aria-busy={!!busy}>
-<<<<<<< Updated upstream
-      {progress && <section className="card progress"><strong>{progress.state === 'running' ? 'Обрабатываем список…' : progress.state === 'done' ? 'Обработка завершена' : 'Обработка остановлена'}</strong><span>{progress.processed} из {progress.total}</span><progress max={progress.total} value={progress.processed}/></section>}
-      {result && <section className="card result"><div className="result-heading"><h2>Результат</h2><span className="badge">{STATUS_LABEL[result.status]}</span></div><div className="result-grid"><div><p className="muted">Предполагаемый код ОКПД2</p>{result.status === 'not_found' ? <p className="title">Надёжного совпадения в перечне не найдено</p> : <><div className="code">{result.code ?? '—'}</div><p className="title">{result.title}</p>{result.clauseRef && <p className="muted">{result.clauseRef}</p>}</>}</div><div className="confidence"><strong>{percent(result)}</strong><p>Уверенность модели</p>{result.confidence !== null && <progress max={1} value={result.confidence}/>}</div></div><div className="source"><Source result={result}/></div></section>}
-      {results.length > 0 && <section className="card result"><div className="result-heading"><h2>Результаты списка</h2></div><div className="toolbar"><label>Сортировка <select value={sort} onChange={e => setSort(e.target.value as typeof sort)}><option value="original">Как в файле</option><option value="name">По названию</option><option value="confidence">По уверенности</option></select></label><span className="toolbar-actions"><button className="outline" disabled={exporting} onClick={async () => { setExporting(true); try { await exportResults(sorted); } catch (e) { setError(message(e)); } finally { setExporting(false); } }}>{exporting ? 'Сохраняем…' : 'Скачать Excel'}</button><button className="outline" disabled={exporting} onClick={() => { try { exportResultsCsv(sorted); } catch (e) { setError(message(e)); } }}>Скачать CSV</button></span></div><div className="table-scroll"><table><thead><tr><th>Товар</th><th>Код ОКПД2</th><th>Уверенность</th><th>Результат</th></tr></thead><tbody>{sorted.map((r, i) => <tr key={i}><td>{r.name}</td><td className="nowrap">{r.code ?? '—'}</td><td>{percent(r)}<div className="muted">{STATUS_LABEL[r.status]}</div></td><td>{r.status === 'not_found' ? 'Надёжного совпадения в перечне не найдено' : r.title}{r.clauseRef && <div className="muted">{r.clauseRef}</div>}<div><Source result={r}/></div></td></tr>)}</tbody></table></div></section>}
-=======
         {progress && <section className="card progress" aria-label="Прогресс обработки">
           <strong>{progress.state === 'running' ? 'Обрабатываем список…' : progress.state === 'done' ? 'Обработка завершена' : 'Обработка остановлена'}</strong>
           <span>{progress.processed} из {progress.total}</span>
@@ -290,7 +280,6 @@ export default function App() {
                 <details className="details"><summary>Проверить результат</summary><ResultCard result={r} compact onSaved={saveVerdict}/></details></td>
             </tr>)}</tbody></table></div>
         </section>}
->>>>>>> Stashed changes
       </div>
       <section className="card history">
         <div className="toolbar"><h2>История проверок на этом устройстве</h2>
