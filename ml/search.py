@@ -115,4 +115,3 @@ if __name__ == "__main__":
         "ноутбук для работы",
     ):
         search_and_print(query, top_k=3)
-

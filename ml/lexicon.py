@@ -218,10 +218,15 @@ BRIDGE_VETO: dict[str, set[str]] = {
 }
 
 # The opposite of a veto: the bridge fires only together with a confirming
-# context stem. (Empty for now: the "кухонный" experiment showed a raw stem
-# overlap ("вытяжка кухонная" ~ "Мебель кухонная") bypasses any bridge guard,
-# so context-dependent goods stay out of the lexicon until pair-level rules.)
-BRIDGE_REQUIRE: dict[str, set[str]] = {}
+# context stem. A bridge guard only controls expansion; literal candidate
+# word overlap is still scored independently by the reranker.
+# Keep ambiguous sources out of standalone positive training examples.
+BRIDGE_REQUIRE: dict[str, set[str]] = {
+    # Ambiguous nouns need positive context; a video camera is not a tyre,
+    # and a powder extinguisher is not laundry detergent.
+    stem("камера"): set(stems("шина колесо автомобиль автомобильный велосипед велосипедный резина резиновый покрышка")),
+    stem("порошок"): set(stems("стирка стиральный моющий белье")),
+}
 
 # Category word -> OKPD2 code of the canonical position it bridges into.
 # Training attaches bridged product words only to this row.

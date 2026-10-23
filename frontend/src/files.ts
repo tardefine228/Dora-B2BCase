@@ -40,7 +40,7 @@ function download(blob: Blob, name: string) {
 export function exportResultsCsv(results: Result[]) {
   const esc = (value: string | number | null) => {
     let s = value === null || value === undefined ? '' : String(value);
-    // Quoting a CSV field does not prevent spreadsheet formula evaluation.
+    // CSV quoting alone does not stop spreadsheet programs from evaluating formulas.
     if (typeof value === 'string' && /^(?:\s*[=+@-]|[\t\r\n])/.test(s)) s = `'${s}`;
     return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };

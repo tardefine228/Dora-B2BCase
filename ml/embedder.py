@@ -464,4 +464,3 @@ def reset_encoder_cache() -> None:
 if __name__ == "__main__":
     sample = encode_texts(["Ноутбук Lenovo IdeaPad", "Светильник настольный LED"])
     print(f"Encoded {len(sample)} texts; backend={resolve_backend()}; dim={len(sample[0])}")
-

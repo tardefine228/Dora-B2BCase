@@ -1,19 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, followBatch, type Result, type Status, type UploadAccepted, type Verdict } from './api';
 import { exportResults, exportResultsCsv } from './files';
+import { storage } from './storage';
 
-// Browser persistence is optional and must not interrupt classification.
-const storage = {
-  getItem(key: string): string | null {
-    try { return localStorage.getItem(key); } catch { return null; }
-  },
-  setItem(key: string, value: string): boolean {
-    try { localStorage.setItem(key, value); return true; } catch { return false; }
-  },
-  removeItem(key: string): void {
-    try { localStorage.removeItem(key); } catch { /* Storage may be blocked. */ }
-  },
-};
 const HISTORY_KEY = 'dora:local-history:v1';
 const HISTORY_ENABLED_KEY = 'dora:history-enabled:v1';
 const ACTIVE_JOB_KEY = 'dora:active-job:v1';
@@ -36,7 +25,7 @@ function Icon({ kind = 'search' }: { kind?: 'search' | 'upload' }) {
   </svg>;
 }
 function SourceLink({ url }: { url: string | null }) {
-  return isSafeUrl(url) ? <a href={url} target="_blank" rel="noopener noreferrer">Открыть пункт постановления ↗</a>
+  return isSafeUrl(url) ? <a href={url.startsWith("/source/") ? `${url}?view=clean-2` : url}>Открыть пункт постановления →</a>
     : <span className="muted">Ссылка на пункт недоступна</span>;
 }
 function Alternatives({ result }: { result: Result }) {
@@ -88,16 +77,14 @@ function ResultCard({ result, compact = false, onSaved }: { result: Result; comp
   const missingCode = result.status !== 'not_found' && !result.code;
   return <div className={compact ? 'compact-result' : ''}>
     {compact ? <>
-      <div className="nowrap">{result.code ?? '—'}</div><small>{STATUS_LABEL[result.status]}</small>
-      {result.title && <p className="title">{result.title}</p>}
-      {result.clauseRef && <p className="muted">{result.clauseRef}</p>}
+      <div className="nowrap">{result.code ?? '—'}</div><p>{result.title ?? "Название категории не указано"}</p><small>{STATUS_LABEL[result.status]}</small>
     </> : <>
       <div className="result-heading"><h2>Результат</h2><span className={`badge status-${result.status}`}>{STATUS_LABEL[result.status]}</span></div>
       <div className="result-grid">
         <div><p className="muted">Предполагаемый код ОКПД2</p>
           {result.status === 'not_found' ? <p className="title">Надёжного совпадения в перечне не найдено</p>
             : missingCode ? <p className="title">Сервис не вернул код — требуется проверка</p>
-              : <><div className="code">{result.code}</div><p className="title">{result.title}</p>
+              : <><div className="code">{result.code}</div><p className="title">Категория: {result.title ?? "название не указано"}</p>
                 {result.clauseRef && <p className="muted">{result.clauseRef}</p>}</>}
         </div>
         <div className="confidence"><strong>{percent(result.confidence)}</strong><p>Уверенность модели</p>
@@ -107,11 +94,7 @@ function ResultCard({ result, compact = false, onSaved }: { result: Result; comp
     <p className="status-help">{missingCode ? 'Без кода нельзя считать результат уверенным.' : STATUS_HELP[result.status]}</p>
     {!compact && <div className="source"><SourceLink url={result.url}/></div>}
     <Alternatives result={result}/>
-    {result.confidenceRaw !== null && <details className="details technical">
-      <summary>Технические сведения</summary>
-      <p>Исходный скор модели до калибровки: {percent(result.confidenceRaw)}. По нему выбирается статус, но это не вероятность юридической корректности.</p>
-    </details>}
-    <Feedback key={`${result.name}-${result.code}`} result={result} onSaved={onSaved}/>
+    <details className="details"><summary>Сообщить об ошибке (для экспертов)</summary><Feedback key={`${result.name}-${result.code}`} result={result} onSaved={onSaved}/></details>
   </div>;
 }
 
@@ -120,29 +103,46 @@ function readLocalHistory(): Result[] {
   catch { return []; }
 }
 
+function readSession() {
+  try { return JSON.parse(sessionStorage.getItem('dora:current-view:v1') ?? '{}'); }
+  catch { return {}; }
+}
+const savedView = readSession();
+
 export default function App() {
-  const [name, setName] = useState('');
+  const [name, setName] = useState<string>(savedView.name ?? '');
   const [busy, setBusy] = useState<'single' | 'file' | 'batch' | null>(null);
   const [error, setError] = useState('');
-  const [result, setResult] = useState<Result | null>(null);
-  const [filename, setFilename] = useState('');
-  const [fileInfo, setFileInfo] = useState<UploadAccepted | null>(null);
-  const [progress, setProgress] = useState<{ processed: number; total: number; state: 'running' | 'done' | 'failed' } | null>(null);
-  const [results, setResults] = useState<Result[]>([]);
+  const [result, setResult] = useState<Result | null>(savedView.result ?? null);
+  const [filename, setFilename] = useState<string>(savedView.filename ?? '');
+  const [fileInfo, setFileInfo] = useState<UploadAccepted | null>(savedView.fileInfo ?? null);
+  const [progress, setProgress] = useState<{ processed: number; total: number; state: 'running' | 'done' | 'failed' } | null>(savedView.progress ?? null);
+  const [results, setResults] = useState<Result[]>(savedView.results ?? []);
   const [sort, setSort] = useState<'original' | 'name' | 'confidence'>('original');
   const [drag, setDrag] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [historyEnabled, setHistoryEnabled] = useState(() => storage.getItem(HISTORY_ENABLED_KEY) === 'yes');
   const [history, setHistory] = useState<Result[]>(readLocalHistory);
+  const [storageWarning, setStorageWarning] = useState('');
   const input = useRef<HTMLInputElement>(null);
   const abort = useRef<AbortController | null>(null);
   const locked = useRef(false);
+
+  useEffect(() => {
+    if (historyEnabled && !storage.setItem(HISTORY_KEY, JSON.stringify(history))) {
+      setStorageWarning('Не удалось сохранить историю в браузере. Текущие результаты доступны до закрытия страницы.');
+    }
+  }, [history, historyEnabled]);
+
+  useEffect(() => {
+    try { sessionStorage.setItem('dora:current-view:v1', JSON.stringify({ name, result, filename, fileInfo, progress, results })); }
+    catch { setStorageWarning('Не удалось сохранить текущие результаты для возврата. Скачайте CSV перед переходом по ссылке.'); }
+  }, [name, result, filename, fileInfo, progress, results]);
 
   function saveHistory(items: Result[]) {
     if (storage.getItem(HISTORY_ENABLED_KEY) !== 'yes') return;
     setHistory(old => {
       const next = [...items, ...old].slice(0, 30);
-      storage.setItem(HISTORY_KEY, JSON.stringify(next));
       return next;
     });
   }
@@ -153,9 +153,6 @@ export default function App() {
     setResults(old => old.map(mark));
     setHistory(old => {
       const updated = old.map(mark);
-      if (storage.getItem(HISTORY_ENABLED_KEY) === 'yes') {
-        storage.setItem(HISTORY_KEY, JSON.stringify(updated));
-      }
       return updated;
     });
   }
@@ -218,7 +215,9 @@ export default function App() {
     try {
       const accepted = await api.uploadFile(file);
       setFilename(file.name); setFileInfo(accepted);
-      storage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ id: accepted.job_id, total: accepted.total }));
+      if (!storage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ id: accepted.job_id, total: accepted.total }))) {
+        setStorageWarning('Браузер не сохранил задание. Дождитесь завершения обработки, не закрывая страницу.');
+      }
       locked.current = false;
       await follow(accepted.job_id, accepted.total);
     } catch (e) { setError(message(e)); }
@@ -268,6 +267,7 @@ export default function App() {
         </section>
       </div>
       {error && <div className="error" role="alert">{error}</div>}
+      {storageWarning && <p className="error" role="status">{storageWarning}</p>}
       <div aria-live="polite" aria-busy={!!busy}>
         {progress && <section className="card progress" aria-label="Прогресс обработки">
           <strong>{progress.state === 'running' ? 'Обрабатываем список…' : progress.state === 'done' ? 'Обработка завершена' : 'Обработка остановлена'}</strong>
@@ -292,7 +292,7 @@ export default function App() {
           </div>
           <div className="table-scroll"><table><thead><tr><th scope="col">Товар</th><th scope="col">Код и статус</th><th scope="col">Уверенность</th><th scope="col">Подробности</th></tr></thead>
             <tbody>{sorted.map(r => <tr key={results.indexOf(r)}>
-              <td>{r.name}</td><td>{r.code ?? '—'}<span className="muted cell-status">{STATUS_LABEL[r.status]}</span></td>
+              <td>{r.name}</td><td>{r.code ?? '—'}{r.code && <span className="cell-status">Категория: {r.title ?? 'название не указано'}</span>}<span className="muted cell-status">{STATUS_LABEL[r.status]}</span></td>
               <td>{percent(r.confidence)}</td><td><SourceLink url={r.url}/>
                 <details className="details"><summary>Проверить результат</summary><ResultCard result={r} compact onSaved={saveVerdict}/></details></td>
             </tr>)}</tbody></table></div>
@@ -306,14 +306,18 @@ export default function App() {
               finally { setExporting(false); }
             }}>Экспорт истории</button>
             <button type="button" className="outline small" onClick={() => {
-              storage.removeItem(HISTORY_KEY); setHistory([]);
+              if (!storage.removeItem(HISTORY_KEY)) setStorageWarning('Не удалось удалить историю из хранилища браузера.');
+              setHistory([]);
             }}>Очистить историю</button>
           </span>}
         </div>
         <label className="history-optin"><input type="checkbox" checked={historyEnabled} onChange={e => {
           const enabled = e.target.checked;
-          if (storage.setItem(HISTORY_ENABLED_KEY, enabled ? 'yes' : 'no')) setHistoryEnabled(enabled);
-          else setError('Не удалось изменить настройку истории: хранилище браузера недоступно.');
+          if (storage.setItem(HISTORY_ENABLED_KEY, enabled ? 'yes' : 'no')) {
+            setHistoryEnabled(enabled);
+          } else {
+            setStorageWarning('Хранилище браузера недоступно. Не удалось изменить настройку истории.');
+          }
         }}/> Сохранять новые проверки в истории этого браузера (необязательно)</label>
         <p className="hint">Названия товаров могут содержать рабочую информацию. По умолчанию история выключена; записи остаются только в этом браузере.</p>
         {history.length === 0 ? <p className="muted">История пуста.</p> :
@@ -327,4 +331,3 @@ export default function App() {
     </main>
   </>;
 }
-

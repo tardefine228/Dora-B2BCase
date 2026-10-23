@@ -36,9 +36,14 @@ from ml.train_reranker import train  # noqa: E402
 
 def _score(classifier) -> dict:
     """Headline metrics of a classifier on eval/labeled_examples.csv."""
-    from eval.run_eval import LABELED, _classify_rows, load_labeled, summarize
+    from eval.run_eval import LABELED, _classify_rows, load_labeled, summarize, evaluate_exact_names, load_exact_names
 
-    return summarize({"results": _classify_rows(classifier, load_labeled(LABELED))})
+    results = _classify_rows(classifier, load_labeled(LABELED))
+    exact = evaluate_exact_names(classifier, load_exact_names(ROOT / "data/data.csv"))
+    summary = summarize({"results": results, "exact": exact})
+    confident = [r for r in results if r["status"] == "ok"]
+    summary["ok_precision"] = sum(r["correct_top1"] for r in confident) / len(confident) if confident else 1.0
+    return summary
 
 
 def gate_dense(models_dir: Path, artifact: Path) -> bool:
@@ -68,11 +73,19 @@ def gate_dense(models_dir: Path, artifact: Path) -> bool:
         f"  gate: lexical top-1 coded {base['top1_expected']}% / all {base['top1_all']}%  |  "
         f"vector top-1 coded {new['top1_expected']}% / all {new['top1_all']}%"
     )
-    keep = new["top1_expected"] >= base["top1_expected"] and new["top1_all"] >= base["top1_all"]
+    higher_is_better = ("top1_expected", "top1_all", "top3_expected",
+                        "correct_silence", "exact_top1", "ok_precision")
+    keep = all(new[key] >= base[key] for key in higher_is_better) and new["ece"] <= base["ece"]
     if not keep:
         artifact.unlink()
         print("  gate: vector features do not help on the labeled set -> artifact removed")
     return keep
+
+
+def benchmark_queries() -> set[str]:
+    import csv
+    with (ROOT / "eval/labeled_examples.csv").open(encoding="utf-8") as handle:
+        return {row["query"] for row in csv.DictReader(handle, delimiter=";")}
 
 
 def build_dense(models_dir: Path, seed: int, max_queries: int, gate: bool = False) -> None:
@@ -82,7 +95,7 @@ def build_dense(models_dir: Path, seed: int, max_queries: int, gate: bool = Fals
     tag = encoder_tag()
     print(f"Training the reranker with vector-search features for embedder {tag!r}...")
     path = models_dir / reranker_artifact_name(tag)
-    train(path, max_queries=max_queries, seed=seed, use_dense=True)
+    train(path, max_queries=max_queries, seed=seed, use_dense=True, excluded_queries=benchmark_queries())
     if gate and not gate_dense(models_dir, path):
         return
     print(f"Done: {path}")
@@ -101,7 +114,7 @@ def build(models_dir: Path, seed: int, max_queries: int) -> None:
 
     print("Training and calibrating the reranker...")
     reranker_path = models_dir / RERANKER_ARTIFACT_NAME
-    train(reranker_path, max_queries=max_queries, seed=seed)
+    train(reranker_path, max_queries=max_queries, seed=seed, excluded_queries=benchmark_queries())
 
     print("Done. Point the API at the artifacts with MODELS_DIR if it is not ./models.")
 

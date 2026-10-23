@@ -107,6 +107,9 @@ def clean_item(raw: object) -> str | None:
 
 def _header_score(header: str) -> int:
     value = header.strip().lower()
+    # Our result CSV contains query + title + clause_ref: query is the input.
+    if value == "query":
+        return len(NAME_HEADERS) + 2
     if not value:
         return 0
     if any(value.startswith(bad) for bad in NON_NAME_HEADERS):
