@@ -13,7 +13,9 @@ from uuid import uuid4
 from app.core.config import settings
 
 
-def save_feedback(query: str, predicted_code: str | None, verdict: str, corrected_code: str | None) -> str:
+def save_feedback(
+    query: str, predicted_code: str | None, verdict: str, corrected_code: str | None
+) -> str:
     feedback_id = str(uuid4())
     if settings.job_store == "postgres":
         import psycopg

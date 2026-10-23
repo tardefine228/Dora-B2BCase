@@ -47,7 +47,7 @@ class ObserveMiddleware(BaseHTTPMiddleware):
             elapsed_ms = (time.perf_counter() - started) * 1000
             route = request.scope.get("route")
             metric_path = getattr(route, "path", "<unmatched>")
-            metrics_store.record(metric_path, status_code, elapsed_ms)
+            metrics_store.record(metric_path, status_code, elapsed_ms, request.method)
             response.headers["X-Request-ID"] = request_id
             response.headers["X-Process-Time-Ms"] = f"{elapsed_ms:.2f}"
 

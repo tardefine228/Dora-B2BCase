@@ -151,9 +151,12 @@ def test_rejections_are_counted_in_metrics(monkeypatch) -> None:
 
     assert _classify(ip) == 200
     assert _classify(ip) == 429
-    snapshot = client.get("/metrics").json()
+    snapshot = client.get("/metrics", headers={"Accept": "application/json"}).json()
     assert snapshot["rate_limited_total"] >= 1
     assert snapshot["rate_limited_by_path"].get("/classify", 0) >= 1
+    # The same rejection is visible to a Prometheus scrape (BE-6).
+    exposition = client.get("/metrics").text
+    assert 'dora_http_rate_limited_total{path="/classify"}' in exposition
 
 
 _CSV = "Наименование;Кол-во\nНоутбук Lenovo;1\nМышь компьютерная;2\n".encode()

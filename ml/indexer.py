@@ -149,6 +149,12 @@ def index_catalog() -> int:
                         "record_id": item.get("record_id", ""),
                         "pp_code": item.get("pp_code", ""),
                         "pp_link": item.get("pp_link", ""),
+                        # Catalog facts the API exposes as explicit flags (BE-9):
+                        # the role of the code in the position and the OCR-doubt
+                        # marker. Additive payload keys: older collections simply
+                        # do not carry them and the API falls back to the CSV.
+                        "code_role": item.get("code_role") or "",
+                        "review_required": bool(item.get("review_required", False)),
                     },
                 )
                 for item, vector in zip(records, vectors, strict=True)

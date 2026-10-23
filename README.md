@@ -135,8 +135,7 @@ top-1 86.1% (top-3 92.2%) по товарам из перечня на разм�
 `/admin/*` (строгий лимит на изменяющие операции) и у `POST /classify/file`:
 один файл — это до 100 позиций, поэтому загрузки считаются **по файлам**
 (`RATE_LIMIT_FILE_RPS=1`, `RATE_LIMIT_FILE_BURST=3`) и не тратят общий лимит
-запросов. Счётчик отказов — в `GET /metrics` (`rate_limited_total`,
-`rate_limited_by_path`).
+запросов. Счётчик отказов — в `GET /metrics` (`dora_http_rate_limited_total{path}`).
 
 **Кто считается клиентом.** По умолчанию — адрес сокета, а `X-Forwarded-For`
 **игнорируется**: иначе любой клиент подставлял бы случайный адрес в заголовок
@@ -190,6 +189,29 @@ python scripts/build_model.py --dense --gate --models-dir models
 том, а API и воркер сами пересобирают классификатор и векторный индекс при следующем запросе
 (проверяется сигнатура файла). `POST /admin/reindex` нужен только режиму `qdrant`.
 
+## Мониторинг
+
+`GET /metrics` отдаёт метрики в **текстовом формате Prometheus**
+(`text/plain; version=0.0.4`) — скрейпится без экспортёров; клиенты с
+`Accept: application/json` получают легаси-снимок для отладки. Ключевые
+семейства: `dora_http_requests_total{path,method,status}`,
+`dora_http_request_duration_seconds{path}` (гистограмма),
+`dora_http_rate_limited_total{path}`,
+`dora_classifications_total{mode,backend,status}`,
+`dora_batch_jobs_total{event}` и гейджи здоровья —
+`dora_classifier_up`, `dora_embedder_up`, `dora_vector_store_up`,
+`dora_vector_positions`, `dora_build_info{version,…}`.
+
+`GET /health/ready` дополнительно несёт блок `vector_health` — живой статус
+эмбеддера и векторного хранилища (TTL-кэш: пинг Qdrant не чаще раза на
+интервал). Деградация хранилища не снимает readiness (поиск уходит в память),
+но видна в `vector_health.degraded=true` и в гейдже `dora_vector_store_up=0`.
+
+Ограничение: при `QUEUE_BACKEND=celery` инференс идёт в процессе воркера, у
+которого нет HTTP-эндпоинта, — счётчики классификаций воркера в `/metrics` API
+не попадают (прогресс задач — через `GET /classify/batch/{job_id}`). Подробный
+контракт метрик — `docs/api-contract.md`, раздел «Наблюдаемость».
+
 ## Переменные окружения (основные)
 
 | Переменная | По умолчанию | Что делает |
@@ -209,6 +231,7 @@ python scripts/build_model.py --dense --gate --models-dir models
 | `JOB_STORE` | `sqlite` (в Docker `postgres`) | хранилище задач: `postgres` \| `sqlite` \| `memory` |
 | `DATABASE_URL` | — | строка подключения PostgreSQL (обязательна при `JOB_STORE=postgres`) |
 | `QUEUE_BACKEND` / `REDIS_URL` | `inprocess` (в Docker `celery`) / `redis://redis:6379/0` | где выполняются пакеты: в процессе API или в Celery-воркере |
+| `MAX_CONCURRENT_INFERENCES` | `1` | семафор фоновых инференсов на процесс; >1 не ускоряет CPU-bound пакет, но портит латентность опроса — замеры в `eval/api-load-test.md` (BE-7) |
 | `AUDIT_LOG` | `true` при `postgres` | журнал ответов в таблицу `classification_log` |
 | `JOB_STORE_PATH` | `data/jobs.sqlite` | файл sqlite-хранилища (локальный режим) |
 | `JOB_TTL_HOURS` | `24` | сколько хранить завершённые задачи до очистки |
@@ -268,7 +291,7 @@ python scripts/build_model.py --dense --gate --models-dir models
 | GET | `/classify/batch/{job_id}/events` | SSE-прогресс (`progress`, `done`) |
 | GET | `/classify/batch/{job_id}.csv` | результат батча в CSV (`;`, UTF-8 BOM) |
 | GET | `/source/{record_id}` | фрагмент текста ПП № 1875 — источник для `clause_url` |
-| GET | `/health`, `/health/ready`, `/metrics` | liveness/readiness/метрики |
+| GET | `/health`, `/health/ready`, `/metrics` | liveness/readiness/метрики (Prometheus text, JSON по `Accept`) |
 | GET/POST | `/admin/catalog` | сведения о каталоге / загрузка нового (ключ `X-Admin-API-Key`) |
 | POST | `/admin/reindex` | переиндексация Qdrant (ключ `X-Admin-API-Key`) |
 
