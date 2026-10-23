@@ -32,10 +32,12 @@ jobs:
           PYTHONPATH: api
         run: python -m pytest api/tests -q
 
-  # Model quality gate: rebuild the reranker from the catalog deterministically
-  # and fail the build when the labeled-set metrics regress below the floor
-  # recorded in eval/experiments.md. The artifact is cached by the hash of
-  # everything that influences training; a cache hit skips the ~5 min rebuild.
+  # Model quality gate: rebuild the reranker from the catalog deterministically, prove
+  # that the shipped artifact still equals a fresh build, and compare the labeled-set
+  # metrics row by row with a recorded measurement (eval/baselines/*.json). Floors on a
+  # rate are deliberately gone: they were calibrated on an artifact that could not be
+  # rebuilt and quietly stopped describing anything. The artifact is cached by the hash
+  # of everything that influences training; a cache hit skips the ~5 min rebuild.
   quality:
     runs-on: ubuntu-latest
     needs: check
@@ -68,35 +70,41 @@ jobs:
       - name: Shipped artifacts match a rebuild
         # The shipped lexical reranker used to be a file the current trainer could not
         # reproduce (29277 pairs vs 27858), so its numbers could never be re-verified.
-        # A full build is deterministic for the lexical artifact: it must be identical.
+        # The check is semantic on purpose: weights come out of a BLAS optimiser, so the
+        # last digits depend on the machine, but the run description (pairs, split,
+        # thresholds, features) and the weights to 1e-6 must match.
         # For the vector artifact only the metrics are stable, so it is guarded by
         # ml/artifacts/dense-gate.json + api/tests/test_shipped_artifacts.py instead.
-        run: |
-          cmp models/reranker.json ml/artifacts/reranker.json || {
-            echo "::error::ml/artifacts/reranker.json не совпадает со свежей сборкой."
-            echo "Пересоберите и отгрузите артефакт: python scripts/build_model.py"
-            echo "и обновите sha256 в ml/artifacts/README.md."
-            exit 1
-          }
+        run: python scripts/check_artifacts.py models/reranker.json ml/artifacts/reranker.json
 
       - name: Model tests (trained artifact)
         env:
           PYTHONPATH: api
         run: python -m pytest api/tests/test_reranker.py api/tests/test_lexicon.py -q
 
-      - name: Quality gate on the labeled set
+      # The rollback path: no vectors, so the lexical artifact scores.
+      - name: Quality gate — lexical artifact
         env:
           PYTHONPATH: api
-          # Deterministic gate: lexical scoring with lemma stems (no embedder download).
+          EMBEDDER_BACKEND: tfidf
           VECTOR_SEARCH: "false"
-        # Floors = measured result minus ~1 labeled row (lemma stems, review floor 0.14:
-        # top-1 86.1 / top-3 92.2 / silence 81.5 / exact 100 on 274 rows).
         run: |
-          python eval/run_eval.py --sweep --output eval_report_ci.md \
-            --min-top1 ${MIN_TOP1:-85} \
-            --min-top3 ${MIN_TOP3:-91} \
-            --min-silence ${MIN_SILENCE:-80} \
-            --min-exact ${MIN_EXACT:-98}
+          python eval/run_eval.py --output eval_report_ci.md \
+            --report eval_report_ci.json \
+            --baseline eval/baselines/lexical.json
+
+      # The shipping path: tfidf embedder + the reranker trained for it. Measured on the
+      # artifacts that are actually in the image (models/ holds only the rebuilt lexical
+      # file, so the dense one resolves to ml/artifacts/reranker.tfidf.json).
+      - name: Quality gate — shipping path with vector features
+        env:
+          PYTHONPATH: api
+          EMBEDDER_BACKEND: tfidf
+          VECTOR_SEARCH: "true"
+        run: |
+          python eval/run_eval.py --output eval_report_ci_dense.md \
+            --report eval_report_ci_dense.json \
+            --baseline eval/baselines/dense-tfidf.json
 
       - name: Upload evaluation report
         if: always()
@@ -105,6 +113,9 @@ jobs:
           name: eval-report
           path: |
             eval_report_ci.md
+            eval_report_ci.json
+            eval_report_ci_dense.md
+            eval_report_ci_dense.json
             models/reranker.json
           if-no-files-found: ignore
 

@@ -388,7 +388,19 @@ class CatalogClassifier:
     def vector_info(self) -> dict:
         """Status of the vector layer for /health (what is actually serving requests)."""
         if self._dense is None:
-            return {"enabled": False, "embedder": None, "dim": 0, "scoring": "lexical"}
+            return {
+                "enabled": False,
+                "embedder": None,
+                "dim": 0,
+                "positions": 0,
+                "store": None,
+                # Which artifact scores is part of the contract even without vectors:
+                # eval reports record it as provenance, and the rollback must be visible.
+                "reranker": self._reranker_name,
+                "scoring": "vector-features"
+                if getattr(self._reranker, "uses_dense", False)
+                else "lexical-reranker",
+            }
         return {
             "enabled": True,
             "embedder": self._dense.tag,

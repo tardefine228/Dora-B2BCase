@@ -114,6 +114,8 @@ class GateVerdict:
     reasons: tuple[str, ...]
     base_ece: float
     new_ece: float
+    labels: tuple[str, str] = ("ПРИНЯТ", "ОТКЛОНЁН")
+    columns: tuple[str, str] = ("лексика", "вектор")
 
     @property
     def headline_gains(self) -> dict[str, int]:
@@ -133,8 +135,9 @@ class GateVerdict:
 
     def table(self) -> str:
         """Fixed-width comparison, readable in a build log without a markdown renderer."""
+        left, right = self.columns
         lines = [
-            f"  {'метрика':26s} {'лексика':>22s} {'вектор':>22s} {'Δ':>12s}  итог",
+            f"  {'метрика':26s} {left:>22s} {right:>22s} {'Δ':>12s}  итог",
             "  " + "-" * 88,
         ]
         for row in self.rows:
@@ -157,7 +160,7 @@ class GateVerdict:
             f" {self.new_ece - self.base_ece:>12.3f}  "
             f"{'ok' if self.new_ece <= self.base_ece + ECE_TOLERANCE else 'fatal'}"
         )
-        verdict = "ПРИНЯТ" if self.keep else "ОТКЛОНЁН"
+        verdict = self.labels[0] if self.keep else self.labels[1]
         lines.append(f"  гейт: {verdict}" + ("" if self.keep else f" — {'; '.join(self.reasons)}"))
         return "\n".join(lines)
 
