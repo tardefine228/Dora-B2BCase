@@ -441,10 +441,104 @@ def coverage(query: str, candidate: str) -> tuple[float, float]:
     if not query_stems or not candidate_stems:
         return 0.0, 0.0
     query_content = content_stems(query_stems)
-    candidate_content = content_stems(candidate_stems)
     query_hits = sum(best_match_weight(stem, candidate_stems) for stem in query_content)
-    candidate_hits = sum(best_match_weight(stem, query_stems) for stem in candidate_content)
-    return query_hits / len(query_content), candidate_hits / len(candidate_content)
+    return query_hits / len(query_content), candidate_precision(query_stems, candidate)
+
+
+# --- Long official names (ML-7) -----------------------------------------
+# The decree's positions are legal texts: "Компьютеры портативные
+# массой не более 10 кг, такие как ноутбуки, планшетные компьютеры,
+# карманные компьютеры, ..." runs to 200–1100 characters. Scoring such
+# a name as one field dilutes the precision features: the query
+# matches the head ("Компьютеры портативные") but the storm of
+# qualifiers ("в том числе совмещающие функции…") dominates the
+# denominator, so correct long-name candidates look imprecise.
+# BM25F-style fix: split a long name into a *head* (everything before
+# the first field separator) and *qualifiers* (the rest), and weigh
+# a qualifier hit a fraction of a head hit.
+LONG_TITLE_CHARS = 200
+QUALIFIER_WEIGHT = 0.3
+# A head ends at the first list separator. Parentheses open an
+# enumerative clause ("…10 кг, такие как ноутбуки, …"), so they end
+# the head too; a colon separates a definition from its list.
+_TITLE_HEAD_SPLIT_RE = re.compile(r"[,;:(]")
+
+
+def split_title(name: str) -> tuple[str, str]:
+    """``(head, qualifiers)`` of a position name.
+
+    Names up to ``LONG_TITLE_CHARS`` stay one field (qualifiers are
+    empty), so short positions keep their exact previous scoring.
+    """
+    if len(name) <= LONG_TITLE_CHARS:
+        return name, ""
+    cut = -1
+    for match in _TITLE_HEAD_SPLIT_RE.finditer(name):
+        if match.start() >= 20:  # the head keeps at least a few words
+            cut = match.start()
+            break
+    if cut < 0:
+        # No separator: cut at a word boundary near the middle.
+        cut = len(name) // 2
+        while cut > 20 and name[cut - 1] not in " \t":
+            cut -= 1
+    head = name[:cut].strip(" ,;:(–—")
+    qualifiers = name[cut:].strip(" ,;:(–—")
+    return head, qualifiers
+
+
+def _field_precision(
+    query_stems: set[str], fields: list[tuple[str, float]]
+) -> float:
+    """Share of candidate content stems explained by the query.
+
+    ``fields`` are ``(text, weight)`` pairs; a hit in a lightly weighted
+    qualifier field counts less than a hit in the head.
+    """
+    denominator = 0.0
+    hits = 0.0
+    for field_text, weight in fields:
+        content = content_stems(stem_set(field_text))
+        if not content:
+            continue
+        denominator += weight * len(content)
+        hits += weight * sum(
+            best_match_weight(stem_value, query_stems) for stem_value in content
+        )
+    return hits / denominator if denominator else 0.0
+
+
+def candidate_precision(query_stems: set[str], candidate: str) -> float:
+    """Candidate-side precision of a match, field-weighted for long names."""
+    head, qualifiers = split_title(candidate)
+    if not qualifiers:
+        return _field_precision(query_stems, [(candidate, 1.0)])
+    return _field_precision(query_stems, [(head, 1.0), (qualifiers, QUALIFIER_WEIGHT)])
+
+
+def idf_precision(query: str, candidate: str, table: dict[str, float]) -> float:
+    """IDF-weighted share of candidate content words explained by the query.
+
+    Distinguishes "Обувь" from "Обувь ортопедическая детская" for the query
+    "обувь детская": the narrower position carries a rare unmatched word.
+    Long names are field-weighted (see :func:`split_title`).
+    """
+    query_stems = stem_set(query)
+    if not query_stems:
+        return 0.0
+    head, qualifiers = split_title(candidate)
+    if not qualifiers:
+        fields = [(candidate, 1.0)]
+    else:
+        fields = [(head, 1.0), (qualifiers, QUALIFIER_WEIGHT)]
+    total = 0.0
+    hit = 0.0
+    for field_text, weight in fields:
+        for stem_value in content_stems(stem_set(field_text)):
+            word_weight = table.get(stem_value, 1.0) * weight
+            total += word_weight
+            hit += word_weight * best_match_weight(stem_value, query_stems)
+    return hit / total if total else 0.0
 
 
 def idf_table(names: list[str]) -> dict[str, float]:
@@ -511,25 +605,6 @@ def idf_coverage(query: str, candidate: str, table: dict[str, float]) -> float:
 
 
 OOV_CYRILLIC_WEIGHT = 3.0
-
-
-def idf_precision(query: str, candidate: str, table: dict[str, float]) -> float:
-    """IDF-weighted share of candidate content words explained by the query.
-
-    Distinguishes "Обувь" from "Обувь ортопедическая детская" for the query
-    "обувь детская": the narrower position carries a rare unmatched word.
-    """
-    query_stems = stem_set(query)
-    candidate_content = content_stems(stem_set(candidate))
-    if not query_stems or not candidate_content or not table:
-        return 0.0
-    total = 0.0
-    hit = 0.0
-    for stem_value in candidate_content:
-        weight = table.get(stem_value, 1.0)
-        total += weight
-        hit += weight * best_match_weight(stem_value, query_stems)
-    return hit / total if total else 0.0
 
 
 # Russian product names lead with the head noun ("Покрышка грузовая", "Мышь
@@ -617,6 +692,10 @@ class PreparedText:
     ``weights`` is optional: stem importance for the *query* side (head noun and
     bridged category words dominate, spec modifiers and Cyrillic unknowns weigh
     less). Without it coverage stays uniform, as before.
+
+    ``head_stem_set``/``qualifier_stem_set`` are filled only for long names
+    (see :func:`split_title`): the BM25F-style field split keeps the
+    qualifier storm of a legal text from diluting the precision features.
     """
 
     raw: str
@@ -626,6 +705,8 @@ class PreparedText:
     chars: Counter[str]
     digit_set: set[str]
     weights: dict[str, float] | None = None
+    head_stem_set: set[str] | None = None
+    qualifier_stem_set: set[str] | None = None
 
 
 def prepare_candidate(text: str, idf: dict[str, float] | None = None) -> PreparedText:
@@ -633,6 +714,12 @@ def prepare_candidate(text: str, idf: dict[str, float] | None = None) -> Prepare
     weights = None
     if idf is not None:
         weights = query_stem_weights(set(stem_list), idf, head=query_head(text))
+    head_stems: set[str] | None = None
+    qualifier_stems: set[str] | None = None
+    if len(text) > LONG_TITLE_CHARS:
+        head, qualifiers = split_title(text)
+        head_stems = stem_set(head)
+        qualifier_stems = stem_set(qualifiers)
     return PreparedText(
         raw=text,
         normalized=normalize(text),
@@ -641,7 +728,30 @@ def prepare_candidate(text: str, idf: dict[str, float] | None = None) -> Prepare
         chars=char_ngrams(text),
         digit_set=digits(text),
         weights=weights,
+        head_stem_set=head_stems,
+        qualifier_stem_set=qualifier_stems,
     )
+
+
+def prepared_precision(query_stems: set[str], candidate: PreparedText) -> float:
+    """Candidate-side precision of a match, field-weighted for long names."""
+    if candidate.head_stem_set is None:
+        content = content_stems(candidate.stem_set)
+        if not content:
+            return 0.0
+        return sum(best_match_weight(stem, query_stems) for stem in content) / len(
+            content
+        )
+    head_content = content_stems(candidate.head_stem_set)
+    qualifier_content = content_stems(candidate.qualifier_stem_set or set())
+    denominator = len(head_content) + QUALIFIER_WEIGHT * len(qualifier_content)
+    if not denominator:
+        return 0.0
+    hits = sum(best_match_weight(stem, query_stems) for stem in head_content)
+    hits += QUALIFIER_WEIGHT * sum(
+        best_match_weight(stem, query_stems) for stem in qualifier_content
+    )
+    return hits / denominator
 
 
 def lexical_score_prepared(query: PreparedText, candidate: PreparedText) -> float:
@@ -670,9 +780,7 @@ def lexical_score_prepared(query: PreparedText, candidate: PreparedText) -> floa
         # Character similarity still catches typos/transliterations.
         return 0.35 * cosine_sparse(query.chars, candidate.chars)
 
-    candidate_content = content_stems(candidate_stems)
-    candidate_hits = sum(best_match_weight(stem, query_stems) for stem in candidate_content)
-    precision = candidate_hits / len(candidate_content) if candidate_content else 0.0
+    precision = prepared_precision(query_stems, candidate)
     phrase_bonus = 0.0
     if query.normalized in candidate.normalized or candidate.normalized in query.normalized:
         phrase_bonus = 0.2

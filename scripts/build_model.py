@@ -34,57 +34,85 @@ from ml.reranker import RERANKER_ARTIFACT_NAME, reranker_artifact_name  # noqa: 
 from ml.train_reranker import train  # noqa: E402
 
 
-def _score(classifier) -> dict:
-    """Headline metrics of a classifier on eval/labeled_examples.csv."""
-    from eval.run_eval import LABELED, _classify_rows, load_labeled, summarize
+def gate_dense(models_dir: Path, artifact: Path) -> dict:
+    """Decide whether the vector-feature reranker ships.
 
-    return summarize({"results": _classify_rows(classifier, load_labeled(LABELED))})
-
-
-def gate_dense(models_dir: Path, artifact: Path) -> bool:
-    """Keep a vector-feature reranker only if it is not worse than lexical-only scoring.
-
-    Vector features are learned from synthetic queries; a weak embedder (static word
-    vectors) can make real-world answers *worse* (measured: spaCy vectors cost 2.4 p.p.
-    top-1). So the artifact is evaluated against the lexical reranker on the labeled set
-    and deleted when it loses; the API then uses vector search only to widen the
-    candidate list. Returns True when the artifact is kept.
+    The comparison happens *at equal silence* (see ``ml.gate``):
+    both artifacts are swept over the ``review`` threshold, the
+    lexical artifact's shipped operating point defines the target
+    silence, and the dense artifact must beat it by
+    ``GATE_MARGIN_PP`` points of top-1 there. A rejected artifact
+    is kept on disk with the decision recorded in the gate
+    registry — the loader then ignores it — instead of being
+    deleted, so every run leaves auditable evidence.
     """
     sys.path.insert(0, str(ROOT / "api"))
     from app.services.classifier import CatalogClassifier
 
     from ml.dense import DenseIndex
+    from ml.gate import gate_decision, record_decision
     from ml.reranker import LogisticReranker
 
     catalog = ROOT / "data" / "data.csv"
+    # The base is the artifact the API would serve without vectors:
+    # MODELS_DIR when rebuilt there, the shipped one otherwise.
+    from ml.reranker import reranker_artifact_path
+
     lexical = CatalogClassifier(
-        catalog, reranker=LogisticReranker.load(models_dir / RERANKER_ARTIFACT_NAME), dense=None
+        catalog, reranker=LogisticReranker.load(reranker_artifact_path()), dense=None
     )
     probe = CatalogClassifier(catalog, reranker=lexical._reranker, dense=None)
     dense_index = DenseIndex.build([row["name"] for row in probe.index])
     vector = CatalogClassifier(catalog, reranker=LogisticReranker.load(artifact), dense=dense_index)
-    base, new = _score(lexical), _score(vector)
+
+    from eval.run_eval import LABELED, load_labeled
+
+    decision = gate_decision(lexical, vector, load_labeled(LABELED))
+    if decision["decision"] == "kept":
+        # Ship the artifact at the threshold that matches the
+        # lexical operating silence, not at the raw training floor.
+        _apply_threshold(artifact, vector)
+    record_decision(models_dir, _embedder_tag(), decision)
     print(
-        f"  gate: lexical top-1 coded {base['top1_expected']}% / all {base['top1_all']}%  |  "
-        f"vector top-1 coded {new['top1_expected']}% / all {new['top1_all']}%"
+        f"  gate: lexical top-1 {decision['base']['top1_expected']}% / "
+        f"тишина {decision['base']['silence']}%  |  "
+        f"dense top-1 {decision['candidate']['top1_expected']}% / "
+        f"тишина {decision['candidate']['silence']}% (порог "
+        f"{decision['candidate']['threshold']})"
     )
-    keep = new["top1_expected"] >= base["top1_expected"] and new["top1_all"] >= base["top1_all"]
-    if not keep:
-        artifact.unlink()
-        print("  gate: vector features do not help on the labeled set -> artifact removed")
-    return keep
+    print(f"  gate: {decision['decision'].upper()} — {decision['reason']}")
+    return decision
+
+
+def _apply_threshold(artifact: Path, classifier) -> None:
+    """Write the gate-matched review threshold into the kept artifact."""
+    from ml.reranker import LogisticReranker
+
+    model = classifier._reranker.confidence_model
+    reranker = LogisticReranker.load(artifact)
+    reranker.confidence_model.threshold_review = round(
+        model.threshold_review, 4
+    )
+    reranker.confidence_model.threshold_ok = round(
+        max(reranker.confidence_model.threshold_ok, model.threshold_review + 0.05),
+        4,
+    )
+    reranker.save(artifact)
+
+
+def _embedder_tag() -> str:
+    from ml.embedder import encoder_tag
+
+    return encoder_tag()
 
 
 def build_dense(models_dir: Path, seed: int, max_queries: int, gate: bool = False) -> None:
-    from ml.embedder import encoder_tag
-
-    models_dir.mkdir(parents=True, exist_ok=True)
-    tag = encoder_tag()
+    tag = _embedder_tag()
     print(f"Training the reranker with vector-search features for embedder {tag!r}...")
     path = models_dir / reranker_artifact_name(tag)
     train(path, max_queries=max_queries, seed=seed, use_dense=True)
-    if gate and not gate_dense(models_dir, path):
-        return
+    if gate:
+        gate_dense(models_dir, path)
     print(f"Done: {path}")
 
 

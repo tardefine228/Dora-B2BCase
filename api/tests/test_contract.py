@@ -58,11 +58,14 @@ def test_batch_job_flow_over_http() -> None:
         )
         assert accepted.status_code == 202
         job = accepted.json()
-        assert {"job_id", "status", "total", "status_url"} <= set(job)
+        assert {"job_id", "status", "total", "status_url", "contract_version"} <= set(job)
+        assert job["contract_version"] == "1.0"
 
         status = await client.get(job["status_url"])
         assert status.status_code == 200
-        return status.json()
+        state = status.json()
+        assert state["contract_version"] == "1.0"
+        return state
 
     state = call(flow)
     assert state["status"] == "completed"

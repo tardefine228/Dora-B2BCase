@@ -66,13 +66,16 @@
 { "items": ["до 100 названий, ≤500 символов каждое"] }
 ```
 
-`202 Accepted` → `{job_id, status:"queued", total, status_url}`. Опрос
-`status_url` каждые ~300–500 мс:
+`202 Accepted` → `{job_id, status:"queued", total, status_url, contract_version:"1.0"}`.
+Тот же `contract_version` есть в оболочке ответа `GET status_url` и у принятого
+`/classify/file`; он идентифицирует версию batch-формата. Опрос `status_url`
+каждые ~300–500 мс:
 
 ```json
 { "job_id": "…", "status": "queued|running|completed|failed",
   "total": 2, "completed": 1, "progress_percent": 50.0,
-  "results": [ ClassifyResponse, … ], "error": null }
+  "results": [ ClassifyResponse, … ], "error": null,
+  "contract_version": "1.0" }
 ```
 
 `results` заполняются по мере обработки (порядок соответствует `items`).
@@ -87,7 +90,8 @@ data: {"job_id": "...", "status": "running", "completed": 2, "total": 5, "progre
 
 event: done
 data: {"job_id": "...", "status": "completed", "total": 5, "completed": 5,
-       "progress_percent": 100.0, "results": [ ClassifyResponse, ... ], "error": null}
+       "progress_percent": 100.0, "results": [ ClassifyResponse, ... ], "error": null,
+       "contract_version": "1.0"}
 ```
 
 Поток закрывается после `done`; раз в 15 с простоя приходит комментарий
@@ -103,13 +107,15 @@ data: {"job_id": "...", "status": "completed", "total": 5, "completed": 5,
 открывается в Excel на русской локали двойным щелчком. Колонки:
 
 ```text
-query;code;title;status;confidence;clause_ref;clause_url;
+query;code;title;status;confidence;confidence_raw;clause_ref;clause_url;
 alt1_code;alt1_title;alt2_code;alt2_title;alt3_code;alt3_title
 ```
 
 Кавычки внутри значений удваиваются, поля с `;`/кавычками/переводами строк
-экранируются. Для задачи в статусе `queued`/`running` — 409, для неизвестного
-`job_id` — 404; у `failed` отдаются частичные результаты.
+экранируются. `confidence` и `confidence_raw` записываются с четырьмя знаками
+после запятой; если `confidence_raw` отсутствует в сохранённом результате,
+ячейка остаётся пустой. Для задачи в статусе `queued`/`running` — 409, для
+неизвестного `job_id` — 404; у `failed` отдаются частичные результаты.
 
 ### `GET /source/{record_id}`
 
@@ -163,8 +169,11 @@ alt1_code;alt1_title;alt2_code;alt2_title;alt3_code;alt3_title
 
 ### Rate limit
 
-Публичные эндпоинты ограничены token bucket'ом на клиента (первый адрес
-`X-Forwarded-For`, иначе адрес сокета): `RATE_LIMIT_RPS`/`RATE_LIMIT_BURST`
+Публичные эндпоинты ограничены token bucket'ом на клиента. Клиент — адрес сокета;
+`X-Forwarded-For` учитывается только для прокси из `TRUSTED_PROXIES`, и берётся
+правый непроверенный хоп (тот, что дописал ваш прокси): `RATE_LIMIT_RPS`/`RATE_LIMIT_BURST`
+для обычных запросов, `RATE_LIMIT_FILE_RPS`/`RATE_LIMIT_FILE_BURST` — для
+`POST /classify/file` (считается в файлах: одна загрузка — до 100 позиций)
 (по умолчанию 10/20), у `/admin/*` — отдельный строгий лимит
 (`RATE_LIMIT_ADMIN_RPS`/`_BURST`, по умолчанию 1/2). `/health*`, `/metrics` и
 статика `/ui` не лимитируются; лимит выключается `RATE_LIMIT_ENABLED=false`.

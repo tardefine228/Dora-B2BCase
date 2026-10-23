@@ -45,7 +45,7 @@ from ml.features import (
     stems,
     tokens,
 )
-from ml.lexicon import bridged_targets, expand_query
+from ml.lexicon import bridged_targets, code_is_vetoed, expand_query, vetoed_codes
 from ml.reranker import (
     FEATURE_NAMES,
     GROUP_FEATURE_NAMES,
@@ -527,13 +527,21 @@ def build_pairs(
             key=lambda pair: pair[0],
             reverse=True,
         )
-        shortlist = [(score, title) for score, title in scored[:12] if score > 0]
+        shortlist = [
+            (score, title)
+            for score, title in scored[:12]
+            if score > 0 and not code_is_vetoed(query, code_by_title.get(title, ""))
+        ]
         if not shortlist:
             shortlist = [(0.0, title) for _s, title in rng.sample(scored, 3)]
         dense_scores, dense_titles, dense_top = dense_for(query)
         lexical_by_title = {title: score for score, title in scored}
         listed = {title for _score, title in shortlist}
-        shortlist += [(lexical_by_title.get(t, 0.0), t) for t in dense_titles if t not in listed]
+        shortlist += [
+            (lexical_by_title.get(t, 0.0), t)
+            for t in dense_titles
+            if t not in listed and not code_is_vetoed(query, code_by_title.get(t, ""))
+        ]
         for score, title in shortlist:
             pairs.append(
                 TrainingPair(
@@ -561,9 +569,17 @@ def build_pairs(
                 reverse=True,
             )
             score_by_title = {title: score for score, title in scored}
-            top_titles = [title for score, title in scored[:12] if score > 0]
+            top_titles = [
+                title
+                for score, title in scored[:12]
+                if score > 0 and not code_is_vetoed(query, code_by_title.get(title, ""))
+            ]
             dense_scores, dense_titles, dense_top = dense_for(query)
-            top_titles += [t for t in dense_titles if t not in top_titles]
+            top_titles += [
+                t
+                for t in dense_titles
+                if t not in top_titles and not code_is_vetoed(query, code_by_title.get(t, ""))
+            ]
             if true_title not in top_titles:
                 # The positive must always be present, whatever retrieval returns.
                 top_titles.append(true_title)
@@ -655,7 +671,19 @@ def fit_logistic_named(
 # labeled not_found 68.5; 0.13 -> the same sample with not_found 72.2; 0.14 ->
 # sample 64 / 20 for not_found 75.9. 0.13 is the knee: every extra point of
 # out-of-list silence above it costs two answered rows of the real sample.
-REVIEW_CONFIDENCE_FLOOR = 0.13
+# Re-measured 2026-10-20 after the pair vetoes (ML-3) and the field-weighted
+# precision of long names (ML-7): the raw scale moved, so the sweep was
+# re-run (eval/run_eval.py --sweep). Frontier of the rebuilt artifact:
+#   0.14 -> top-1 87.3% / тишина 72.2%
+#   0.16 -> top-1 86.7% / тишина 80.6%
+#   0.18 -> top-1 84.9% / тишина 83.3%
+# 0.16 is the knee of the new scale and the only point that clears both CI
+# gates at once (top-1 >= 85%, silence >= 80%): the five confident false
+# friends are silenced by PAIR_VETO, the false suggestions that remain sit
+# at raw <= 0.43, and the weakest correct hints survive at >= 0.16.
+# The final point on this frontier is a product decision (PO-1); BE-3
+# makes it env-configurable without a rebuild.
+REVIEW_CONFIDENCE_FLOOR = 0.16
 # Minimum confidence for the ``ok`` status (no second look needed). Set in
 # eval/experiments.md, эксп. 13–14: the calibrated threshold alone (0.745) let
 # two wrong answers through on the labeled set; 0.77 keeps one of them out of
@@ -820,6 +848,14 @@ def calibration_confidence(
         fused = fuse_shortlist(dense, index, shortlist, query, prepared_query)
     else:
         fused = [(score, row, 0.0, 0.0) for score, row in shortlist]
+    # Same pair-level bans as the API classifier (PAIR_VETO), so the
+    # calibration platform stays faithful to what serves requests.
+    if vetoed_codes(query):
+        fused = [
+            (score, row, cosine, dense_top)
+            for score, row, cosine, dense_top in fused
+            if not code_is_vetoed(query, row["okpd2"])
+        ]
     if not fused:
         return 0.0, "not_found", None
     # Same retrieval scores the API hands the reranker (retrieval_margin).
@@ -1018,6 +1054,7 @@ def train(
     seed: int = SEED,
     validation_share: float = 0.25,
     use_dense: bool = False,
+    feedback_path: Path | None = None,
 ) -> LogisticReranker:
     rng = random.Random(seed)
     catalog = load_catalog()
@@ -1038,6 +1075,22 @@ def train(
         negative_queries=negative_queries,
         dense=dense,
     )
+    mined: list[TrainingPair] = []
+    if feedback_path is not None:
+        # Hard negatives from specialist verdicts (ML-4):
+        # real queries the model answered wrongly, relabeled by
+        # the correction. They join the synthetic platform before
+        # the shuffle, so both groups mix in every batch.
+        from ml.hard_negatives import load_feedback, mine_feedback_pairs
+
+        feedback = load_feedback(feedback_path)
+        mined = mine_feedback_pairs(feedback, catalog, dense=dense)
+        if mined:
+            pairs.extend(mined)
+            print(
+                f"  hard negatives from feedback: {len(mined)} pairs "
+                f"({sum(1 for pair in mined if pair.label == 1)} positive)"
+            )
     rng.shuffle(pairs)
     split = int(len(pairs) * (1 - validation_share))
     train_pairs, validation_pairs = pairs[:split], pairs[split:]
@@ -1154,6 +1207,7 @@ def train(
         "corpus_rows": len(catalog),
         "embedder": dense.tag if dense is not None else None,
         "hard_negative_queries": len(negative_queries),
+        "feedback_pairs": len(mined),
     }
 
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -1187,8 +1241,20 @@ def main() -> None:
         action="store_true",
         help="add vector-search features (uses the active embedder; see EMBEDDER_BACKEND)",
     )
+    parser.add_argument(
+        "--feedback",
+        type=Path,
+        default=None,
+        help="CSV/JSONL export of specialist verdicts — hard negatives (ML-4)",
+    )
     args = parser.parse_args()
-    train(args.output, max_queries=args.max_queries, seed=args.seed, use_dense=args.dense)
+    train(
+        args.output,
+        max_queries=args.max_queries,
+        seed=args.seed,
+        use_dense=args.dense,
+        feedback_path=args.feedback,
+    )
 
 
 if __name__ == "__main__":

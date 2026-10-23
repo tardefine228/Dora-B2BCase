@@ -93,7 +93,9 @@ def test_endpoint_classifies_each_item() -> None:
     body = response.json()
     assert body["items"] == ["Ноутбук Lenovo", "Мышь компьютерная"]
     assert body["total"] == 2
+    assert body["contract_version"] == "1.0"
     status = client.get(body["status_url"]).json()
+    assert status["contract_version"] == "1.0"
     assert status["status"] == "completed"
     assert [r["query"] for r in status["results"]] == body["items"]
 

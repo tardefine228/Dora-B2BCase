@@ -12,7 +12,7 @@ React + TypeScript + Vite. Страница отвечает API v1.0 (`docs/api
 
 ```bash
 # терминал 1, из корня репозитория
-PYTHONPATH=api uvicorn app.main:app --port 8000
+PYTHONPATH=api uvicorn app.main:app --port 8000 --no-proxy-headers
 
 # терминал 2
 cd frontend
