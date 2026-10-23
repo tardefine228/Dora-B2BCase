@@ -8,8 +8,14 @@ x-app-env: &app-env
   APP_NAME: "Dora B2BCase API"
   LOG_LEVEL: "${LOG_LEVEL:-INFO}"
   CLASSIFIER_BACKEND: "${CLASSIFIER_BACKEND:-catalog}"
+  # Empty = keep the model artifact floors; values are read at API/worker startup.
+  CATALOG_OK_FLOOR: "${CATALOG_OK_FLOOR:-}"
+  CATALOG_REVIEW_FLOOR: "${CATALOG_REVIEW_FLOOR:-}"
   # Only for the pure-semantic `qdrant` backend (experiments); the default needs neither.
   ML_ENABLED: "${ML_ENABLED:-false}"
+  # auto: reranker.<embedder-tag>.json when present, else the lexical one;
+  # lexical: always reranker.json (rollback switch, no rebuild needed).
+  SEMANTIC_RERANKER: "${SEMANTIC_RERANKER:-auto}"
   CATALOG_PATH: "${CATALOG_PATH:-}"
   DATA_DIR: "/app/data"
   # Vector search: embeddings of the catalog live in Qdrant; the embedder is the baked-in
@@ -34,6 +40,16 @@ x-app-env: &app-env
   MAX_CONCURRENT_INFERENCES: "${MAX_CONCURRENT_INFERENCES:-1}"
   CLASSIFICATION_CACHE_SIZE: "${CLASSIFICATION_CACHE_SIZE:-512}"
   MAX_REQUEST_BODY_BYTES: "${MAX_REQUEST_BODY_BYTES:-1000000}"
+  # Addresses/CIDRs of reverse proxies whose X-Forwarded-For is trusted.
+  # Empty = trust nobody (the header is ignored). See README, «Ограничение частоты».
+  TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"
+  RATE_LIMIT_ENABLED: "${RATE_LIMIT_ENABLED:-true}"
+  RATE_LIMIT_RPS: "${RATE_LIMIT_RPS:-10}"
+  RATE_LIMIT_BURST: "${RATE_LIMIT_BURST:-20}"
+  RATE_LIMIT_ADMIN_RPS: "${RATE_LIMIT_ADMIN_RPS:-1}"
+  RATE_LIMIT_ADMIN_BURST: "${RATE_LIMIT_ADMIN_BURST:-2}"
+  RATE_LIMIT_FILE_RPS: "${RATE_LIMIT_FILE_RPS:-1}"
+  RATE_LIMIT_FILE_BURST: "${RATE_LIMIT_FILE_BURST:-3}"
 
 x-app-build: &app-build
   context: .
