@@ -36,13 +36,22 @@ from ml.train_reranker import train  # noqa: E402
 
 def _score(classifier) -> dict:
     """Headline metrics of a classifier on eval/labeled_examples.csv."""
-    from eval.run_eval import LABELED, _classify_rows, load_labeled, summarize, evaluate_exact_names, load_exact_names
+    from eval.run_eval import (
+        LABELED,
+        _classify_rows,
+        evaluate_exact_names,
+        load_exact_names,
+        load_labeled,
+        summarize,
+    )
 
     results = _classify_rows(classifier, load_labeled(LABELED))
     exact = evaluate_exact_names(classifier, load_exact_names(ROOT / "data/data.csv"))
     summary = summarize({"results": results, "exact": exact})
     confident = [r for r in results if r["status"] == "ok"]
-    summary["ok_precision"] = sum(r["correct_top1"] for r in confident) / len(confident) if confident else 1.0
+    summary["ok_precision"] = (
+        sum(r["correct_top1"] for r in confident) / len(confident) if confident else 1.0
+    )
     return summary
 
 
@@ -95,7 +104,13 @@ def build_dense(models_dir: Path, seed: int, max_queries: int, gate: bool = Fals
     tag = encoder_tag()
     print(f"Training the reranker with vector-search features for embedder {tag!r}...")
     path = models_dir / reranker_artifact_name(tag)
-    train(path, max_queries=max_queries, seed=seed, use_dense=True, excluded_queries=benchmark_queries())
+    train(
+        path,
+        max_queries=max_queries,
+        seed=seed,
+        use_dense=True,
+        excluded_queries=benchmark_queries(),
+    )
     if gate and not gate_dense(models_dir, path):
         return
     print(f"Done: {path}")

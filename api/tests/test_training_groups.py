@@ -1,6 +1,7 @@
 import random
-from ml.train_reranker import TrainingPair, split_query_groups
+
 from ml.features import normalize
+from ml.train_reranker import TrainingPair, split_query_groups
 
 
 def test_query_partition_keeps_positive_with_its_negative_candidates():
