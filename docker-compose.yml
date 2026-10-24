@@ -43,6 +43,15 @@ x-app-env: &app-env
   MAX_CONCURRENT_INFERENCES: "${MAX_CONCURRENT_INFERENCES:-1}"
   CLASSIFICATION_CACHE_SIZE: "${CLASSIFICATION_CACHE_SIZE:-512}"
   MAX_REQUEST_BODY_BYTES: "${MAX_REQUEST_BODY_BYTES:-1000000}"
+  # Третья ступень (по умолчанию выключена): LLM подтверждает одну из трёх
+  # предложенных позиций для ответов review/not_found. Любой OpenAI-совместимый
+  # endpoint; без ключа и модели ступень просто отсутствует.
+  LLM_VERIFIER_ENABLED: "${LLM_VERIFIER_ENABLED:-false}"
+  LLM_VERIFIER_BASE_URL: "${LLM_VERIFIER_BASE_URL:-https://api.openai.com/v1}"
+  LLM_VERIFIER_API_KEY: "${LLM_VERIFIER_API_KEY:-}"
+  LLM_VERIFIER_MODEL: "${LLM_VERIFIER_MODEL:-}"
+  LLM_VERIFIER_TIMEOUT: "${LLM_VERIFIER_TIMEOUT:-8}"
+  LLM_VERIFIER_CALLS_PER_MINUTE: "${LLM_VERIFIER_CALLS_PER_MINUTE:-60}"
   # Addresses/CIDRs of reverse proxies whose X-Forwarded-For is trusted.
   # Empty = trust nobody (the header is ignored). See README, «Ограничение частоты».
   TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"

@@ -84,3 +84,28 @@ def test_get_classifier_singleton() -> None:
     second = get_classifier()
     assert first is second
     reset_classifier()
+
+
+def test_office_furniture_lines_resolve_to_the_office_position() -> None:
+    """Реальные строки закупки мебели (эксп. 30): предмет, а не «офисный»."""
+    classifier = CatalogClassifier(_catalog_path())
+    expectations = {
+        "Стул офисный на металлокаркасе": "31.01.1",
+        "Кресло офисное эргономичное": "31.01.1",
+        "Тумба приставная": "31.01.1",
+        "Диван офисный 3-местный": "31.01.1",
+        "Ресепшн-стойка": "31.01.1",
+        "Стол письменный офисный": "31.01.1",
+        "Шкаф для документов двухстворчатый": "31.09.11",
+    }
+    for query, code in expectations.items():
+        result = classifier.classify(query)
+        assert (result.status, result.code) == ("ok", code), (query, result.model_dump())
+
+
+def test_office_modifier_alone_is_not_a_furniture_claim() -> None:
+    """Товар другой позиции со словом «офисный» не должен становиться мебелью."""
+    classifier = CatalogClassifier(_catalog_path())
+    for query in ("Ламинатор офисный", "Сервер офисный", "Кофемашина офисная"):
+        result = classifier.classify(query)
+        assert result.code != "31.01.1", (query, result.model_dump())

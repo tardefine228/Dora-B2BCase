@@ -174,8 +174,11 @@ def test_table_states_the_verdict_and_the_numbers():
     (
         # После аудита разметки (docs/labeling-doctrine.md): 201 строка с кодом
         # вместо 166, поэтому числа и ECE другие — это другое измерение, не регрессия.
-        ("lexical.json", "reranker.json", (189, 201), 0.0131),
-        ("dense-tfidf.json", "reranker.tfidf.json", (191, 201), 0.027),
+        # эксп. 30 (волна 4 лексикона + два прохода по строке закупки):
+        # лексика 190/201, вектор 192/201. База — это замер отгруженной
+        # конфигурации, поэтому обновляется вместе с ней.
+        ("lexical.json", "reranker.json", (190, 201), 0.0185),
+        ("dense-tfidf.json", "reranker.tfidf.json", (192, 201), 0.0286),
     ),
 )
 def test_shipped_baselines_describe_the_shipped_configuration(name, reranker, top1, ece):
@@ -221,7 +224,6 @@ def test_baselines_can_be_compared_with_each_other_row_by_row():
     dense = load_measurement(BASELINES / "dense-tfidf.json")
     verdict = evaluate_regression(lexical, dense)
     assert verdict.headline_gains["top1_expected"] == 2
-    assert verdict.headline_gains["top3_expected"] == 4
+    assert verdict.headline_gains["top3_expected"] == 3
     assert verdict.keep is False
     assert any("ECE" in reason for reason in verdict.reasons)
-    assert any("ECE" in reason for reason in verdict.reasons), verdict.reasons

@@ -101,6 +101,21 @@ class ClassifyResponse(APIModel):
             "каталог не даёт флага."
         ),
     )
+    verifier: str | None = Field(
+        default=None,
+        description=(
+            "Кто подтвердил код, если ответ пришёл от проверяющей ступени: "
+            "например, «llm-top3» — модель языка выбрала одну из трёх "
+            "предложенных позиций. null — ответ дан самим классификатором."
+        ),
+    )
+    verifier_note: str | None = Field(
+        default=None,
+        description=(
+            "Короткая пометка проверяющей ступени: «код подтверждён по top-3» "
+            "или «нет совпадений». Не является юридическим заключением."
+        ),
+    )
     alternatives: list[Alternative] = Field(default_factory=list)
     latency_ms: float = Field(ge=0)
     contract_version: str = Field(

@@ -428,6 +428,14 @@ def readiness() -> dict:
         "vector_health": vector_layer_health(),
         "job_store": settings.job_store,
         "queue_backend": settings.queue_backend,
+        # Third stage (эксп. 32): visible to operators, because "why is this code
+        # marked verified" must be answerable without reading the logs. `off` is
+        # the normal state of a deployment without an LLM key.
+        "llm_verifier": (
+            "off"
+            if not settings.llm_verifier_enabled or not settings.llm_verifier_model
+            else f"on:{settings.llm_verifier_model}"
+        ),
     }
 
 

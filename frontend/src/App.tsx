@@ -1,19 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, followBatch, type Result, type Status, type UploadAccepted, type Verdict } from './api';
+import { api, followBatch, type Result, type UploadAccepted, type Verdict } from './api';
 import { exportResults, exportResultsCsv } from './files';
+import { STATUS_HELP, STATUS_LABEL, codeLabel, duplicateAppendixHint, notFoundHint, verifierNote } from './status';
 import { storage } from './storage';
 
 const HISTORY_KEY = 'dora:local-history:v1';
 const HISTORY_ENABLED_KEY = 'dora:history-enabled:v1';
 const ACTIVE_JOB_KEY = 'dora:active-job:v1';
-const STATUS_LABEL: Record<Status, string> = {
-  ok: 'Уверенный результат', review: 'Требует проверки', not_found: 'Не найдено',
-};
-const STATUS_HELP: Record<Status, string> = {
-  ok: 'Модель нашла подходящий код. Всё равно проверьте его по постановлению.',
-  review: 'Результат неоднозначен: рекомендуем проверить код и возможные альтернативы.',
-  not_found: 'Надёжного совпадения в перечне не найдено. Это не юридическое заключение.',
-};
 const message = (error: unknown) => error instanceof Error ? error.message : 'Ошибка. Попробуйте ещё раз.';
 const percent = (value: number | null) => value === null ? '—' : `${Math.round(value * 100)}%`;
 const isSafeUrl = (url: string | null): url is string => !!url && (/^\/source\/[\w-]+$/.test(url) || /^https?:\/\//i.test(url));
@@ -75,14 +68,19 @@ function Feedback({ result, onSaved }: { result: Result; onSaved: (r: Result, ve
 }
 function ResultCard({ result, compact = false, onSaved }: { result: Result; compact?: boolean; onSaved: (r: Result, verdict: Verdict, corrected: string | null) => void }) {
   const missingCode = result.status !== 'not_found' && !result.code;
+  // «Нет в перечне» и «нашёл, но не уверен» — разные ответы, и подсказка у них
+  // тоже разная: в первом случае важно, есть ли вообще похожие позиции.
+  const hint = result.status === 'not_found' ? notFoundHint(result) : STATUS_HELP[result.status];
+  const twin = duplicateAppendixHint(result);
+  const verified = verifierNote(result);
   return <div className={compact ? 'compact-result' : ''}>
     {compact ? <>
       <div className="nowrap">{result.code ?? '—'}</div><p>{result.title ?? "Название категории не указано"}</p><small>{STATUS_LABEL[result.status]}</small>
     </> : <>
       <div className="result-heading"><h2>Результат</h2><span className={`badge status-${result.status}`}>{STATUS_LABEL[result.status]}</span></div>
       <div className="result-grid">
-        <div><p className="muted">Предполагаемый код ОКПД2</p>
-          {result.status === 'not_found' ? <p className="title">Надёжного совпадения в перечне не найдено</p>
+        <div><p className="muted">{codeLabel(result.status)}</p>
+          {result.status === 'not_found' ? <p className="title">Товар не найден в перечне</p>
             : missingCode ? <p className="title">Сервис не вернул код — требуется проверка</p>
               : <><div className="code">{result.code}</div><p className="title">Категория: {result.title ?? "название не указано"}</p>
                 {result.clauseRef && <p className="muted">{result.clauseRef}</p>}</>}
@@ -91,7 +89,9 @@ function ResultCard({ result, compact = false, onSaved }: { result: Result; comp
           {result.confidence !== null && <progress max={1} value={result.confidence} aria-label="Уверенность модели"/>}</div>
       </div>
     </>}
-    <p className="status-help">{missingCode ? 'Без кода нельзя считать результат уверенным.' : STATUS_HELP[result.status]}</p>
+    <p className="status-help">{missingCode ? 'Без кода нельзя считать результат уверенным.' : hint}</p>
+    {verified && <p className="status-help" role="note">{verified}</p>}
+    {twin && <p className="status-help" role="note">{twin}</p>}
     {!compact && <div className="source"><SourceLink url={result.url}/></div>}
     <Alternatives result={result}/>
     <details className="details"><summary>Сообщить об ошибке (для экспертов)</summary><Feedback key={`${result.name}-${result.code}`} result={result} onSaved={onSaved}/></details>

@@ -17,7 +17,7 @@
     "artifact_sha256": {
       "reranker.tfidf.json": "3b0830b31f0d7c8ad94fff46cb10afc7789c890c3f1f70c1144d89150c234089"
     },
-    "measured_at": "2026-10-24T13:05:44Z"
+    "measured_at": "2026-10-24T14:54:43Z"
   },
   "metrics": {
     "correct_silence": {
@@ -29,7 +29,7 @@
       "total": 112
     },
     "top1_expected": {
-      "correct": 191,
+      "correct": 192,
       "total": 201
     },
     "top3_expected": {
@@ -37,7 +37,7 @@
       "total": 201
     },
     "top1_all": {
-      "correct": 222,
+      "correct": 223,
       "total": 233
     },
     "ok_precision": {
@@ -45,5 +45,5 @@
       "total": 182
     }
   },
-  "ece": 0.027
+  "ece": 0.0286
 }
