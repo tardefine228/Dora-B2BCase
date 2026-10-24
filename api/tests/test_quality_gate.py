@@ -175,10 +175,11 @@ def test_table_states_the_verdict_and_the_numbers():
         # После аудита разметки (docs/labeling-doctrine.md): 201 строка с кодом
         # вместо 166, поэтому числа и ECE другие — это другое измерение, не регрессия.
         # эксп. 34 (волна 5 лексикона, правило слабой подсказки и порог ok 0.80):
-        # лексика 190/201, top-3 198/201, ECE 0.026 — уверенность просела, потому
-        # что review теперь показывается на строках, которые раньше молчали.
+        # лексика 191/201, top-3 198/201, ECE 0.037 — уверенность просела, потому что
+        # review теперь показывается на строках, которые раньше молчали, а Platt-карта
+        # подобрана на площадке, которая с новым лексиконом отвечает чаще.
         # База — это замер отгруженной конфигурации, поэтому обновляется вместе с ней.
-        ("lexical.json", "reranker.json", (190, 201), 0.0261),
+        ("lexical.json", "reranker.json", (191, 201), 0.037),
         ("dense-tfidf.json", "reranker.tfidf.json", (192, 201), 0.0286),
     ),
 )
@@ -211,21 +212,22 @@ def test_baselines_can_be_compared_with_each_other_row_by_row():
     """Same dataset, so the comparison must work and show what vectors buy.
 
     On the shipped run the vector artifact wins where it was trained to win
-    (+2 top-1, +1 top-3) and its *calibrated* confidence lands inside the 0.01
-    tolerance (0.029 against 0.026), so this cross-check is green — it was red
+    (+1 top-1, +1 top-3) and its *calibrated* confidence lands inside the 0.01
+    tolerance (0.029 against 0.037), so this cross-check is green — it was red
     for one release (эксп. 30: 0.027 against 0.0131). The tolerance itself is not
     proof: the per-run ECE of one artifact spreads over 0.013–0.045 depending on
     the training split (``ece_per_run`` in ``ml/artifacts/dense-gate.json``),
     which is why admission compares the reliability table pooled over four runs.
     The two files are records of their own runs: ``dense-tfidf.json`` was measured
-    on 2026-10-24, before the fifth lexicon wave and the 0.80 ``ok`` floor, so the
-    ``ok`` counts of the two rows differ (178 vs 170 confident answers) and the
-    delta is informative, not a head-to-head of today's code.
+    on 2026-10-24, before the fifth lexicon wave and the 0.80 ``ok`` floor, and the
+    vector file has not been retrained since, so the delta is informative rather
+    than a head-to-head of today's code. It is also the one comparison the labeled
+    set resolves with a single row: +1 top-1 is exactly one query.
     """
     lexical = load_measurement(BASELINES / "lexical.json")
     dense = load_measurement(BASELINES / "dense-tfidf.json")
     verdict = evaluate_regression(lexical, dense)
-    assert verdict.headline_gains["top1_expected"] == 2
+    assert verdict.headline_gains["top1_expected"] == 1
     assert verdict.headline_gains["top3_expected"] == 1
     assert verdict.keep is True
     assert not verdict.reasons
