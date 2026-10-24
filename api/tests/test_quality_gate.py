@@ -174,10 +174,12 @@ def test_table_states_the_verdict_and_the_numbers():
     (
         # После аудита разметки (docs/labeling-doctrine.md): 201 строка с кодом
         # вместо 166, поэтому числа и ECE другие — это другое измерение, не регрессия.
-        # эксп. 30 (волна 4 лексикона + два прохода по строке закупки):
-        # лексика 190/201, вектор 192/201. База — это замер отгруженной
-        # конфигурации, поэтому обновляется вместе с ней.
-        ("lexical.json", "reranker.json", (190, 201), 0.0185),
+        # эксп. 34 (волна 5 лексикона, правило слабой подсказки и порог ok 0.80):
+        # лексика 191/201, top-3 198/201, ECE 0.037 — уверенность просела, потому что
+        # review теперь показывается на строках, которые раньше молчали, а Platt-карта
+        # подобрана на площадке, которая с новым лексиконом отвечает чаще.
+        # База — это замер отгруженной конфигурации, поэтому обновляется вместе с ней.
+        ("lexical.json", "reranker.json", (191, 201), 0.037),
         ("dense-tfidf.json", "reranker.tfidf.json", (192, 201), 0.0286),
     ),
 )
@@ -209,21 +211,23 @@ def test_baseline_artifact_hash_matches_the_shipped_file():
 def test_baselines_can_be_compared_with_each_other_row_by_row():
     """Same dataset, so the comparison must work and show what vectors buy.
 
-    The vector artifact wins where it was trained to win (+2 top-1, +4 top-3) and
-    is still flagged by the strict rule on its *calibrated* confidence: 0.027
-    against 0.0131, i.e. +0.014 over the 0.01 tolerance. This row is the one
-    measurement the set cannot resolve: the per-run ECE of the same artifacts
-    spreads over 0.013–0.045 depending on the training split (see
-    ``ece_per_run`` in ``ml/artifacts/dense-gate.json``), which is why the
-    admission rule compares the reliability table pooled over four runs — there
-    the same pair is 0.032 against 0.039, inside the tolerance. The CI gate
-    compares each configuration against *its own* baseline, so this cross-check
-    documents the residual disagreement instead of shipping it as green.
+    On the shipped run the vector artifact wins where it was trained to win
+    (+1 top-1, +1 top-3) and its *calibrated* confidence lands inside the 0.01
+    tolerance (0.029 against 0.037), so this cross-check is green — it was red
+    for one release (эксп. 30: 0.027 against 0.0131). The tolerance itself is not
+    proof: the per-run ECE of one artifact spreads over 0.013–0.045 depending on
+    the training split (``ece_per_run`` in ``ml/artifacts/dense-gate.json``),
+    which is why admission compares the reliability table pooled over four runs.
+    The two files are records of their own runs: ``dense-tfidf.json`` was measured
+    on 2026-10-24, before the fifth lexicon wave and the 0.80 ``ok`` floor, and the
+    vector file has not been retrained since, so the delta is informative rather
+    than a head-to-head of today's code. It is also the one comparison the labeled
+    set resolves with a single row: +1 top-1 is exactly one query.
     """
     lexical = load_measurement(BASELINES / "lexical.json")
     dense = load_measurement(BASELINES / "dense-tfidf.json")
     verdict = evaluate_regression(lexical, dense)
-    assert verdict.headline_gains["top1_expected"] == 2
-    assert verdict.headline_gains["top3_expected"] == 3
-    assert verdict.keep is False
-    assert any("ECE" in reason for reason in verdict.reasons)
+    assert verdict.headline_gains["top1_expected"] == 1
+    assert verdict.headline_gains["top3_expected"] == 1
+    assert verdict.keep is True
+    assert not verdict.reasons

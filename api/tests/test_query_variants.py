@@ -101,10 +101,17 @@ def test_best_answer_tie_goes_to_the_last_variant() -> None:
 
 
 def test_spec_tail_no_longer_costs_the_answer(classifier: CatalogClassifier) -> None:
-    """A real ERP line: the tail alone used to push this below the ok floor."""
+    """A real ERP line: the tail used to push this below the floor, now it is a lead.
+
+    The full line carries four specifiers the register never mentions, so the
+    model stays below ``ok`` — but the position is head-anchored («Машина
+    стиральная» is in the position's own name), so the answer is ``review``, not
+    «нет в перечне» (эксп. 34). The name-only pass is confident, and the batch
+    answer keeps that one.
+    """
     line = "Машина стиральная LG F2J3NS0W; бытовая; загрузка 6 кг; отжим 1000 об/мин"
     full = classifier._classify_normalized(line)
-    assert full.status == "not_found"  # spec words drown the name
+    assert (full.status, full.code) == ("review", "27.51.13")
     answer = classifier.classify(line)
     assert (answer.status, answer.code) == ("ok", "27.51.13")
     # The response still echoes exactly what the user sent.
