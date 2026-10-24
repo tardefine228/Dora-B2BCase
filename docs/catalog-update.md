@@ -30,8 +30,11 @@
    Переиндексация пересобирает индекс в фоне и атомарно переключает алиас —
    поиск не прерывается.
 5. **Проверка**: `GET /admin/catalog` (число строк, `sha256`), затем несколько
-   контрольных запросов `POST /classify` и `python eval/run_eval.py`
-   (обновляет `eval/eval_report.md`).
+   контрольных запросов `POST /classify` и
+   `EMBEDDER_BACKEND=tfidf VECTOR_SEARCH=true PYTHONPATH=api python eval/run_eval.py --sweep`
+   (обновляет `eval/eval_report.md` — именно эта конфигурация в нём и записана).
+   Если каталог изменился настолько, что артефакт перестал воспроизводиться,
+   CI-шаг «Shipped artifacts match a rebuild» это покажет: пересоберите модель.
 
 ## Ограничения
 
