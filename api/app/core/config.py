@@ -148,6 +148,22 @@ class Settings:
         self.admin_api_key = os.getenv("ADMIN_API_KEY", "")
         self.max_concurrent_inferences = _positive_int("MAX_CONCURRENT_INFERENCES", 1)
         self.classification_cache_size = _positive_int("CLASSIFICATION_CACHE_SIZE", 512)
+
+        # Third stage (off by default): a constrained LLM check of the top-3
+        # hypotheses for `review`/`not_found` answers only. Any OpenAI-compatible
+        # endpoint works; without a model the stage is simply absent
+        # (see api/app/services/llm_verifier.py, eval/experiments.md эксп. 30).
+        self.llm_verifier_enabled = _bool("LLM_VERIFIER_ENABLED", default=False)
+        self.llm_verifier_base_url = os.getenv(
+            "LLM_VERIFIER_BASE_URL", "https://api.openai.com/v1"
+        ).strip()
+        self.llm_verifier_api_key = os.getenv("LLM_VERIFIER_API_KEY", "").strip()
+        self.llm_verifier_model = os.getenv("LLM_VERIFIER_MODEL", "").strip()
+        self.llm_verifier_timeout_seconds = _optional_float("LLM_VERIFIER_TIMEOUT", 8.0) or 8.0
+        # A ceiling, not a target: one batch of 100 purchase lines must not turn
+        # into an unbounded bill. Calls beyond the budget are skipped and the
+        # answer stays the model's own.
+        self.llm_verifier_calls_per_minute = _positive_int("LLM_VERIFIER_CALLS_PER_MINUTE", 60)
         self.max_request_body_bytes = _positive_int("MAX_REQUEST_BODY_BYTES", 1_000_000)
         # Upload of a goods list file on the main page (POST /classify/file).
         self.max_upload_bytes = _positive_int("MAX_UPLOAD_BYTES", 10_000_000)

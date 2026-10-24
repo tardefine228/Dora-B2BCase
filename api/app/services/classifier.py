@@ -424,8 +424,12 @@ class CatalogClassifier:
     (lexical only) or a ready ``ml.dense.DenseIndex`` aligned with ``self.index``.
     """
 
-    def __init__(self, catalog_path: Path, reranker=None, dense="auto") -> None:
+    def __init__(self, catalog_path: Path, reranker=None, dense="auto", verifier=None) -> None:
         self.catalog_path = Path(catalog_path)
+        # Optional third stage (api/app/services/llm_verifier.py): a constrained
+        # check of the top-3 hypotheses for `review`/`not_found` only. ``None``
+        # keeps the pure model behaviour, which is the default.
+        self._verifier = verifier
         self.index: list[dict] = []
         self._load()
         if not self.index:
@@ -561,8 +565,12 @@ class CatalogClassifier:
         # Typos ("Монитр", "Клавитура") are corrected against the catalog
         # vocabulary first: stems and embeddings cannot rescue absent tokens.
         from ml.fuzzy import autocorrect
+        from ml.query import name_variants
 
-        return self._classify_normalized(autocorrect(query.strip()))
+        text = query.strip()
+        return _best_answer(
+            self._classify_normalized(autocorrect(variant)) for variant in name_variants(text)
+        ).model_copy(update={"query": text})
 
     def classify_many(self, queries: list[str]) -> list[ClassifyResponse]:
         """Batch path (BE-7): one autocorrect pass, ONE batched encoding call.
@@ -576,16 +584,29 @@ class CatalogClassifier:
         if not queries:
             return []
         from ml.fuzzy import autocorrect
+        from ml.query import name_variants
 
-        normalized = [autocorrect(query.strip()) for query in queries]
+        originals = [query.strip() for query in queries]
+        # Every variant that will be scored is encoded once, in one batch: the
+        # name-only variant is a second text per purchase line.
+        variants = [name_variants(text) for text in originals]
+        to_encode = [autocorrect(variant) for group in variants for variant in group]
         if self._dense is not None:
             try:
-                self._dense.warm_queries([name for name in normalized if name])
+                self._dense.warm_queries([name for name in to_encode if name])
             except Exception:  # noqa: BLE001 - per-query encoding still works
                 logger.exception(
                     "Пакетное кодирование запросов не удалось — кодируем по одному"
                 )
-        return [self._classify_normalized(name) for name in normalized]
+        answers: list[ClassifyResponse] = []
+        position = 0
+        for text, group in zip(originals, variants, strict=True):
+            scored = []
+            for _variant in group:
+                scored.append(self._classify_normalized(to_encode[position]))
+                position += 1
+            answers.append(_best_answer(scored).model_copy(update={"query": text}))
+        return answers
 
     def _classify_normalized(self, normalized_query: str) -> ClassifyResponse:
         if not normalized_query:
@@ -766,34 +787,126 @@ class CatalogClassifier:
                     _codeless_hint(best, confidence),
                     *alternatives[: _MAX_ALTERNATIVES - 1],
                 ]
-            return ClassifyResponse(
-                query=query,
-                code=None,
-                title=None,
-                confidence=0.0,
-                confidence_raw=0.0,
-                status="not_found",
-                clause_ref=None,
-                clause_url=None,
-                alternatives=alternatives,
-                latency_ms=0.0,
+            return _with_verifier(
+                self,
+                query,
+                ClassifyResponse(
+                    query=query,
+                    code=None,
+                    title=None,
+                    confidence=0.0,
+                    confidence_raw=0.0,
+                    status="not_found",
+                    clause_ref=None,
+                    clause_url=None,
+                    alternatives=alternatives,
+                    latency_ms=0.0,
+                ),
+                ranked,
             )
 
         alternatives = _distinct_alternatives(ranked, status, query_stems)
-        return ClassifyResponse(
-            query=query,
-            code=best.code,
-            title=best.title,
-            confidence=confidence,
-            confidence_raw=raw_confidence,
-            status=status,
-            clause_ref=best.clause_ref,
-            clause_url=clause_url_for(best.payload.get("record_id")),
-            code_role=best.payload.get("code_role"),
-            catalog_review_required=best.payload.get("catalog_review_required"),
-            alternatives=alternatives,
-            latency_ms=0.0,
+        return _with_verifier(
+            self,
+            query,
+            ClassifyResponse(
+                query=query,
+                code=best.code,
+                title=best.title,
+                confidence=confidence,
+                confidence_raw=raw_confidence,
+                status=status,
+                clause_ref=best.clause_ref,
+                clause_url=clause_url_for(best.payload.get("record_id")),
+                code_role=best.payload.get("code_role"),
+                catalog_review_required=best.payload.get("catalog_review_required"),
+                alternatives=alternatives,
+                latency_ms=0.0,
+            ),
+            ranked,
         )
+
+
+def _with_verifier(classifier, query: str, answer: ClassifyResponse, ranked) -> ClassifyResponse:
+    """Let the optional LLM verifier confirm one of the offered codes.
+
+    Only weak answers are passed on: an ``ok`` answer is final. The verifier may
+    return a code **that was offered to it** or "none"; the rescued answer is
+    reported as ``review`` — a candidate for a human, never a confident ``ok`` —
+    and carries the provenance in ``verifier``/``verifier_note`` so a client can
+    tell a model answer from a verified one. Every failure mode (no key, no
+    network, timeout, invented code) leaves the answer untouched.
+    """
+    verifier = getattr(classifier, "_verifier", None)
+    if verifier is None or answer.status == "ok":
+        return answer
+    from app.services.llm_verifier import Candidate
+
+    offered = []
+    seen: set[str] = set()
+    for candidate in ranked:
+        code = (candidate.code or "").strip()
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        offered.append(Candidate(code=code, title=candidate.title or ""))
+        if len(offered) == verifier.max_candidates:
+            break
+    verdict = verifier.verify(query, offered)
+    if verdict is None:
+        return answer
+    if verdict.code is None:
+        # The model agrees that none of the positions fits. Silence stays silence,
+        # but the fact is recorded: the specialist learns the hypotheses were read.
+        return answer.model_copy(
+            update={"verifier": verifier.name, "verifier_note": "нет совпадений"}
+        )
+    chosen = next((cand for cand in ranked if (cand.code or "") == verdict.code), None)
+    if chosen is None:  # pragma: no cover - guarded by the verifier's whitelist
+        return answer
+    return answer.model_copy(
+        update={
+            "code": verdict.code,
+            "title": chosen.title,
+            "status": "review",
+            "clause_ref": chosen.clause_ref,
+            "clause_url": clause_url_for(chosen.payload.get("record_id")),
+            "code_role": chosen.payload.get("code_role"),
+            "catalog_review_required": chosen.payload.get("catalog_review_required"),
+            "verifier": verifier.name,
+            "verifier_note": "код подтверждён по top-3",
+        }
+    )
+
+
+def _best_answer(answers) -> ClassifyResponse:
+    """Pick the answer of the purchase-line variants by confidence.
+
+    A purchase line is scored twice when it has a specification tail (see
+    ``ml.query``): the full line and the product name alone. The attribute tail
+    is often what pushes an otherwise correct answer below the ``ok`` floor —
+    ``DDR4``, ``1000 об/мин`` and ``1 шт`` are words the catalog cannot know —
+    but it also carries disambiguation ("Плита Kronospan MDF;
+    древесно-волокнистая"), so neither variant is right on its own. The raw
+    confidence is the model's own estimate of being correct and it lives on the
+    same calibrated scale for both variants, so the more confident one wins;
+    a tie goes to the name-only variant, which is the cleaner input.
+
+    The caller overwrites ``query`` with the text the user actually sent.
+    """
+    candidates = list(answers)
+    assert candidates, "name_variants always yields at least one text"
+
+    def rank(answer: ClassifyResponse) -> tuple[int, float]:
+        # A silent answer is never better than an answered one, whatever its
+        # (zero) confidence says; otherwise the raw confidence decides.
+        return (0 if answer.status == "not_found" else 1, answer.confidence_raw or 0.0)
+
+    best = candidates[0]
+    for answer in candidates[1:]:
+        if rank(answer) >= rank(best):
+            best = answer
+    return best
 
 
 def _catalog_flags_lookup() -> dict[str, tuple[str | None, bool | None]]:
@@ -960,9 +1073,17 @@ class QdrantClassifier:
         return code_role, review_flag
 
     def classify_many(self, queries: list[str]) -> list[ClassifyResponse]:
-        normalized_queries = [query.strip() for query in queries]
-        if not normalized_queries:
+        from ml.query import name_variants
+
+        originals = [query.strip() for query in queries]
+        if not originals:
             return []
+
+        # A purchase line is searched twice when it has an attribute tail: the
+        # full line and the name alone (see ``ml.query``). Both variants go
+        # through one batched search, then the more confident answer wins.
+        variants = [name_variants(text) for text in originals]
+        normalized_queries = [variant for group in variants for variant in group]
 
         try:
             hit_groups = self._search_many(normalized_queries, top_k=10)
@@ -1084,7 +1205,14 @@ class QdrantClassifier:
                     latency_ms=0.0,
                 )
             )
-        return results
+
+        answers: list[ClassifyResponse] = []
+        position = 0
+        for text, group in zip(originals, variants, strict=True):
+            chunk = results[position : position + len(group)]
+            position += len(group)
+            answers.append(_best_answer(chunk).model_copy(update={"query": text}))
+        return answers
 
 
 def _resolve_catalog_path() -> Path | None:
@@ -1121,7 +1249,12 @@ def build_classifier(backend: str | None = None) -> Classifier:
     catalog_path = _resolve_catalog_path()
     if catalog_path is None:
         raise FileNotFoundError("Каталог data.csv не найден. Проверьте DATA_DIR или CATALOG_PATH.")
-    return CatalogClassifier(catalog_path)
+    from app.services.llm_verifier import build_llm_verifier
+
+    verifier = build_llm_verifier(settings)
+    if verifier is not None:
+        logger.info("Третья ступень включена: %s (%s)", verifier.name, verifier.model)
+    return CatalogClassifier(catalog_path, verifier=verifier)
 
 
 class CachedClassifier:

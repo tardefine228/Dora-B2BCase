@@ -17,11 +17,11 @@
     "artifact_sha256": {
       "reranker.json": "9395a262178d0f3f78c5b240123601a3eab78eb19e384a9f8e261711a0d73e78"
     },
-    "measured_at": "2026-10-24T13:05:24Z"
+    "measured_at": "2026-10-24T14:54:25Z"
   },
   "metrics": {
     "correct_silence": {
-      "correct": 30,
+      "correct": 31,
       "total": 32
     },
     "exact_top1": {
@@ -29,15 +29,15 @@
       "total": 112
     },
     "top1_expected": {
-      "correct": 189,
+      "correct": 190,
       "total": 201
     },
     "top3_expected": {
-      "correct": 195,
+      "correct": 196,
       "total": 201
     },
     "top1_all": {
-      "correct": 219,
+      "correct": 221,
       "total": 233
     },
     "ok_precision": {
@@ -45,5 +45,5 @@
       "total": 178
     }
   },
-  "ece": 0.0131
+  "ece": 0.0185
 }
