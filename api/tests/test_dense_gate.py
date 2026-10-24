@@ -260,3 +260,44 @@ def test_pooling_scales_the_headline_tolerance_with_the_runs() -> None:
     verdict = evaluate_gate(base, new, base_ece=LEXICAL_ECE, new_ece=VECTOR_ECE, runs=2)
     assert verdict.keep is False
     assert any("top-1" in reason for reason in verdict.reasons)
+
+
+# --- pooled calibration ------------------------------------------------------
+
+
+def test_reliability_table_reproduces_the_scalar_ece() -> None:
+    """The table is the same measurement as ``eval.run_eval.calibration``."""
+    from eval.dense_gate import ece_from_bins, reliability_bins
+
+    pairs = [(0.95, True)] * 40 + [(0.95, False)] * 2 + [(0.55, True)] * 8 + [(0.55, False)] * 3
+    bins = reliability_bins(pairs)
+    assert sum(row.count for row in bins) == len(pairs)
+    expected = (42 / 53) * abs(40 / 42 - 0.95) + (11 / 53) * abs(8 / 11 - 0.55)
+    assert ece_from_bins(bins) == pytest.approx(expected)
+    # 1.0 must land in the last bin, not in an out-of-range one.
+    assert reliability_bins([(1.0, True)])[-1].count == 1
+
+
+def test_pooling_tables_removes_the_bias_between_runs() -> None:
+    """Pooling is why the gate does not average four ``abs()`` values.
+
+    Two runs disagree in opposite directions inside the same bin: each looks
+    0.1 miscalibrated on its own, while the pooled table is exactly calibrated.
+    Averaging the two ECEs would report 0.1 where there is no bias left.
+    """
+    from eval.dense_gate import ece_from_bins, pool_bins, reliability_bins
+
+    first = reliability_bins([(0.9, True)] * 10)
+    second = reliability_bins([(0.9, True)] * 8 + [(0.9, False)] * 2)
+    assert ece_from_bins(first) == pytest.approx(0.1)
+    assert ece_from_bins(second) == pytest.approx(0.1)
+    assert ece_from_bins(pool_bins([first, second])) == pytest.approx(0.0)
+    # Pooling a single table with itself must not change the measurement.
+    assert ece_from_bins(pool_bins([first, first])) == pytest.approx(ece_from_bins(first))
+
+
+def test_pooling_rejects_tables_of_different_shape() -> None:
+    from eval.dense_gate import pool_bins, reliability_bins
+
+    with pytest.raises(ValueError):
+        pool_bins([reliability_bins([(0.9, True)]), reliability_bins([(0.9, True)], bins=4)])

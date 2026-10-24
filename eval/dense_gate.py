@@ -26,7 +26,8 @@ Policy
 * **Rate over a model-chosen subset** (``ok_precision``): at most one more wrong
   confident answer than the lexical artifact. Counted as wrong ``ok`` answers,
   because that is what a user sees: "уверенный результат", which turned out wrong.
-* **Calibration**: ECE may not grow by more than ``ECE_TOLERANCE``.
+* **Calibration**: ECE may not grow by more than ``ECE_TOLERANCE``, measured on
+  the reliability table pooled over the runs (see ``reliability_bins`` below).
 
 The rule is intentionally conservative: it never accepts an artifact that trades
 away silence and never accepts one that is merely "not worse".
@@ -169,8 +170,9 @@ class GateVerdict:
             lines.append(
                 f"  {row.label:26s} {base:>22s} {new:>22s} {delta:>12s}  {row.verdict}"
             )
+        ece_label = "ECE (калибровка, пул)" if self.runs > 1 else "ECE (калибровка)"
         lines.append(
-            f"  {'ECE (калибровка)':26s} {self.base_ece:>22.3f} {self.new_ece:>22.3f}"
+            f"  {ece_label:26s} {self.base_ece:>22.3f} {self.new_ece:>22.3f}"
             f" {self.new_ece - self.base_ece:>12.3f}  "
             f"{'ok' if self.new_ece <= self.base_ece + ECE_TOLERANCE else 'fatal'}"
         )
@@ -280,4 +282,86 @@ def evaluate_gate(
         base_ece=base_ece,
         new_ece=new_ece,
         runs=runs,
+    )
+
+
+# --- Calibration pooling ------------------------------------------------------
+# ECE is an *absolute* value of a bin, so averaging it over runs does not average
+# noise away the way summing counts does: with ~200 answered rows three bins are
+# non-empty and a single misplaced row moves a run's ECE by ~0.005. Keeping the
+# reliability table (not just the scalar) lets the gate pool the rows of all runs
+# first and take |accuracy − confidence| on the union — the same "measure the
+# artifact family, not one split" doctrine as ``pool_counts``.
+RELIABILITY_BINS = 5  # must match eval.run_eval.ECE_BINS
+
+
+@dataclass(frozen=True)
+class ReliabilityBin:
+    """One confidence interval of a reliability table, kept as sums for pooling."""
+
+    low: float
+    high: float
+    count: int
+    confidence_sum: float
+    correct: int
+
+    @property
+    def confidence(self) -> float:
+        return self.confidence_sum / self.count if self.count else 0.0
+
+    @property
+    def accuracy(self) -> float:
+        return self.correct / self.count if self.count else 0.0
+
+
+def reliability_bins(
+    pairs: list[tuple[float, bool]], *, bins: int = RELIABILITY_BINS
+) -> tuple[ReliabilityBin, ...]:
+    """Reliability table of ``(confidence, correct)`` pairs, as sums per bin."""
+    counts = [0] * bins
+    sums = [0.0] * bins
+    correct = [0] * bins
+    for confidence, hit in pairs:
+        value = min(max(float(confidence), 0.0), 1.0)
+        index = min(int(value * bins), bins - 1)
+        counts[index] += 1
+        sums[index] += value
+        correct[index] += 1 if hit else 0
+    return tuple(
+        ReliabilityBin(
+            low=index / bins,
+            high=(index + 1) / bins,
+            count=counts[index],
+            confidence_sum=sums[index],
+            correct=correct[index],
+        )
+        for index in range(bins)
+    )
+
+
+def ece_from_bins(bins: tuple[ReliabilityBin, ...]) -> float:
+    """Confidence-weighted |accuracy − mean confidence| over the table."""
+    total = sum(row.count for row in bins)
+    if not total:
+        return 0.0
+    return sum(
+        row.count / total * abs(row.accuracy - row.confidence) for row in bins if row.count
+    )
+
+
+def pool_bins(runs: list[tuple[ReliabilityBin, ...]]) -> tuple[ReliabilityBin, ...]:
+    """Sum the reliability tables of several runs into one."""
+    if not runs:
+        raise ValueError("Нет прогонов для объединения")
+    if any(len(run) != len(runs[0]) for run in runs):
+        raise ValueError("Прогоны измеряют разное число интервалов уверенности")
+    return tuple(
+        ReliabilityBin(
+            low=first.low,
+            high=first.high,
+            count=sum(run[index].count for run in runs),
+            confidence_sum=sum(run[index].confidence_sum for run in runs),
+            correct=sum(run[index].correct for run in runs),
+        )
+        for index, first in enumerate(runs[0])
     )

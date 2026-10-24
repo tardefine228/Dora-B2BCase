@@ -9,19 +9,19 @@
     "reranker": "reranker.tfidf.json",
     "scoring": "vector-features",
     "semantic_reranker": "auto",
-    "review_threshold": 0.622,
+    "review_threshold": 0.582,
     "labeled_rows": 274,
     "expected_rows": 201,
     "not_found_rows": 32,
     "contested_rows": 41,
     "artifact_sha256": {
-      "reranker.tfidf.json": "906c8c9b3384d8a53f4b11acb6e59ee5208e99c68faac97ab27fef0b65a36e09"
+      "reranker.tfidf.json": "3b0830b31f0d7c8ad94fff46cb10afc7789c890c3f1f70c1144d89150c234089"
     },
-    "measured_at": "2026-10-24T10:46:31Z"
+    "measured_at": "2026-10-24T13:05:44Z"
   },
   "metrics": {
     "correct_silence": {
-      "correct": 30,
+      "correct": 31,
       "total": 32
     },
     "exact_top1": {
@@ -29,21 +29,21 @@
       "total": 112
     },
     "top1_expected": {
-      "correct": 150,
+      "correct": 191,
       "total": 201
     },
     "top3_expected": {
-      "correct": 164,
+      "correct": 199,
       "total": 201
     },
     "top1_all": {
-      "correct": 180,
+      "correct": 222,
       "total": 233
     },
     "ok_precision": {
-      "correct": 142,
-      "total": 147
+      "correct": 177,
+      "total": 182
     }
   },
-  "ece": 0.0979
+  "ece": 0.027
 }

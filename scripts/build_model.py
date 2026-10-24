@@ -31,23 +31,32 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from eval.dense_gate import Counts  # noqa: E402
+from eval.dense_gate import (  # noqa: E402
+    Counts,
+    ReliabilityBin,
+    ece_from_bins,
+    pool_bins,
+    reliability_bins,
+)
 from ml.catalog_loader import item_to_text, load_catalog  # noqa: E402
 from ml.embedder import TFIDF_ARTIFACT_NAME, TfidfEncoder  # noqa: E402
 from ml.reranker import RERANKER_ARTIFACT_NAME, reranker_artifact_name  # noqa: E402
 from ml.train_reranker import train  # noqa: E402
 
 
-def _measure(classifier) -> tuple[dict, dict[str, Counts]]:
+def _measure(classifier) -> tuple[dict, dict[str, Counts], tuple[ReliabilityBin, ...]]:
     """Full summary of the labeled set plus the raw counts the gate decides on.
 
     The counts come from ``eval.run_eval.metric_counts`` so the trainer and the
     evaluation script can never disagree about what a labeled row measures
     (``code`` / ``absent`` / ``unclear`` — see ``docs/labeling-doctrine.md``).
+    The reliability table is returned next to the scalar ECE so the gate can
+    pool the tables of several runs instead of averaging four abs() values.
     """
     from eval.run_eval import (
         LABELED,
         _classify_rows,
+        _row_kind,
         evaluate_exact_names,
         load_exact_names,
         load_labeled,
@@ -59,7 +68,12 @@ def _measure(classifier) -> tuple[dict, dict[str, Counts]]:
     exact = evaluate_exact_names(classifier, load_exact_names(ROOT / "data/data.csv"))
     report = {"results": results, "exact": exact}
     summary = summarize(report)
-    return summary, metric_counts(report)
+    answered = [
+        (row["confidence"], row["correct_top1"])
+        for row in results
+        if row["status"] != "not_found" and _row_kind(row) != "unclear"
+    ]
+    return summary, metric_counts(report), reliability_bins(answered)
 
 
 def _score(classifier) -> dict:
@@ -101,9 +115,9 @@ def _measure_seed_pair(
 ) -> tuple[dict, dict, float, float]:
     """Train (or load) both artifacts for one seed and measure them.
 
-    Returns ``(base_counts, new_counts, base_ece, new_ece)``. With
-    ``reuse_candidate`` the already-trained dense artifact is measured instead of
-    retraining it (the primary seed of the build), and the lexical baseline is
+    Returns ``(base_counts, new_counts, base_ece, new_ece, base_bins, new_bins)``.
+    With ``reuse_candidate`` the already-trained dense artifact is measured instead
+    of retraining it (the primary seed of the build), and the lexical baseline is
     trained here; otherwise both are trained in a scratch directory.
     """
     from app.services.classifier import CatalogClassifier
@@ -133,9 +147,12 @@ def _measure_seed_pair(
         vector = CatalogClassifier(
             catalog, reranker=LogisticReranker.load(candidate), dense=dense_index
         )
-        base_summary, base_counts = _measure(lexical)
-        new_summary, new_counts = _measure(vector)
-        return base_counts, new_counts, base_summary["ece"], new_summary["ece"]
+        base_summary, base_counts, base_bins = _measure(lexical)
+        new_summary, new_counts, new_bins = _measure(vector)
+        return (
+            base_counts, new_counts, base_summary["ece"], new_summary["ece"],
+            base_bins, new_bins,
+        )
     finally:
         scratch.cleanup()
 
@@ -174,6 +191,8 @@ def gate_dense(
     pools_new: list[dict] = []
     base_eces: list[float] = []
     new_eces: list[float] = []
+    base_tables: list[tuple[ReliabilityBin, ...]] = []
+    new_tables: list[tuple[ReliabilityBin, ...]] = []
 
     baseline_path, scratch = _lexical_baseline(models_dir, seed, max_queries, baseline_artifact)
     try:
@@ -185,26 +204,34 @@ def gate_dense(
         vector = CatalogClassifier(
             catalog, reranker=LogisticReranker.load(artifact), dense=dense_index
         )
-        base_summary, base_counts = _measure(lexical)
-        new_summary, new_counts = _measure(vector)
+        base_summary, base_counts, base_bins = _measure(lexical)
+        new_summary, new_counts, new_bins = _measure(vector)
         pools_base.append(base_counts)
         pools_new.append(new_counts)
         base_eces.append(base_summary["ece"])
         new_eces.append(new_summary["ece"])
+        base_tables.append(base_bins)
+        new_tables.append(new_bins)
         for extra in extra_seeds:
             print(f"  gate: дополнительный прогон, seed={extra} (обучение обоих артефактов)")
-            extra_base, extra_new, extra_base_ece, extra_new_ece = _measure_seed_pair(
+            (extra_base, extra_new, extra_base_ece, extra_new_ece,
+             extra_base_bins, extra_new_bins) = _measure_seed_pair(
                 catalog, extra, models_dir, max_queries, reuse_candidate=None
             )
             pools_base.append(extra_base)
             pools_new.append(extra_new)
             base_eces.append(extra_base_ece)
             new_eces.append(extra_new_ece)
+            base_tables.append(extra_base_bins)
+            new_tables.append(extra_new_bins)
         runs = len(pools_base)
         base_counts = pool_counts(pools_base) if runs > 1 else base_counts
         new_counts = pool_counts(pools_new) if runs > 1 else new_counts
-        base_ece = sum(base_eces) / runs
-        new_ece = sum(new_eces) / runs
+        # Pooled reliability tables, not the mean of |ECE| per run: ECE is an
+        # absolute value of a bin, so averaging four of them averages the noise
+        # in rather than out (see ``eval/dense_gate.reliability_bins``).
+        base_ece = ece_from_bins(pool_bins(base_tables)) if runs > 1 else base_eces[0]
+        new_ece = ece_from_bins(pool_bins(new_tables)) if runs > 1 else new_eces[0]
         verdict = evaluate_gate(
             base_counts, new_counts, base_ece=base_ece, new_ece=new_ece, runs=runs
         )
@@ -224,6 +251,17 @@ def gate_dense(
             "labeled_rows": max(pool["top1_all"].total for pool in pools_base),
             "seeds": [seed, *extra_seeds],
             "decision_basis": "pooled" if runs > 1 else "single_run",
+            # Per-run ECE, so a verdict that hinges on calibration can be read
+            # against the spread between seeds instead of a single average.
+            "ece_per_run": {
+                "base": [round(value, 4) for value in base_eces],
+                "new": [round(value, 4) for value in new_eces],
+            },
+            "ece_basis": "pooled_reliability" if runs > 1 else "single_run",
+            "ece_mean_per_run": {
+                "base": round(sum(base_eces) / runs, 4),
+                "new": round(sum(new_eces) / runs, 4),
+            },
             **verdict.as_dict(),
         }
         destination = report or models_dir / "dense-gate.json"
