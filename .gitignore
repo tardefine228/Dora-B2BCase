@@ -53,6 +53,9 @@ qdrant_storage/
 qdrant_storage_eval/
 *.onnx
 eval_report_ci.md
+eval_report_ci.json
+eval_report_ci_dense.md
+eval_report_ci_dense.json
 
 # Generated at runtime
 data/dense_cache/

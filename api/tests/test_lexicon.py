@@ -134,12 +134,27 @@ def test_lemma_stems_unify_inflected_forms():
     assert stems("Счётчики") == stems("счетчик")
 
 
-@pytest.mark.parametrize("query", ["Камера видеонаблюдения сетевая", "Камеры телевизионные", "Огнетушитель порошковый", "Порошок металлический"])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Камера видеонаблюдения сетевая",
+        "Камеры телевизионные",
+        "Огнетушитель порошковый",
+        "Порошок металлический",
+    ],
+)
 def test_ambiguous_products_do_not_bridge_to_unrelated_categories(query):
     assert not ({"покрышки", "моющие"} & set(bridged_targets(query).values()))
 
 
-@pytest.mark.parametrize(("query", "target"), [("Камера велосипедная", "покрышки"), ("Камеры резиновые", "покрышки"), ("Порошок стиральный", "моющие")])
+@pytest.mark.parametrize(
+    ("query", "target"),
+    [
+        ("Камера велосипедная", "покрышки"),
+        ("Камеры резиновые", "покрышки"),
+        ("Порошок стиральный", "моющие"),
+    ],
+)
 def test_ambiguous_products_keep_bridges_in_confirmed_context(query, target):
     assert target in bridged_targets(query).values()
 

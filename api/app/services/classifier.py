@@ -234,20 +234,53 @@ def _codeless_hint(best, confidence: float) -> Alternative:
     )
 
 
-def _distinct_alternatives(ranked, status: str, threshold_review: float) -> list[Alternative]:
+def _anchored(candidate, query_stems: set[str] | None) -> bool:
+    """Does the candidate position share a content stem with the query?"""
+    if not query_stems:
+        return False
+    from ml.features import content_stems, stems
+
+    return bool(query_stems & content_stems(set(stems(candidate.title))))
+
+
+def _query_content_stems(query: str) -> set[str]:
+    """Content stems of the query, with the lexicon bridges' canonical words."""
+    from ml.features import content_stems, stems
+    from ml.lexicon import bridged_targets
+
+    values = set(stems(query))
+    for target in bridged_targets(query).values():
+        values |= set(stems(target))
+    return content_stems(values)
+
+
+def _distinct_alternatives(
+    ranked, status: str, query_stems: set[str] | None = None
+) -> list[Alternative]:
     """Up to ``_MAX_ALTERNATIVES`` runner-up positions with distinct codes.
 
     The same position is often listed in several appendices (and Qdrant stores
     one point per appendix row), so the raw ranking contains duplicates that
-    would otherwise crowd out genuinely different suggestions. For ``not_found``
-    answers only candidates above the review threshold are kept.
+    would otherwise crowd out genuinely different suggestions.
+
+    A ``not_found`` answer used to keep only candidates whose *pair* probability
+    cleared ``threshold_review`` — but that threshold lives on the group
+    confidence scale, and ``not_found`` already means the group confidence is
+    below it, so the filter could never pass and the hint channel was dead: all
+    108 out-of-catalog rows in the labeled set came back with an empty
+    ``alternatives`` list even when the correct position ranked first. A lead
+    after «нет в каталоге» is now kept when it is lexically anchored in the
+    query — at least one content stem in common — so the specialist still gets
+    ranked leads, while a dense near-miss with nothing in common («false
+    friend») or a meaningless query («qwerty zxcvbn asdf») yields no invented
+    hint. The answer's ``status`` remains ``not_found``: a lead is not a claim.
     """
     alternatives: list[Alternative] = []
     seen_codes = {ranked[0].code}
     for candidate in ranked[1:]:
         if candidate.code in seen_codes:
             continue
-        if status == "not_found" and candidate.probability < threshold_review:
+        if status == "not_found" and not _anchored(candidate, query_stems):
             continue
         seen_codes.add(candidate.code)
         alternatives.append(
@@ -359,7 +392,21 @@ class CatalogClassifier:
             raise ValueError(f"В каталоге нет записей: {self.catalog_path}")
         self._dense = _build_dense_index(self.index) if dense == "auto" else dense
         tag = self._dense.tag if self._dense is not None else None
-        loaded_reranker = reranker if reranker is not None else _load_reranker(tag)
+        # Same escape hatch as the qdrant backend: a wrong or untested artifact must
+        # be rollable back without rebuilding the image, and without losing vector
+        # candidates (VECTOR_SEARCH=false would drop those too).
+        reranker_tag = tag
+        if tag and settings.semantic_reranker == "lexical":
+            logger.warning(
+                "SEMANTIC_RERANKER=lexical: каталоговый режим скорит %s, а не "
+                "реранкером эмбеддера %s (векторы остаются кандидатами)",
+                "reranker.json",
+                tag,
+            )
+            reranker_tag = None
+        loaded_reranker = (
+            reranker if reranker is not None else _load_reranker(reranker_tag)
+        )
         self._reranker = _apply_catalog_floors(loaded_reranker)
         logger.info(
             "CatalogClassifier загружен: %d позиций из %s (reranker=%s, vector=%s)",
@@ -368,19 +415,32 @@ class CatalogClassifier:
             type(self._reranker).__name__ if self._reranker else "none",
             tag or "off",
         )
+        self._reranker_name = _reranker_artifact_name(self._reranker, reranker_tag)
 
     @property
     def vector_info(self) -> dict:
         """Status of the vector layer for /health (what is actually serving requests)."""
         if self._dense is None:
-            return {"enabled": False, "embedder": None, "dim": 0, "scoring": "lexical"}
+            return {
+                "enabled": False,
+                "embedder": None,
+                "dim": 0,
+                "positions": 0,
+                "store": None,
+                # Which artifact scores is part of the contract even without vectors:
+                # eval reports record it as provenance, and the rollback must be visible.
+                "reranker": self._reranker_name,
+                "scoring": "vector-features"
+                if getattr(self._reranker, "uses_dense", False)
+                else "lexical-reranker",
+            }
         return {
             "enabled": True,
             "embedder": self._dense.tag,
             "dim": self._dense.dim,
             "positions": len(self._dense.names),
             "store": self._dense.store,
-            "reranker": _reranker_artifact_name(self._reranker, self._dense.tag),
+            "reranker": self._reranker_name,
             "scoring": "vector-features"
             if getattr(self._reranker, "uses_dense", False)
             else "lexical-reranker",
@@ -642,7 +702,7 @@ class CatalogClassifier:
         raw_confidence = round(min(max(raw_confidence, 0.0), 1.0), 4)
         confidence = round(_display_confidence(self._reranker, raw_confidence), 4)
 
-        threshold_review = getattr(self._reranker, "threshold_review", 0.45)
+        query_stems = _query_content_stems(query)
 
         if status == "not_found" or not best.code:
             # Too weak to suggest a position — or the winning position has no
@@ -650,7 +710,12 @@ class CatalogClassifier:
             # one. Report "не найдено"; keep at most plausible near-misses in
             # alternatives, and a demoted codeless winner stays visible as the
             # first hint (with its title and source) for the specialist.
-            alternatives = _distinct_alternatives(ranked, "not_found", threshold_review)
+            # A demoted codeless winner is not a below-threshold silence: the
+            # query did hit the catalog, so its runner-ups stay unfiltered — only
+            # genuine "nothing matched" answers need the lexical-anchor rule.
+            alternatives = _distinct_alternatives(
+                ranked, "not_found" if status == "not_found" else "review", query_stems
+            )
             if status != "not_found":
                 logger.info(
                     "Позиция без кода ОКПД2 понижена до not_found: query=%r title=%r",
@@ -674,7 +739,7 @@ class CatalogClassifier:
                 latency_ms=0.0,
             )
 
-        alternatives = _distinct_alternatives(ranked, status, threshold_review)
+        alternatives = _distinct_alternatives(ranked, status, query_stems)
         return ClassifyResponse(
             query=query,
             code=best.code,
@@ -880,13 +945,15 @@ class QdrantClassifier:
                 raw_confidence, status = self._reranker.evaluate(query, ranked)
                 raw_confidence = round(min(max(raw_confidence, 0.0), 1.0), 4)
                 confidence = round(_display_confidence(self._reranker, raw_confidence), 4)
-                threshold_review = getattr(self._reranker, "threshold_review", 0.45)
+                query_stems = _query_content_stems(query)
                 code_role, review_flag = self._catalog_flags_for(best.payload)
                 if status == "not_found" or not best.code:
                     # Invariant 5 (BE-9): ok/review without a code is forbidden, so
                     # a codeless winner («Не указан») is demoted and stays visible
                     # as the first alternative.
-                    alternatives = _distinct_alternatives(ranked, "not_found", threshold_review)
+                    alternatives = _distinct_alternatives(
+                        ranked, "not_found" if status == "not_found" else "review", query_stems
+                    )
                     if status != "not_found":
                         logger.info(
                             "Позиция без кода ОКПД2 понижена до not_found: query=%r title=%r",
@@ -912,7 +979,7 @@ class QdrantClassifier:
                         )
                     )
                     continue
-                alternatives = _distinct_alternatives(ranked, status, threshold_review)
+                alternatives = _distinct_alternatives(ranked, status, query_stems)
                 clause_ref = best.clause_ref
                 clause_url = clause_url_for(best.payload.get("record_id"))
                 code, title = best.code, best.title
