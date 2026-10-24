@@ -92,3 +92,50 @@ def test_status_still_uses_the_raw_scale(restore_floors):
 def test_helper_tolerates_a_reranker_without_a_confidence_model():
     """The optional-model branch must not raise on minimal rerankers."""
     assert _apply_semantic_floors(SimpleNamespace()) is not None
+
+
+# --- a configured floor that belongs to another artifact -------------------------
+
+
+def test_drifted_floor_on_a_vector_artifact_is_reported_loudly(restore_floors, caplog):
+    """``QDRANT_REVIEW_FLOOR=0.25`` was measured for the *lexical* artifact.
+
+    The shipped artifact now uses vector features and its own review threshold is
+    0.62; measured on the labeled set with this floor the semantic backend answers
+    50 % of the out-of-catalog rows correctly instead of 97 %. The value stays a
+    deployment decision, but it must not pass silently.
+    """
+    settings.semantic_ok_floor = LEXICAL_OK
+    settings.semantic_review_floor = SEMANTIC_REVIEW
+    reranker = make_reranker(review=0.62)
+    reranker.uses_dense = True
+
+    with caplog.at_level("WARNING"):
+        _apply_semantic_floors(reranker)
+
+    assert any("перемерьте порог" in record.message.lower() or "Перемерьте" in record.message
+               for record in caplog.records), [r.message for r in caplog.records]
+
+
+def test_floor_matching_the_artifact_is_not_reported(restore_floors, caplog):
+    settings.semantic_ok_floor = LEXICAL_OK
+    settings.semantic_review_floor = 0.620
+    reranker = make_reranker(review=0.62)
+    reranker.uses_dense = True
+
+    with caplog.at_level("WARNING"):
+        _apply_semantic_floors(reranker)
+
+    assert not [record for record in caplog.records if record.levelname == "WARNING"]
+
+
+def test_lexical_artifact_never_gets_the_drift_warning(restore_floors, caplog):
+    """The lexical path genuinely uses the floor as measured — no warning there."""
+    settings.semantic_ok_floor = LEXICAL_OK
+    settings.semantic_review_floor = SEMANTIC_REVIEW
+    reranker = make_reranker(review=0.165)
+
+    with caplog.at_level("WARNING"):
+        _apply_semantic_floors(reranker)
+
+    assert not [record for record in caplog.records if record.levelname == "WARNING"]
