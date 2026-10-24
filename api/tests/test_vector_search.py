@@ -98,6 +98,44 @@ def test_classifier_reports_vector_layer(monkeypatch):
     assert classifier.classify("Ноутбук Lenovo").code == "26.20.11"
 
 
+def test_catalog_backend_honours_the_lexical_rollback(monkeypatch):
+    """SEMANTIC_RERANKER=lexical must roll back the *scoring* artifact, not the vectors.
+
+    Turning VECTOR_SEARCH off would also drop vector candidates from the shortlist, so
+    the escape hatch has to swap only the reranker — and it must work in the catalog
+    backend, not just in the qdrant one, because the catalog backend is the default.
+    """
+    from app.services import classifier as classifier_module
+
+    requested: list[str | None] = []
+
+    from ml import config as ml_config
+    from ml.reranker import LogisticReranker
+
+    lexical_artifact = LogisticReranker.load(ml_config.ARTIFACTS_DIR / "reranker.json")
+
+    def fake_load_reranker(tag=None):
+        requested.append(tag)
+        return lexical_artifact
+
+    monkeypatch.setattr(classifier_module, "_load_reranker", fake_load_reranker)
+    monkeypatch.setattr(settings, "vector_search", True)
+    monkeypatch.setattr(settings, "vector_store", "memory")
+    monkeypatch.setattr(settings, "data_dir", str(Path("/tmp/dora-test-dense")))
+
+    monkeypatch.setattr(settings, "semantic_reranker", "auto")
+    classifier = CatalogClassifier(CATALOG)
+    assert requested[-1] == "test-hashing"
+    assert classifier.vector_info["enabled"] is True
+
+    monkeypatch.setattr(settings, "semantic_reranker", "lexical")
+    classifier = CatalogClassifier(CATALOG)
+    assert requested[-1] is None, "откат обязан просить лексический артефакт"
+    assert classifier.vector_info["enabled"] is True, "векторы остаются кандидатами"
+    assert classifier.vector_info["reranker"] == "reranker.json"
+    assert classifier.vector_info["scoring"] == "lexical-reranker"
+
+
 def test_classifier_survives_embedder_failure(monkeypatch):
     monkeypatch.setattr(settings, "vector_search", True)
 
