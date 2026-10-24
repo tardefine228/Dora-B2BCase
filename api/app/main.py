@@ -25,12 +25,19 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.log_config import configure_logging
-from app.core.metrics import metrics as metrics_store
+from app.core.metrics import (
+    metrics as metrics_store,
+)
+from app.core.metrics import (
+    prometheus_latest,
+    refresh_health_gauges,
+    set_build_info,
+)
 from app.dispatch import enqueue_batch
 from app.job_store import (
     BatchJob,
@@ -57,6 +64,8 @@ from app.schemas import (
     CatalogUploadResponse,
     ClassifyRequest,
     ClassifyResponse,
+    FeedbackRequest,
+    FeedbackSaved,
     FileBatchJobAccepted,
     ReindexJobAccepted,
     ReindexJobStatusResponse,
@@ -70,7 +79,13 @@ from app.services.catalog_io import (
     validate_rows,
     write_catalog,
 )
-from app.services.classifier import CachedClassifier, get_classifier, reset_classifier
+from app.services.classifier import (
+    CachedClassifier,
+    get_classifier,
+    reset_classifier,
+    vector_layer_health,
+)
+from app.services.feedback_store import save_feedback
 from app.services.file_items import (
     SUPPORTED_EXTENSIONS,
     FileParseError,
@@ -156,6 +171,10 @@ app.add_middleware(RateLimitMiddleware)
 # rate limiter and the size limiter.
 app.add_middleware(ObserveMiddleware)
 
+# Pin the running build/configuration as an info gauge at import time so it is
+# present in every scrape, even before the lifespan has run (BE-6).
+set_build_info(app.version)
+
 
 def _resolve_frontend_dir(module_file: str | Path = __file__) -> Path | None:
     """Find static UI files in both the source tree and the Docker image.
@@ -223,14 +242,19 @@ def _batch_status(job: BatchJob) -> BatchJobStatusResponse:
 
 
 # CSV export of a finished batch (matches the client-side exporter in frontend/src).
+# ``code_role``/``catalog_review_required`` (BE-9) are catalog facts the specialist
+# must see in the export as well; empty cells mean "catalog does not say".
 CSV_COLUMNS: tuple[str, ...] = (
     "query",
     "code",
     "title",
     "status",
     "confidence",
+    "confidence_raw",
     "clause_ref",
     "clause_url",
+    "code_role",
+    "catalog_review_required",
     "alt1_code",
     "alt1_title",
     "alt2_code",
@@ -241,6 +265,10 @@ CSV_COLUMNS: tuple[str, ...] = (
 _CSV_ALTERNATIVES = 3
 # Excel on a Russian locale expects ";" separators and a BOM in an UTF-8 file.
 BATCH_CSV_BOM = "\ufeff"
+
+
+def _csv_flag(value: bool | None) -> str:
+    return "" if value is None else ("True" if value else "False")
 
 # Server-sent events for batch progress (see frontend/src for the client).
 SSE_POLL_SECONDS = 0.25
@@ -258,8 +286,11 @@ def _build_batch_csv(results: list[ClassifyResponse]) -> str:
             result.title or "",
             result.status,
             f"{result.confidence:.4f}",
+            f"{result.confidence_raw:.4f}" if result.confidence_raw is not None else "",
             result.clause_ref or "",
             result.clause_url or "",
+            result.code_role or "",
+            _csv_flag(result.catalog_review_required),
         ]
         alternatives = result.alternatives[:_CSV_ALTERNATIVES]
         for alternative in alternatives:
@@ -391,14 +422,45 @@ def readiness() -> dict:
         "classifier_backend": settings.classifier_backend,
         "version": app.version,
         "vector_search": _vector_info(),
+        # Live health of the embedder and the vector store (BE-6): TTL-cached,
+        # informational — a degraded store does not make the service unready
+        # (search falls back to memory), but it must be visible to operators.
+        "vector_health": vector_layer_health(),
         "job_store": settings.job_store,
         "queue_backend": settings.queue_backend,
+        # Third stage (эксп. 32): visible to operators, because "why is this code
+        # marked verified" must be answerable without reading the logs. `off` is
+        # the normal state of a deployment without an LLM key.
+        "llm_verifier": (
+            "off"
+            if not settings.llm_verifier_enabled or not settings.llm_verifier_model
+            else f"on:{settings.llm_verifier_model}"
+        ),
     }
 
 
-@app.get("/metrics", tags=["system"])
-def metrics_endpoint() -> dict:
-    return metrics_store.snapshot()
+@app.get("/metrics", tags=["system"], summary="Метрики: Prometheus (по умолчанию) или JSON")
+def metrics_endpoint(request: Request) -> Response:
+    """Operational metrics for scraping (BE-6).
+
+    Default exposition is the Prometheus text format (``text/plain;
+    version=0.0.4``): counters by path/method/status, a latency histogram,
+    rate-limit rejections, classification answers by status, batch job events
+    and health gauges of the classifier, embedder and vector store. Clients
+    sending ``Accept: application/json`` get the legacy in-process snapshot
+    plus the same health block under ``vector_health``.
+
+    The health probe is TTL-cached (10 s), so scraping never turns into a
+    network ping per scrape even when Qdrant is down.
+    """
+    health = vector_layer_health()
+    refresh_health_gauges(health)
+    if "application/json" in request.headers.get("accept", ""):
+        payload = metrics_store.snapshot()
+        payload["vector_health"] = health
+        return JSONResponse(payload)
+    body, content_type = prometheus_latest()
+    return Response(content=body, media_type=content_type)
 
 
 @app.post(
@@ -412,8 +474,36 @@ def classify(request: ClassifyRequest) -> ClassifyResponse:
     result = _classifier_or_503().classify(request.name)
     latency_ms = (time.perf_counter() - started) * 1000
     answer = result.model_copy(update={"query": request.name, "latency_ms": round(latency_ms, 3)})
+    metrics_store.record_classification("single", answer.status)
     audit_classifications("single", [answer])
     return answer
+
+
+@app.post(
+    "/feedback",
+    response_model=FeedbackSaved,
+    tags=["classification"],
+    summary="Сохранить проверку кода специалистом",
+    status_code=201,
+)
+def submit_feedback(payload: FeedbackRequest) -> FeedbackSaved:
+    if payload.verdict == "incorrect" and not (payload.corrected_code or "").strip():
+        raise HTTPException(status_code=422, detail="Введите правильный код ОКПД2")
+    try:
+        record_id = save_feedback(
+            payload.query,
+            payload.predicted_code,
+            payload.verdict,
+            payload.corrected_code.strip()
+            if payload.verdict == "incorrect" and payload.corrected_code
+            else None,
+        )
+    except Exception as exc:
+        logger.exception("Не удалось сохранить feedback")
+        raise HTTPException(
+            status_code=503, detail="Не удалось сохранить оценку. Повторите позже."
+        ) from exc
+    return FeedbackSaved(id=record_id)
 
 
 @app.post(
@@ -434,6 +524,7 @@ def classify_batch(
         raise HTTPException(status_code=429, detail=str(exc), headers={"Retry-After": "5"}) from exc
 
     logger.info("Batch job accepted job_id=%s batch_size=%d", job.job_id, len(job.items))
+    metrics_store.record_batch_job("accepted")
     enqueue_batch(job.job_id, background_tasks, _run_batch_job)
     return BatchJobAccepted(
         job_id=job.job_id,
@@ -484,6 +575,7 @@ async def classify_file(
         len(job.items),
         extracted.total_found,
     )
+    metrics_store.record_batch_job("accepted")
     enqueue_batch(job.job_id, background_tasks, _run_batch_job)
     return FileBatchJobAccepted(
         job_id=job.job_id,
@@ -637,7 +729,7 @@ def get_source_fragment(
     response.headers["Cache-Control"] = "public, max-age=3600"
     if "text/html" in request.headers.get("accept", ""):
         return HTMLResponse(
-            _source_page(fragment), headers={"Cache-Control": "public, max-age=3600"}
+            _source_page(fragment), headers={"Cache-Control": "no-store"}
         )
     return fragment
 
@@ -649,10 +741,40 @@ def _render_decree(text: str, code: str) -> str:
 
     entry_re = re.compile(r"^(\d{1,5})\.\s+(.*)$")
     code_re = re.compile(r"\s(\d+(?:\.\d+){1,4})$")
+    # Remove repeated OCR table headings from the presentation only.
+    text = re.sub(
+        r"(?m)^(?:[ \t]*\d+[ \t]*\n)?[ \t]*Код товара[^\n]*\n"
+        r"(?:(?!\s*\d+\.\s|=== СТРАНИЦА)[^\n]*\n){0,12}?"
+        r"[ \t]*КПЕС[ \t]+2008[^\n]*",
+        "=== TABLE HEADER ===", text,
+    )
     out: list[str] = []
+    # Join PDF line wraps before rendering each numbered position.
+    lines: list[str] = []
     for raw in text.splitlines():
+        value = raw.strip()
+        if not value:
+            continue
+        previous_is_position = bool(lines) and bool(entry_re.match(lines[-1]))
+        if (
+            previous_is_position
+            and not entry_re.match(value)
+            and not value.startswith("===")
+            and lines[-1] != "=== TABLE HEADER ==="
+        ):
+            # Keep the code at the end while appending wrapped name text.
+            match = code_re.search(lines[-1])
+            if match:
+                lines[-1] = lines[-1][:match.start()] + " " + value + " " + match.group(1)
+            else:
+                lines[-1] += " " + value
+        else:
+            lines.append(value)
+    for raw in lines:
         line = raw.rstrip()
         if not line.strip():
+            continue
+        if line == "=== TABLE HEADER ===":
             continue
         page = re.match(r"^=== СТРАНИЦА (\d+) ===$", line.strip())
         if page:
@@ -690,7 +812,7 @@ def _source_page(fragment: SourceFragment) -> str:
         if part
     )
     sources = "\n".join(
-        f'<li><a href="{url}" target="_blank" rel="noopener noreferrer">{escape(title)}</a>'
+        f'<li><a href="{url}">{escape(title)}</a>'
         f"<span>{escape(note)}</span></li>"
         for title, url, note in DECREE_OFFICIAL_SOURCES
     )
@@ -725,15 +847,20 @@ text-transform:uppercase;letter-spacing:.06em}}
 .page-break{{margin:26px 0 12px;color:#9aa3bd;font-size:12px;letter-spacing:.12em;
 text-transform:uppercase;border-bottom:1px dashed #e1e6f1;padding-bottom:6px}}
 .page-break:first-child{{margin-top:0}}
+.table-heading{{display:grid;grid-template-columns:2.6em minmax(0,1fr) auto;gap:10px;
+padding:12px;margin-bottom:8px;border-bottom:1px solid #dbe1ef;color:#657293;
+font-size:13px;font-weight:600}}
 .pos{{display:flex;align-items:baseline;gap:10px;padding:7px 12px;border-radius:10px;
 border:1px solid transparent}}
 .pos .num{{color:#9aa3bd;min-width:2.6em;font-variant-numeric:tabular-nums}}
-.pos .name{{flex:1}}
+.pos .name{{flex:1;min-width:0;overflow-wrap:anywhere}}
 .pos .code{{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:#eef0ff;
 color:#3a3fd6;border-radius:7px;padding:2px 9px;white-space:nowrap}}
 .pos.hit{{background:#fff3bf;border-color:#f0d264}}
 .pos.hit .name{{font-weight:700}}
-.cont{{color:#55618a;padding:0 12px 6px 4.4em;font-size:15px}}
+.cont{{color:#55618a;padding:0 12px;font-size:14px;line-height:1.5}}
+@media(max-width:600px){{.doc{{padding:18px 12px}}.pos{{flex-wrap:wrap}}
+.pos .code{{margin-left:3.6em}}h1{{font-size:22px}}}}
 .hint{{color:#7584a8;font-size:13px;margin:16px 2px 0}}
 @media print{{.topline,.verify{{display:none}} body{{background:#fff}}
 .doc{{border:0;padding:0}}}}

@@ -14,7 +14,8 @@ from fastapi.testclient import TestClient
 client = TestClient(app)
 
 CSV_HEADER = (
-    "query;code;title;status;confidence;clause_ref;clause_url;"
+    "query;code;title;status;confidence;confidence_raw;clause_ref;clause_url;"
+    "code_role;catalog_review_required;"
     "alt1_code;alt1_title;alt2_code;alt2_title;alt3_code;alt3_title"
 )
 
@@ -41,12 +42,16 @@ def test_csv_export_has_bom_separators_and_headers() -> None:
     assert rows[1][0] == "Электрочайники"
     assert rows[1][1] == "27.51.24.110"
     assert rows[1][3] == "ok"
-    assert rows[1][6] == "/source/2-339-01"
+    assert rows[1][7] == "/source/2-339-01"
+    status = client.get(f"/classify/batch/{job_id}").json()
+    assert status["contract_version"] == "1.0"
+    assert rows[1][5] == f"{status['results'][0]['confidence_raw']:.4f}"
     # The status of the second row depends on the trained artifact (the
     # heuristic fallback answers "ok" where the model stays silent), so only
     # the shape of the column is asserted here.
     assert rows[2][0] == "Мышь компьютерная"
     assert rows[2][3] in {"ok", "review", "not_found"}
+    assert rows[2][5] == f"{status['results'][1]['confidence_raw']:.4f}"
 
 
 def test_csv_export_escapes_quotes_and_separators() -> None:
@@ -82,7 +87,20 @@ def test_csv_export_of_failed_job_returns_partial_results() -> None:
             code="26.20.11",
             title="Компьютеры портативные",
             confidence=0.9,
+            confidence_raw=0.73456,
             status="ok",
+            latency_ms=1.0,
+        ),
+    )
+    assert add_batch_result(
+        job.job_id,
+        ClassifyResponse(
+            query="Товар 2",
+            code=None,
+            title=None,
+            confidence=0.0,
+            confidence_raw=None,
+            status="not_found",
             latency_ms=1.0,
         ),
     )
@@ -91,8 +109,12 @@ def test_csv_export_of_failed_job_returns_partial_results() -> None:
     response = client.get(f"/classify/batch/{job.job_id}.csv")
     assert response.status_code == 200
     rows = list(csv.reader(io.StringIO(response.content.decode("utf-8-sig")), delimiter=";"))
-    assert len(rows) == 2
+    assert len(rows) == 3
     assert rows[1][0] == "Товар 1"
+    assert rows[1][5] == "0.7346"
+    # Older/persisted results may not have a raw confidence; retain a blank cell.
+    assert rows[2][0] == "Товар 2"
+    assert rows[2][5] == ""
 
 
 def test_events_stream_reports_progress_and_done() -> None:
@@ -122,6 +144,7 @@ def test_events_stream_reports_progress_and_done() -> None:
     assert 0 <= progress["completed"] <= 2
     done = events[-1][1]
     assert done["status"] == "completed"
+    assert done["contract_version"] == "1.0"
     assert done["completed"] == 2
     assert len(done["results"]) == 2
 

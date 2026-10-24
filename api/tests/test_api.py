@@ -41,13 +41,20 @@ def test_health_and_readiness() -> None:
 
 
 def test_metrics() -> None:
+    # BE-6: the default exposition is the Prometheus text format...
     response = client.get("/metrics")
     assert response.status_code == 200
-    body = response.json()
+    assert response.headers["content-type"].startswith("text/plain")
+    assert "# TYPE dora_http_requests_total counter" in response.text
+
+    # ...and clients asking for JSON keep the legacy in-process snapshot.
+    json_response = client.get("/metrics", headers={"Accept": "application/json"})
+    body = json_response.json()
     assert "total_requests" in body
     assert "average_latency_ms" in body
     # The middleware records a request after the endpoint has returned its snapshot.
     assert "/health" in body["requests_by_path"]
+    assert "vector_health" in body
 
 
 def test_classify_single_contract_and_request_id() -> None:

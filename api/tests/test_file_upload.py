@@ -93,7 +93,9 @@ def test_endpoint_classifies_each_item() -> None:
     body = response.json()
     assert body["items"] == ["Ноутбук Lenovo", "Мышь компьютерная"]
     assert body["total"] == 2
+    assert body["contract_version"] == "1.0"
     status = client.get(body["status_url"]).json()
+    assert status["contract_version"] == "1.0"
     assert status["status"] == "completed"
     assert [r["query"] for r in status["results"]] == body["items"]
 
@@ -103,3 +105,16 @@ def test_endpoint_error_codes() -> None:
     assert bad.status_code == 415
     empty = client.post("/classify/file", files={"file": ("a.txt", b"", "text/plain")})
     assert empty.status_code == 422
+
+
+def test_result_csv_reimport_uses_query_not_catalog_title_or_clause():
+    content = (
+        'query;code;title;status;confidence;clause_ref\n'
+        'Смартфон сенсорный;26.30.22;Аппараты телефонные;review;0.8;Приложение 2, позиция 212\n'
+        'Сервер стоечный;;;not_found;0;\n'
+        'Камера видеонаблюдения;;;not_found;0;\n'
+    )
+    result = extract_items('classification-results.csv', content.encode('utf-8-sig'))
+    assert result.source_column == 'query'
+    assert result.items == ['Смартфон сенсорный', 'Сервер стоечный', 'Камера видеонаблюдения']
+    assert result.total_found == 3

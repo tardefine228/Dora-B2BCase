@@ -1,6 +1,13 @@
 """Small async smoke/load test for the classification API.
 
+Прогоняет N batch-задач по M товаров через приём → опрос статуса → SSE и печатает
+латентность (p50/p95/p99) по фазам и пиковый RSS сервера (--pid, Linux /proc).
+
 Example: python scripts/load_test.py --base-url http://127.0.0.1:8000 --pid 12345
+
+Для повторяемости холодных прогонов используйте --tag <уникальный префикс>:
+имена товаров становятся уникальными между прогонами, поэтому response-кэш API
+и кэш запросов dense-индекса не переносятся с прошлого запуска.
 """
 
 from __future__ import annotations
@@ -8,6 +15,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import time
 from pathlib import Path
 
@@ -38,9 +46,33 @@ def process_rss_mb(pid: int) -> float | None:
     return None
 
 
+def percentile(values: list[float], pct: float) -> float:
+    """Nearest-rank percentile in ms (empty list → 0)."""
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    rank = max(1, math.ceil(pct / 100.0 * len(ordered)))
+    return round(ordered[min(rank, len(ordered)) - 1], 2)
+
+
+def latency_summary(values: list[float]) -> dict:
+    if not values:
+        return {}
+    return {
+        "count": len(values),
+        "min": round(min(values), 2),
+        "average": round(sum(values) / len(values), 2),
+        "p50": percentile(values, 50),
+        "p95": percentile(values, 95),
+        "p99": percentile(values, 99),
+        "max": round(max(values), 2),
+    }
+
+
 async def run(args: argparse.Namespace) -> None:
     timeout = httpx.Timeout(args.request_timeout)
-    latencies: list[float] = []
+    latencies: list[float] = []  # POST /classify/batch (acceptance path)
+    poll_latencies: list[float] = []  # GET /classify/batch/{id} (status path)
     maximum_rss: float | None = None
     stop_sampler = asyncio.Event()
 
@@ -65,7 +97,7 @@ async def run(args: argparse.Namespace) -> None:
             async def submit_batch(batch_number: int) -> dict:
                 payload = {
                     "items": [
-                        f"Нагрузочный тест {batch_number}: товар {item_number}"
+                        f"Нагрузочный тест {args.tag}{batch_number}: товар {item_number}"
                         for item_number in range(args.items)
                     ]
                 }
@@ -87,7 +119,9 @@ async def run(args: argparse.Namespace) -> None:
                     raise TimeoutError("Timed out waiting for batch jobs to finish")
 
                 async def poll_job(job_id: str, status_url: str) -> tuple[str, dict]:
+                    poll_started = time.perf_counter()
                     response = await client.get(status_url)
+                    poll_latencies.append((time.perf_counter() - poll_started) * 1000)
                     ensure_ok(response, f"GET {status_url}")
                     return job_id, response.json()
 
@@ -108,13 +142,12 @@ async def run(args: argparse.Namespace) -> None:
                 "total_items": len(jobs) * args.items,
                 "completed_items": sum(state["completed"] for state in final_states.values()),
                 "failed_jobs": len(failed),
-                "request_latency_ms": {
-                    "min": round(min(latencies), 2),
-                    "average": round(sum(latencies) / len(latencies), 2),
-                    "max": round(max(latencies), 2),
-                },
+                "request_latency_ms": latency_summary(latencies),
+                "poll_latency_ms": latency_summary(poll_latencies),
                 "total_elapsed_seconds": round(elapsed, 2),
-                "api_metrics": (await client.get("/metrics")).json(),
+                "api_metrics": (
+                    await client.get("/metrics", headers={"Accept": "application/json"})
+                ).json(),
                 "max_server_rss_mb": maximum_rss,
             }
             print(json.dumps(summary, ensure_ascii=False, indent=2))
@@ -134,6 +167,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--poll-interval", type=float, default=0.25)
     parser.add_argument("--completion-timeout", type=float, default=300.0)
     parser.add_argument("--request-timeout", type=float, default=30.0)
+    parser.add_argument(
+        "--tag",
+        default="",
+        help="prefix for item names: a unique tag per run keeps every run cold "
+        "(no response-cache or query-vector-cache hits from a previous run)",
+    )
     args = parser.parse_args()
     if args.concurrency < 1 or not 1 <= args.items <= 100:
         parser.error("concurrency must be >= 1 and items must be between 1 and 100")

@@ -95,6 +95,13 @@ def classifier() -> CatalogClassifier:
         ("Ситец набивной", "13.2"),
         ("Покрышка грузовая", "22.11.1"),
         ("Двери металлические входные", "25.12.10.000"),
+        # Третья волна: товар называется своим словом, перечень — официальным.
+        ("Перфоратор Bosch", "28.24.1"),
+        ("Микрофон динамический", "26.40.41.000"),
+        ("Дрон квадрокоптер", "30.30.32.150"),
+        ("Снегоход буран", "29.10.52.110"),
+        ("Мангал", "27.51.28"),
+        ("Пазл", "32.4"),
     ],
 )
 def test_bridged_queries_reach_their_category(classifier, query: str, code: str) -> None:
@@ -132,3 +139,130 @@ def test_lemma_stems_unify_inflected_forms():
     assert stems("Станки") == stems("станок")
     assert stems("Гобои") == stems("Гобой")
     assert stems("Счётчики") == stems("счетчик")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Камера видеонаблюдения сетевая",
+        "Камеры телевизионные",
+        "Огнетушитель порошковый",
+        "Порошок металлический",
+    ],
+)
+def test_ambiguous_products_do_not_bridge_to_unrelated_categories(query):
+    assert not ({"покрышки", "моющие"} & set(bridged_targets(query).values()))
+
+
+@pytest.mark.parametrize(
+    ("query", "target"),
+    [
+        ("Камера велосипедная", "покрышки"),
+        ("Камеры резиновые", "покрышки"),
+        ("Порошок стиральный", "моющие"),
+    ],
+)
+def test_ambiguous_products_keep_bridges_in_confirmed_context(query, target):
+    assert target in bridged_targets(query).values()
+
+
+@pytest.mark.parametrize(
+    ("query", "forbidden"),
+    [
+        # Уничтожитель документов — офисная машина, а не «бумага и картон».
+        ("Шредер для бумаги", "бумага"),
+        # Модификатор комнаты решает: кухонная мебель против офисной.
+        ("Стол офисный", "кухонная"),
+        ("Стол кухонный", "офисов"),
+        ("Стол обеденный", "офисов"),
+        # Без «металлическая» кровать/шкаф — не металлическая мебель.
+        ("Кровать деревянная", "металлическая"),
+        ("Шкаф книжный", "металлическая"),
+        # Настольный компьютер — не повод тянуть любую компьютерную периферию.
+        ("Гарнитура для компьютера", "вычислительные"),
+        # Холодильная камера против камеры наблюдения.
+        ("Камера холодильная", "камеры"),
+    ],
+)
+def test_new_bridges_respect_their_guards(query, forbidden):
+    assert forbidden not in bridged_targets(query).values()
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("Шредер для бумаги", "офисные"),
+        ("Бумага офисная А4", "бумага"),
+        ("Стол офисный", "офисов"),
+        ("Стол письменный", "офисов"),
+        ("Кресло офисное эргономичное", "офисов"),
+        ("Журнальный стол", "гостиной"),
+        ("Кровать металлическая", "металлическая"),
+        ("Компьютер настольный", "вычислительные"),
+        ("Камера видеонаблюдения", "камеры"),
+    ],
+)
+def test_new_bridges_fire_in_their_context(query, expected):
+    assert expected in bridged_targets(query).values()
+
+
+def test_training_does_not_label_ambiguous_bare_words_as_positive():
+    from ml.train_reranker import bridge_sources_by_name
+    catalog = [
+        {"name": "Шины, покрышки и камеры резиновые новые", "pp_code": "22.11.1"},
+        {"name": "Средства моющие и стиральные", "pp_code": "20.41.32"},
+    ]
+    sources = {word for words in bridge_sources_by_name(catalog).values() for word in words}
+    assert "камера" not in sources
+    assert "порошок" not in sources
+    assert "шина" in sources
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # «офисный» — модификатор, а не товар: волна 4 сняла его с мебели
+        # (эксп. 30). Иначе эти товары уходили в 31.01.1 «Мебель для офисов».
+        "Ламинатор офисный",
+        "Сервер офисный",
+        "Пылесос офисный",
+        "Степлер офисный",
+        "Дырокол офисный",
+        "Моноблок офисный 23\"",
+        "Кофемашина офисная",
+        "Маршрутизатор Wi-Fi офисный",
+        "АТС офисная мини",
+        # Медицинские и парикмахерские кресла — не офисная мебель.
+        "Кресло-коляска",
+        "Стул медицинский",
+        "Кресло стоматологическое",
+    ],
+)
+def test_office_modifier_does_not_mean_furniture(query):
+    assert "офисов" not in bridged_targets(query).values()
+
+
+def test_office_furniture_heads_bridge_to_the_office_position():
+    from ml.lexicon import CANONICAL_CODES
+
+    assert CANONICAL_CODES["офисов"] == "31.01.1"
+    for query in (
+        "Стул офисный на металлокаркасе",
+        "Кресло для посетителей",
+        "Тумба приставная",
+        "Диван офисный 3-местный",
+        "Перегородка офисная мобильная",
+        "Ресепшн-стойка",
+    ):
+        assert bridged_targets(query).values(), query
+
+
+def test_desk_context_decides_between_office_and_kitchen():
+    assert "офисов" in bridged_targets("Стол письменный офисный").values()
+    assert "офисов" in bridged_targets("Стол руководителя").values()
+    assert "офисов" not in bridged_targets("Стол кухонный").values()
+    # Журнальный стол — гостиная (31.09.12), а не кухня.
+    from ml.lexicon import CANONICAL_CODES
+
+    assert CANONICAL_CODES["гостиной"] == "31.09.12"
+    assert bridged_targets("Журнальный стол") == {"журнальный": "гостиной"}

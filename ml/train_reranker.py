@@ -31,7 +31,7 @@ from __future__ import annotations
 import argparse
 import random
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ml.catalog_loader import load_catalog
@@ -40,6 +40,7 @@ from ml.features import (
     build_known_stems,
     idf_table,
     lexical_score_prepared,
+    normalize,
     prepare_candidate,
     stem,
     stems,
@@ -138,7 +139,21 @@ MODEL_WORDS = (
 # model must learn that a catalog modifier ("бытовой", "компьютерный") matching
 # around an unknown head noun is not a hit. The list is deliberately disjoint
 # from eval/labeled_examples.csv, which stays a clean measurement set; heads
-# that happen to be in the catalog vocabulary are skipped at training time.
+# that happen to be in the catalog vocabulary are skipped at generation time.
+#
+# A head is a *safe* negative only while nothing in the product claims the word.
+# Two filters apply, both at generation time (``make_negative_queries``):
+#
+#   * the catalog vocabulary — the position name is the answer;
+#   * ``ml.lexicon.BRIDGES`` — a bridged word is declared in scope by the
+#     lexicon, so a "must stay silent" label for it would be a wrong label, not
+#     a hard case. Eight heads moved in scope with the third bridge wave
+#     ("колонка" → «Громкоговорители», "дрель" → «Инструменты ручные
+#     электрические», "гантели" → «Инвентарь ... для занятий физкультурой»,
+#     plus "клавиатура", "сканер", "флешка", "миксер", "шуруповерт"). Leaving
+#     them in was not harmless: the calibration platform scored every correct
+#     answer to them as a miss, refitted the display map downwards by 0.67 logit
+#     and pushed the labeled-set ECE from 0.058 to 0.121 (experiment 29).
 OUT_OF_SCOPE_HEADS = (
     "диван",
     "кофеварка",
@@ -266,6 +281,8 @@ def make_negative_queries(
     for head in OUT_OF_SCOPE_HEADS:
         if stem(head) in known_stems:
             continue  # the catalog does mention it — not a safe negative
+        if bridged_targets(head):
+            continue  # the lexicon maps it to a position — in scope by declaration
         queries.append(head)
         queries.append(f"{head} {rng.choice(HARD_NEGATIVE_MODIFIERS)}")
         queries.append(f"{rng.choice(HARD_NEGATIVE_MODIFIERS)} {head}")
@@ -278,6 +295,10 @@ def make_negative_queries(
             )
         if rng.random() < 0.3:
             queries.append(_typo(head, rng))
+    # A probe must be out of scope *as a whole*, not only in its head noun: the
+    # lexicon also owns modifiers ("офисный" → «офисов»), and a probe carrying
+    # one is answered by the bridge, which then counts as a wrong answer.
+    queries = [query for query in queries if not bridged_targets(query)]
     for _ in range(garbage):
         words = [
             "".join(rng.choice(_GARBAGE_SYLLABLES) for _ in range(rng.randint(2, 4)))
@@ -474,7 +495,7 @@ def bridge_sources_by_name(catalog: list[dict]) -> dict[str, list[str]]:
 
     sources: dict[str, list[str]] = {}
     for source, target in BRIDGES.items():
-        if target in canonical:
+        if target in canonical and target in bridged_targets(source).values():
             sources.setdefault(canonical[target][1], []).append(source)
     return sources
 
@@ -734,13 +755,21 @@ def calibrate_thresholds(
 # Every query is scored through a faithful copy of the API's catalog pipeline
 # (retrieval shortlist → reranker → confidence model); ``api/tests/
 # test_calibration.py`` pins that copy against the real classifier.
+#
+# A modifier must add *no catalog content*: a modifier that also names a
+# position hijacks the retrieval instead of decorating it. "специализированные"
+# did exactly that — it beat the product word in nine of the platform rows
+# ("специализированные блокнот" → «Контейнеры специализированные») and made the
+# platform look 1.6 points harder than it is. The list therefore holds style
+# words only, and ``api/tests/test_calibration.py`` pins that no modifier stem
+# occurs in a catalog position name.
 CALIBRATION_MODIFIERS = (
     "демисезонные",
-    "спортивные",
-    "домашние",
+    "переносные",
+    "усиленные",
     "зимние",
     "утепленные",
-    "специализированные",
+    "облегченные",
     "дачные",
 )
 # Gentlest-slope policy: the map must reach the ECE target on the platform
@@ -778,14 +807,10 @@ def calibration_index(catalog: list[dict]) -> list[dict]:
     return list(by_key.values())
 
 
-def calibration_confidence(
+def calibration_ranked(
     reranker: LogisticReranker, index: list[dict], query: str, dense: DenseIndex | None = None
-) -> tuple[float, str, str | None]:
-    """Score one query exactly as the API's catalog backend does.
-
-    Returns ``(raw_confidence, status, predicted_code)``. ``status ==
-    "not_found"`` corresponds to the API's zeroed confidence.
-    """
+) -> list[RankedCandidate]:
+    """Retrieve and rank the complete candidate set used by the API."""
     from ml.features import idf_table, lexical_score_prepared, prepare_candidate, stem
     from ml.fuzzy import autocorrect
 
@@ -797,7 +822,7 @@ def calibration_confidence(
     bridge_stems = {stem(target) for target in set(bridged_targets(query).values())}
     query_tokens = set(calibration_tokens(query))
     if not query_tokens:
-        return 0.0, "not_found", None
+        return []
     scored: list[tuple[float, dict]] = []
     for row in index:
         score = lexical_score_prepared(prepared_query, row["prepared"])
@@ -821,7 +846,7 @@ def calibration_confidence(
     else:
         fused = [(score, row, 0.0, 0.0) for score, row in shortlist]
     if not fused:
-        return 0.0, "not_found", None
+        return []
     # Same retrieval scores the API hands the reranker (retrieval_margin).
     candidates = [
         RankedCandidate(
@@ -834,6 +859,15 @@ def calibration_confidence(
         for score, row, cosine, dense_top in fused
     ]
     ranked = reranker.rerank(query, candidates)
+    return ranked
+
+
+def calibration_confidence(
+    reranker: LogisticReranker, index: list[dict], query: str, dense: DenseIndex | None = None
+) -> tuple[float, str, str | None]:
+    ranked = calibration_ranked(reranker, index, query, dense)
+    if not ranked:
+        return 0.0, "not_found", None
     raw_confidence, status = reranker.evaluate(query, ranked)
     return min(max(raw_confidence, 0.0), 1.0), status, ranked[0].code
 
@@ -850,12 +884,22 @@ def code_matches(predicted: str | None, expected: str) -> bool:
     )
 
 
-def build_calibration_cases(catalog: list[dict], rng: random.Random) -> list[tuple[str, str]]:
+def build_calibration_cases(
+    catalog: list[dict],
+    rng: random.Random,
+    excluded_queries: set[str] | None = None,
+) -> list[tuple[str, str]]:
     """``(query, expected_code)`` pairs of the calibration platform.
 
     An empty expected code marks an out-of-scope probe: the correct behaviour is
     silence, so any answered row counts as a miss.
+
+    ``excluded_queries`` (normalized) is the measurement set. It is filtered
+    here rather than by the caller: a bridge source can be a labeled query
+    verbatim ("квадрокоптер", "пазл", "скейтборд", "мангал" all are), and the
+    platform must never contain the rows the calibrated scale is judged on.
     """
+    excluded = excluded_queries or set()
     code_by_title = {item["name"]: (item.get("pp_code") or "") for item in catalog}
     cases: list[tuple[str, str]] = []
     for title, sources in sorted(bridge_sources_by_name(catalog).items()):
@@ -868,7 +912,7 @@ def build_calibration_cases(catalog: list[dict], rng: random.Random) -> list[tup
             cases.append((f"{rng.choice(CALIBRATION_MODIFIERS)} {source}", code))
     known_stems = build_known_stems([item["name"] for item in catalog])
     cases.extend((query, "") for query in make_negative_queries(rng, known_stems))
-    return cases
+    return [case for case in cases if normalize(case[0]) not in excluded]
 
 
 def fit_display_calibration(
@@ -876,6 +920,7 @@ def fit_display_calibration(
     catalog: list[dict],
     rng: random.Random,
     use_dense: bool = False,
+    excluded_queries: set[str] | None = None,
 ) -> tuple[Calibration, dict]:
     """Fit the display map on the calibration platform; returns (map, stats).
 
@@ -884,7 +929,7 @@ def fit_display_calibration(
     """
     index = calibration_index(catalog)
     dense = DenseIndex.build([row["name"] for row in index]) if use_dense else None
-    cases = build_calibration_cases(catalog, rng)
+    cases = build_calibration_cases(catalog, rng, excluded_queries)
     confidences: list[float] = []
     labels: list[int] = []
     for query, expected in cases:
@@ -998,6 +1043,32 @@ def _groups(pairs: list[TrainingPair]) -> dict[str, list[TrainingPair]]:
     return by_query
 
 
+def split_query_groups(pairs, rng, validation_share=0.25):
+    """Keep all candidates for a query in one partition; merge duplicate labels.
+
+    A candidate marked positive by any source must not also be a negative for
+    the same normalized query. This is training preparation, not evaluation.
+    """
+    merged = {}
+    for pair in pairs:
+        key = (normalize(pair.query), pair.title, pair.code)
+        old = merged.get(key)
+        if old is None or pair.label > old.label:
+            merged[key] = replace(pair, query=key[0])
+    groups = {}
+    for (query, _title, _code), pair in merged.items():
+        groups.setdefault(query, []).append(pair)
+    if len(groups) < 2:
+        raise ValueError("At least two query groups are required")
+    keys = sorted(groups)
+    rng.shuffle(keys)
+    count = max(1, min(len(keys) - 1, round(len(keys) * validation_share)))
+    validation = set(keys[:count])
+    training_pairs = [p for q in keys if q not in validation for p in groups[q]]
+    validation_pairs = [p for q in keys if q in validation for p in groups[q]]
+    return training_pairs, validation_pairs
+
+
 def _as_candidates(group: list[TrainingPair]) -> list[RankedCandidate]:
     return [
         RankedCandidate(
@@ -1018,6 +1089,8 @@ def train(
     seed: int = SEED,
     validation_share: float = 0.25,
     use_dense: bool = False,
+    dataset_output: Path | None = None,
+    excluded_queries: set[str] | None = None,
 ) -> LogisticReranker:
     rng = random.Random(seed)
     catalog = load_catalog()
@@ -1038,9 +1111,20 @@ def train(
         negative_queries=negative_queries,
         dense=dense,
     )
-    rng.shuffle(pairs)
-    split = int(len(pairs) * (1 - validation_share))
-    train_pairs, validation_pairs = pairs[:split], pairs[split:]
+    excluded_queries = {normalize(q) for q in (excluded_queries or set())}
+    pairs = [p for p in pairs if normalize(p.query) not in excluded_queries]
+    train_pairs, validation_pairs = split_query_groups(pairs, rng, validation_share)
+    if dataset_output is not None:
+        import csv
+        dataset_output.parent.mkdir(parents=True, exist_ok=True)
+        with dataset_output.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["query", "title", "code", "label", "split", "source"])
+            for partition, values in (("train", train_pairs), ("validation", validation_pairs)):
+                for pair in values:
+                    writer.writerow([pair.query, pair.title, pair.code, pair.label,
+                                     partition, "catalog_synthetic"])
+
 
     # --- Stage 1: pairwise reranker ---------------------------------------
     feature_rows = []
@@ -1073,9 +1157,19 @@ def train(
     group_labels: list[int] = []
     pair_probabilities: list[float] = []
     pair_correct: list[bool] = []
+    confidence_index = calibration_index(catalog)
+    confidence_dense = (
+        DenseIndex.build([r["name"] for r in confidence_index]) if use_dense else None
+    )
+    if confidence_dense is not None:
+        confidence_dense.warm_queries(list(by_query))
     for query, group in by_query.items():
-        ranked = reranker.rerank(query, _as_candidates(group))
-        top_label = int(ranked[0].payload.get("label", 0))
+        # Do not force a positive into this list: retrieval failures are failures.
+        ranked = calibration_ranked(reranker, confidence_index, query, confidence_dense)
+        if not ranked:
+            continue
+        positives = {pair.title for pair in group if pair.label}
+        top_label = int(ranked[0].title in positives)
         features = extract_group_features(query, ranked)
         group_rows.append([features[name] for name in GROUP_FEATURE_NAMES])
         group_labels.append(top_label)
@@ -1102,9 +1196,9 @@ def train(
         )
         for row in group_rows
     ]
-    conf_ok, _conf_review = calibrate_thresholds(confidences, [bool(y) for y in group_labels])
+    conf_ok, calibrated_review = calibrate_thresholds(confidences, [bool(y) for y in group_labels])
     conf_ok = max(conf_ok, OK_CONFIDENCE_FLOOR)
-    conf_review = REVIEW_CONFIDENCE_FLOOR
+    conf_review = max(calibrated_review, REVIEW_CONFIDENCE_FLOOR)
 
     reranker.threshold_ok = pair_threshold_ok
     reranker.threshold_review = pair_threshold_review
@@ -1120,7 +1214,7 @@ def train(
     # groups; eval/labeled_examples.csv stays a pure measurement set.
     platform_rng = random.Random(seed + 1)
     calibration, platform_stats = fit_display_calibration(
-        reranker, catalog, platform_rng, use_dense=use_dense
+        reranker, catalog, platform_rng, use_dense=use_dense, excluded_queries=excluded_queries
     )
     confidence_model.calibration = calibration
 
@@ -1139,6 +1233,9 @@ def train(
     reranker.meta = {
         "seed": seed,
         "train_pairs": len(train_pairs),
+        "split_strategy": "normalized_query_groups",
+        "confidence_candidates": "serving_retrieval_no_forced_positive",
+        "train_queries": len({normalize(p.query) for p in train_pairs}),
         "validation_queries": len(by_query),
         "pair_thresholds": {"ok": pair_threshold_ok, "review": pair_threshold_review},
         "confidence_thresholds": {"ok": conf_ok, "review": conf_review},
