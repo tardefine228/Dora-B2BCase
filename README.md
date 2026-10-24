@@ -299,6 +299,10 @@ cp models/reranker.tfidf.json models/dense-gate.json ml/artifacts/   # если 
   (top-1/top-3, доля верного `not_found`, регрессия на точных названиях
   каталога, обе шкалы уверенности `confidence_raw`/`confidence` и ECE, свип
   порога `review`, разбор ошибок).
+- Разбор ошибок по механике: `PYTHONPATH=api python eval/review_errors.py`
+  делит неверные ответы на «соседний код», «мост + обобщающая позиция» и прочие и
+  показывает, какие из них размечены противоположным образом — то есть являются
+  вопросом к разметке, а не к модели (разбор: `eval/experiments.md`, эксперимент 23).
 - Синтетический бенчмарк без разметки: `PYTHONPATH=api python eval/synthetic_eval.py`
 - Абляция расхождений обучения и API (шортлист, fallback): `PYTHONPATH=api python eval/serving_ablation.py`
   → `eval/synthetic_report.md` (информационный, CI-гейт его не проверяет).
