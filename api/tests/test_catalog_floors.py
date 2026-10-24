@@ -138,7 +138,10 @@ def test_catalog_classifier_uses_configured_floors_for_real_decisions(
     )
 
     classifier = CatalogClassifier(catalog, reranker=reranker, dense=None)
-    result = classifier.classify("Принтеры лазерные")
+    # «МФУ» не встречается в названии позиции, поэтому подсказка не якорится
+    # головным словом и правило слабых подсказок (эксп. 34) не вмешивается:
+    # тест проверяет именно пороги.
+    result = classifier.classify("МФУ лазерное")
 
     assert reranker.confidence_model.status_for(0.60) == "not_found"
     assert result.status == "not_found"

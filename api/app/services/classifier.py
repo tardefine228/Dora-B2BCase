@@ -256,6 +256,109 @@ def _not_found(query: str) -> ClassifyResponse:
 
 _MAX_ALTERNATIVES = 3
 
+# ``review`` instead of silence when the model is under-confident but the lead is
+# anchored in the query by its *product word* (эксп. 34).
+#
+# The pit this closes: a real purchase line carries specifiers the catalog never
+# mentions ("Осциллограф цифровой запоминающий"), and each unknown word lowers the
+# pair probability — the same query without them scores 0.485 against its own
+# position, with them 0.084. The rank was right, the status was «нет в перечне»,
+# so the row reached the specialist as an empty cell.
+#
+# The rule is deliberately narrow, because a wrong suggestion costs more than a
+# silence: the winner must carry a code, its pair probability must clear 0.08, and
+# the *first product word* of the line (stopwords, scope modifiers such as
+# «офисный» and variant adjectives skipped) must appear in the position's own
+# name. On the 274-row labeled set it moves one row from silence to a correct
+# ``review`` (top-1 190 → 191) and leaves correct silence at 31/32, while on the
+# 300-line procurement sample it answers 12 rows that stayed «—». The status is
+# never ``ok``: a lexical lead is a question for the specialist, not an answer.
+_HEAD_RESCUE_FLOOR = 0.08
+
+# Modifiers that describe the *scope* of a position ("офисный", "промышленный")
+# rather than the product. "Сейф офисный" must not be anchored by «Машины
+# офисные прочие»: the head of that query is «сейф», and the list has no such
+# position.
+_SCOPE_MODIFIERS = frozenset(
+    {
+        "офисн",
+        "бытов",
+        "промышленн",
+        "медицинск",
+        "торгов",
+        "профессиональн",
+        "лабораторн",
+        "специальн",
+        "универсальн",
+        "стационарн",
+        "мобильн",
+        "портативн",
+        "настольн",
+        "напольн",
+        "настенн",
+        "компактн",
+        "цифров",
+        "аналогов",
+        "автоматическ",
+        "механическ",
+        "электрическ",
+        "гидравлическ",
+        "пневматическ",
+        "аккумуляторн",
+        "сетев",
+        "беспроводн",
+        "стальн",
+        "алюминиев",
+        "медн",
+        "резинов",
+        "пластиков",
+        "вертикальн",
+        "горизонтальн",
+        "поворотн",
+        "трехфазн",
+        "однофазн",
+        "усиленн",
+    }
+)
+
+
+def _query_head_stems(query: str) -> set[str]:
+    """Product-word stems that anchor a lead: the line's head plus bridge targets.
+
+    The head is the first word of the line that is neither a stopword, nor a
+    scope modifier, nor a variant adjective (``ml.features.LOW_SIGNAL_WORDS``).
+    Russian procurement lines are head-initial: "Счетчик электрической энергии
+    трехфазный" is a counter, "Щётка для обуви" is a brush and not footwear.
+    Bridge targets join the set so a lexicon decision ("портландцемент" →
+    «цемент») anchors the position the lexicon points at.
+    """
+    from ml.features import LOW_SIGNAL_WORDS, STOPWORD_STEMS, stem, stems
+    from ml.lexicon import bridged_targets
+
+    heads: set[str] = set()
+    for token in _tokenize(query):
+        value = stem(token)
+        if value in _SCOPE_MODIFIERS or value in LOW_SIGNAL_WORDS:
+            continue
+        if value in STOPWORD_STEMS:
+            continue
+        heads.add(value)
+        break
+    for target in bridged_targets(query).values():
+        heads |= set(stems(target))
+    return heads
+
+
+def _head_anchored(candidate, query: str) -> bool:
+    """Does the position's own name carry the *product word* of the line?"""
+    from ml.features import stems
+
+    heads = _query_head_stems(query)
+    if not heads:
+        return False
+    return bool(heads & set(stems(candidate.title or "")))
+
+
 
 def _codeless_hint(best, confidence: float) -> Alternative:
     """A top-1 position without an OKPD2 code, kept visible as a hint (BE-9).
@@ -765,6 +868,14 @@ class CatalogClassifier:
 
         query_stems = _query_content_stems(query)
 
+        # A below-threshold lead whose product word is written in the position's
+        # own name is shown as `review` instead of «нет в перечне» (эксп. 34).
+        rescued = _head_rescued_answer(
+            self, query, best, ranked, status, raw_confidence, query_stems
+        )
+        if rescued is not None:
+            return rescued
+
         if status == "not_found" or not best.code:
             # Too weak to suggest a position — or the winning position has no
             # OKPD2 code («Не указан») and invariant 5 forbids ok/review without
@@ -825,6 +936,62 @@ class CatalogClassifier:
             ),
             ranked,
         )
+
+
+def _head_rescued_answer(
+    classifier,
+    query: str,
+    best,
+    ranked,
+    status: str,
+    raw_confidence: float,
+    query_stems: set[str] | None,
+):
+    """``review`` for a weak lead anchored by the product word of the line (эксп. 34).
+
+    ``None`` means "the model's own decision stands": the answer is confident
+    enough, the winner has no code, or the position's name does not carry the
+    head word of the query. The rescue never produces ``ok``.
+    """
+    if status != "not_found" or not best.code:
+        return None
+    if best.probability < _HEAD_RESCUE_FLOOR or not _head_anchored(best, query):
+        return None
+    logger.info(
+        "Слабая подсказка показана как review: query=%r title=%r p=%.3f",
+        query,
+        best.title,
+        best.probability,
+    )
+    code_role, review_required = _candidate_catalog_flags(best, classifier)
+    return _with_verifier(
+        classifier,
+        query,
+        ClassifyResponse(
+            query=query,
+            code=best.code,
+            title=best.title,
+            confidence=round(_display_confidence(classifier._reranker, raw_confidence), 4),
+            confidence_raw=raw_confidence,
+            status="review",
+            clause_ref=best.clause_ref,
+            clause_url=clause_url_for(best.payload.get("record_id")),
+            code_role=code_role,
+            catalog_review_required=review_required,
+            alternatives=_distinct_alternatives(ranked, "review", query_stems),
+            latency_ms=0.0,
+        ),
+        ranked,
+    )
+
+
+def _candidate_catalog_flags(candidate, classifier):
+    """Catalog facts for the winner, in the shape both backends produce."""
+    payload = getattr(candidate, "payload", None) or {}
+    lookup = getattr(classifier, "_catalog_flags_for", None)
+    if callable(lookup) and payload:
+        return lookup(payload)
+    return payload.get("code_role"), payload.get("catalog_review_required")
 
 
 def _with_verifier(classifier, query: str, answer: ClassifyResponse, ranked) -> ClassifyResponse:
@@ -1108,6 +1275,12 @@ class QdrantClassifier:
                 confidence = round(_display_confidence(self._reranker, raw_confidence), 4)
                 query_stems = _query_content_stems(query)
                 code_role, review_flag = self._catalog_flags_for(best.payload)
+                rescued = _head_rescued_answer(
+                    self, query, best, ranked, status, raw_confidence, query_stems
+                )
+                if rescued is not None:
+                    results.append(rescued)
+                    continue
                 if status == "not_found" or not best.code:
                     # Invariant 5 (BE-9): ok/review without a code is forbidden, so
                     # a codeless winner («Не указан») is demoted and stays visible

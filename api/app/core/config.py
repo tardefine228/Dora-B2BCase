@@ -130,8 +130,12 @@ class Settings:
         # 0.45 is also the median threshold the cross-validation picks (0.452), so
         # it is a plateau, not a cell read off one table. The value was measured
         # with the `label_kind` doctrine in place (docs/labeling-doctrine.md).
-        # `ok` is aligned with the lexical floor (0.77) — it does not move any
-        # measured metric, only how many answers are labelled confidently.
+        # `ok` was aligned with the lexical floor of the time (0.77). The catalog
+        # floor moved to 0.80 in эксп. 34 (rebuild on the wave-5 pairs put six wrong
+        # confident answers through at 0.77 against four at 0.80, ml/train_reranker.py),
+        # but the semantic scale is a different one, and its 0.77 is the value the
+        # semantic measurements were taken at — raising it here would change a
+        # published number (eval/backend_comparison.md) without a measurement.
         # Empty string means "keep the artifact value".
         self.semantic_ok_floor = _optional_float("QDRANT_OK_FLOOR", 0.77)
         self.semantic_review_floor = _optional_float("QDRANT_REVIEW_FLOOR", 0.45)
