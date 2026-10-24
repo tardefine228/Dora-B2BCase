@@ -65,6 +65,8 @@ def _lexical_only_retrieve(self, query, query_tokens):
 def collect_cases() -> list[dict]:
     cases = []
     for row in labeled_eval.load_labeled(labeled_eval.LABELED):
+        if labeled_eval.label_kind(row) == "unclear":
+            continue
         cases.append(
             {
                 "src": "labeled",

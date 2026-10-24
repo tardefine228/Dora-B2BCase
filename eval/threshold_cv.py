@@ -50,7 +50,7 @@ from app.services.classifier import (  # noqa: E402
     build_classifier,
 )
 
-from eval.run_eval import LABELED, codes_match, load_labeled  # noqa: E402
+from eval.run_eval import LABELED, codes_match, label_kind, load_labeled  # noqa: E402
 from ml.features import normalize  # noqa: E402
 
 OBJECTIVES = {
@@ -68,19 +68,30 @@ def collect(classifier, rows: list[dict]) -> list[dict]:
     ``answered_alts`` are the runner-ups shown when the row is answered;
     ``silent_alts`` are the anchored leads shown when it is not
     (``_distinct_alternatives`` with ``status="not_found"``).
+
+    The answer is taken from the ranking, not from ``response.code``: the
+    classifier already applied the *configured* floor, so ``response.code`` is
+    ``None`` for every row below it and a sweep under that floor would silently
+    re-measure the same point (this is how a 0.25 row once looked identical to
+    0.45).
     """
     reranker = getattr(classifier, "_reranker", None)
     captured: dict[str, list] = {}
+    captured_raw: dict[str, float] = {}
     original = reranker.evaluate
 
     def spy(query, ranked):
         captured[normalize(query)] = ranked
-        return original(query, ranked)
+        result = original(query, ranked)
+        captured_raw[normalize(query)] = float(result[0] or 0.0)
+        return result
 
     reranker.evaluate = spy  # type: ignore[method-assign]
     try:
         collected = []
         for row in rows:
+            if label_kind(row) == "unclear":
+                continue  # contested ground truth: nothing to cross-validate
             query = (row["query"] or "").strip()
             expected = (row["expected_okpd2"] or "").strip()
             response = classifier.classify(query)
@@ -100,8 +111,13 @@ def collect(classifier, rows: list[dict]) -> list[dict]:
                 {
                     "query": query,
                     "expected": expected,
-                    "code": response.code,
-                    "raw": response.confidence_raw,
+                    "kind": label_kind(row),
+                    "code": ranked[0].code if ranked else None,
+                    # The raw score of the leading candidate, not the response's:
+                    # a `not_found` answer zeroes `confidence_raw` by contract, so
+                    # reading it would make every point below the configured floor
+                    # look like "no answer at all".
+                    "raw": captured_raw.get(normalize(query), response.confidence_raw),
                     "answered_alts": answered_alts,
                     "silent_alts": silent_alts,
                     "disputed": (row.get("disputed") or "0").strip() == "1",
@@ -120,6 +136,8 @@ def metrics_at(rows: list[dict], threshold: float) -> dict:
     top1 = top3 = silence = 0
     expected_total = silence_total = 0
     for row in rows:
+        if row.get("kind", "code") == "unclear":
+            continue
         answered = row["code"] is not None and row["raw"] >= threshold
         answered_rows += answered
         if not row["expected"]:
@@ -137,7 +155,7 @@ def metrics_at(rows: list[dict], threshold: float) -> dict:
             top3 += any(
                 codes_match(code, row["expected"]) for code in row["silent_alts"]
             )
-    total = len(rows)
+    total = sum(1 for row in rows if row.get("kind", "code") != "unclear")
     return {
         "threshold": round(threshold, 3),
         "top1_expected": top1,
@@ -179,6 +197,8 @@ def stratified_folds(rows: list[dict], folds: int, rng: random.Random) -> list[l
     """Split row indices into folds, keeping in-scope/out-of-scope proportions."""
     buckets: dict[bool, list[int]] = defaultdict(list)
     for index, row in enumerate(rows):
+        if row.get("kind", "code") == "unclear":
+            continue
         buckets[bool(row["expected"])].append(index)
     assignment = [[] for _ in range(folds)]
     for indices in buckets.values():
@@ -227,10 +247,16 @@ def main() -> int:
     parser.add_argument("--repeats", type=int, default=20)
     parser.add_argument("--objective", choices=sorted(OBJECTIVES), default="top1_all")
     parser.add_argument("--labeled", type=Path, default=LABELED)
+    parser.add_argument(
+        "--backend",
+        default="catalog",
+        choices=("catalog", "qdrant"),
+        help="бэкенд, на котором меряется порог (у семантики своя сырая шкала)",
+    )
     args = parser.parse_args()
 
     rows = load_labeled(args.labeled)
-    classifier = build_classifier("catalog")
+    classifier = build_classifier(args.backend)
     reranker = getattr(classifier, "_reranker", None)
     artifact_threshold = float(reranker.confidence_model.threshold_review)
     info = getattr(classifier, "vector_info", None) or {}

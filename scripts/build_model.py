@@ -39,44 +39,27 @@ from ml.train_reranker import train  # noqa: E402
 
 
 def _measure(classifier) -> tuple[dict, dict[str, Counts]]:
-    """Full summary of the labeled set plus the raw counts the gate decides on."""
-    from eval.dense_gate import Counts
+    """Full summary of the labeled set plus the raw counts the gate decides on.
+
+    The counts come from ``eval.run_eval.metric_counts`` so the trainer and the
+    evaluation script can never disagree about what a labeled row measures
+    (``code`` / ``absent`` / ``unclear`` — see ``docs/labeling-doctrine.md``).
+    """
     from eval.run_eval import (
         LABELED,
         _classify_rows,
         evaluate_exact_names,
         load_exact_names,
         load_labeled,
+        metric_counts,
         summarize,
     )
 
     results = _classify_rows(classifier, load_labeled(LABELED))
     exact = evaluate_exact_names(classifier, load_exact_names(ROOT / "data/data.csv"))
-    summary = summarize({"results": results, "exact": exact})
-
-    with_expected = [r for r in results if r["expected"] != "(not_found)"]
-    without_expected = [r for r in results if r["expected"] == "(not_found)"]
-    confident = [r for r in results if r["status"] == "ok"]
-    summary["ok_precision"] = (
-        sum(1 for r in confident if r["correct_top1"]) / len(confident) if confident else 1.0
-    )
-    counts = {
-        "top1_expected": Counts(
-            sum(1 for r in with_expected if r["correct_top1"]), len(with_expected)
-        ),
-        "top3_expected": Counts(
-            sum(1 for r in with_expected if r["correct_top3"]), len(with_expected)
-        ),
-        "top1_all": Counts(sum(1 for r in results if r["correct_top1"]), len(results)),
-        "correct_silence": Counts(
-            sum(1 for r in without_expected if r["correct_top1"]), len(without_expected)
-        ),
-        "exact_top1": Counts(sum(1 for r in exact if r["correct_top1"]), len(exact)),
-        "ok_precision": Counts(
-            sum(1 for r in confident if r["correct_top1"]), len(confident)
-        ),
-    }
-    return summary, counts
+    report = {"results": results, "exact": exact}
+    summary = summarize(report)
+    return summary, metric_counts(report)
 
 
 def _score(classifier) -> dict:
