@@ -113,6 +113,50 @@ def _lexical_baseline(
     return path, directory
 
 
+def _measure_seed_pair(
+    catalog: Path, seed: int, models_dir: Path, max_queries: int, *, reuse_candidate: Path | None
+) -> tuple[dict, dict, float, float]:
+    """Train (or load) both artifacts for one seed and measure them.
+
+    Returns ``(base_counts, new_counts, base_ece, new_ece)``. With
+    ``reuse_candidate`` the already-trained dense artifact is measured instead of
+    retraining it (the primary seed of the build), and the lexical baseline is
+    trained here; otherwise both are trained in a scratch directory.
+    """
+    from app.services.classifier import CatalogClassifier
+
+    from ml.dense import DenseIndex
+    from ml.embedder import encoder_tag
+    from ml.reranker import LogisticReranker
+
+    scratch = tempfile.TemporaryDirectory(prefix=f"dora-gate-seed-{seed}-")
+    directory = Path(scratch.name)
+    try:
+        baseline = directory / RERANKER_ARTIFACT_NAME
+        train(baseline, max_queries=max_queries, seed=seed, excluded_queries=benchmark_queries())
+        candidate = reuse_candidate
+        if candidate is None:
+            candidate = directory / reranker_artifact_name(encoder_tag())
+            train(
+                candidate,
+                max_queries=max_queries,
+                seed=seed,
+                use_dense=True,
+                excluded_queries=benchmark_queries(),
+            )
+        probe = CatalogClassifier(catalog, reranker=LogisticReranker.load(baseline), dense=None)
+        dense_index = DenseIndex.build([row["name"] for row in probe.index])
+        lexical = CatalogClassifier(catalog, reranker=probe._reranker, dense=None)
+        vector = CatalogClassifier(
+            catalog, reranker=LogisticReranker.load(candidate), dense=dense_index
+        )
+        base_summary, base_counts = _measure(lexical)
+        new_summary, new_counts = _measure(vector)
+        return base_counts, new_counts, base_summary["ece"], new_summary["ece"]
+    finally:
+        scratch.cleanup()
+
+
 def gate_dense(
     models_dir: Path,
     artifact: Path,
@@ -121,6 +165,7 @@ def gate_dense(
     max_queries: int = 400,
     baseline_artifact: Path | None = None,
     report: Path | None = None,
+    seeds: list[int] | None = None,
 ) -> bool:
     """Keep a vector-feature reranker only if it earns the right to serve decisions.
 
@@ -132,7 +177,7 @@ def gate_dense(
     API keeps using the lexical one; either way the full comparison is printed and
     written to ``<models_dir>/dense-gate.json``.
     """
-    from eval.dense_gate import evaluate_gate
+    from eval.dense_gate import evaluate_gate, pool_counts
 
     sys.path.insert(0, str(ROOT / "api"))
     from app.services.classifier import CatalogClassifier
@@ -140,9 +185,15 @@ def gate_dense(
     from ml.dense import DenseIndex
     from ml.reranker import LogisticReranker
 
+    catalog = ROOT / "data" / "data.csv"
+    extra_seeds = [value for value in (seeds or []) if value != seed]
+    pools_base: list[dict] = []
+    pools_new: list[dict] = []
+    base_eces: list[float] = []
+    new_eces: list[float] = []
+
     baseline_path, scratch = _lexical_baseline(models_dir, seed, max_queries, baseline_artifact)
     try:
-        catalog = ROOT / "data" / "data.csv"
         lexical = CatalogClassifier(
             catalog, reranker=LogisticReranker.load(baseline_path), dense=None
         )
@@ -153,8 +204,26 @@ def gate_dense(
         )
         base_summary, base_counts = _measure(lexical)
         new_summary, new_counts = _measure(vector)
+        pools_base.append(base_counts)
+        pools_new.append(new_counts)
+        base_eces.append(base_summary["ece"])
+        new_eces.append(new_summary["ece"])
+        for extra in extra_seeds:
+            print(f"  gate: дополнительный прогон, seed={extra} (обучение обоих артефактов)")
+            extra_base, extra_new, extra_base_ece, extra_new_ece = _measure_seed_pair(
+                catalog, extra, models_dir, max_queries, reuse_candidate=None
+            )
+            pools_base.append(extra_base)
+            pools_new.append(extra_new)
+            base_eces.append(extra_base_ece)
+            new_eces.append(extra_new_ece)
+        runs = len(pools_base)
+        base_counts = pool_counts(pools_base) if runs > 1 else base_counts
+        new_counts = pool_counts(pools_new) if runs > 1 else new_counts
+        base_ece = sum(base_eces) / runs
+        new_ece = sum(new_eces) / runs
         verdict = evaluate_gate(
-            base_counts, new_counts, base_ece=base_summary["ece"], new_ece=new_summary["ece"]
+            base_counts, new_counts, base_ece=base_ece, new_ece=new_ece, runs=runs
         )
 
         print(verdict.table())
@@ -169,7 +238,9 @@ def gate_dense(
                 "trained_in_run": scratch is not None,
                 "path": None if scratch is not None else str(baseline_path),
             },
-            "labeled_rows": base_counts["top1_all"].total,
+            "labeled_rows": max(pool["top1_all"].total for pool in pools_base),
+            "seeds": [seed, *extra_seeds],
+            "decision_basis": "pooled" if runs > 1 else "single_run",
             **verdict.as_dict(),
         }
         destination = report or models_dir / "dense-gate.json"
@@ -206,6 +277,7 @@ def build_dense(
     gate: bool = False,
     baseline_artifact: Path | None = None,
     report: Path | None = None,
+    gate_seeds: list[int] | None = None,
 ) -> None:
     from ml.embedder import encoder_tag
 
@@ -228,6 +300,7 @@ def build_dense(
             max_queries=max_queries,
             baseline_artifact=baseline_artifact,
             report=report,
+            seeds=gate_seeds,
         )
         if not kept:
             return
@@ -264,6 +337,16 @@ def main() -> None:
         help="with --dense: drop the artifact unless it beats lexical scoring on the labeled set",
     )
     parser.add_argument(
+        "--gate-seeds",
+        default="",
+        help=(
+            "with --gate: comma-separated seeds whose runs are pooled before the verdict "
+            "(e.g. 1875,1876,1877). One run measures one split of the training data, and "
+            "the silence guard is zero-tolerance — pooling keeps the policy but stops the "
+            "verdict from being a coin flip"
+        ),
+    )
+    parser.add_argument(
         "--baseline-artifact",
         type=Path,
         default=None,
@@ -281,6 +364,9 @@ def main() -> None:
     )
     args = parser.parse_args()
     if args.dense:
+        gate_seeds = [int(value) for value in args.gate_seeds.replace(" ", "").split(",") if value]
+        if gate_seeds and not args.gate:
+            parser.error("--gate-seeds имеет смысл только вместе с --gate")
         build_dense(
             args.models_dir,
             args.seed,
@@ -288,6 +374,7 @@ def main() -> None:
             gate=args.gate,
             baseline_artifact=args.baseline_artifact,
             report=args.gate_report,
+            gate_seeds=gate_seeds or None,
         )
     else:
         build(args.models_dir, args.seed, args.max_queries)

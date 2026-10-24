@@ -9,9 +9,9 @@
 
 | Файл | sha256 | Что это | Чем произведён |
 | --- | --- | --- | --- |
-| `reranker.json` | `e1f3d8cfc0607b70824f148d3635d1f1ef0f76dc7319088e4b6ae490e3ea6319` | лексический реранкер (веса `dense_*` = 0): работает, когда векторных признаков нет | `python scripts/build_model.py --models-dir models` |
-| `reranker.tfidf.json` | `ac0f46fde629b08ddd7037e30914bbb24700514f988168073e52e69d8127caf8` | реранкер с векторными признаками под эмбеддер `tfidf`; **именно он скорит в каталоговом режиме при `VECTOR_SEARCH=true`** | `python scripts/build_model.py --dense --gate --models-dir models` |
-| `dense-gate.json` | `3fbe78734b198dc356eb87afc0fdae3d95eed7ca07d6d4da78abbcbd7acdbb7d` | отчёт допуска для `reranker.tfidf.json`: метрики по строкам, sha256 кандидата и базы | тот же прогон `--dense --gate` |
+| `reranker.json` | `b216531c2d55e83c84ad1a45d1f437c44e32fc6a981b7ea5fd76e76e74d1abef` | лексический реранкер (веса `dense_*` = 0): работает, когда векторных признаков нет | `python scripts/build_model.py --models-dir models` |
+| `reranker.tfidf.json` | `906c8c9b3384d8a53f4b11acb6e59ee5208e99c68faac97ab27fef0b65a36e09` | реранкер с векторными признаками под эмбеддер `tfidf`; **именно он скорит в каталоговом режиме при `VECTOR_SEARCH=true`** | `python scripts/build_model.py --dense --gate --gate-seeds 1875,1876,1877,1878 --models-dir models` |
+| `dense-gate.json` | `48ef45e0f67d1b9c00ef1059e326e6da6f34115ae11b16b7664b7889b0787992` | отчёт допуска для `reranker.tfidf.json`: метрики по строкам, sha256 кандидата и базы | тот же прогон `--dense --gate` |
 | `tfidf_embedder.json` | `11a73c50d6e903ff56570764cbd392becd9675b651bc926230cffd8f13d03cde` | tfidf-эмбеддер: 512 измерений, 3–4-граммы, 1126 названий | `scripts/build_model.py` (шаг подгонки эмбеддера) |
 
 ## Происхождение и воспроизводимость
@@ -29,7 +29,9 @@
   `test_shipped_tfidf_embedder_is_fitted_on_the_current_catalog`.
 * `dense-gate.json` — отчёт последнего прогона допуска. Его `baseline.sha256` равен sha256
   отгруженного `reranker.json`: база переобучается тем же кодом в том же прогоне, поэтому отчёт
-  доказуемо относится к текущей паре файлов.
+  доказуемо относится к текущей паре файлов. С 2026-10-24 отчёт пишется по пулу прогонов
+  (`runs: 4`, `seeds: [1875, 1876, 1877, 1878]`, `decision_basis: pooled`): один прогон — это
+  одно разбиение обучающих данных, и на нём вердикт по тишине менялся от сида к сиду.
 
 ## Измерено на текущих артефактах
 
@@ -38,11 +40,12 @@
 
 | Конфигурация | top-1 (с кодом) | top-3 | верный `not_found` | top-1 по всем | ECE |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `VECTOR_SEARCH=false` → `reranker.json` | 82.5 % | 87.3 % | 85.2 % | 83.6 % | 0.053 |
-| `VECTOR_SEARCH=true` → `reranker.tfidf.json` | **84.3 %** | **89.8 %** | 85.2 % | **84.7 %** | **0.036** |
+| `VECTOR_SEARCH=false` → `reranker.json` | 82.5 % | 87.9 % | 86.1 % | 83.9 % | 0.056 |
+| `VECTOR_SEARCH=true` → `reranker.tfidf.json` | **84.3 %** | **89.8 %** | 85.2 % | **84.7 %** | **0.031** |
 
-Векторный артефакт выигрывает 3 строки top-1 и 4 строки top-3, не теряя ни одной строки верной
-тишины; см. `eval/experiments.md`, эксп. 17.
+Векторный артефакт выигрывает 3 строки top-1 и 3 строки top-3 и лучше калиброван. Строки
+верной тишины он проигрывает одну на seed 1875 — поэтому решение о нём принимается по пулу
+четырёх прогонов, где он выигрывает три (`--gate-seeds`, `eval/experiments.md`, эксп. 24).
 
 ## Какой артефакт реально скорит
 
