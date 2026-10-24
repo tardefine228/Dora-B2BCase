@@ -22,6 +22,10 @@ export type Result = {
   alternatives: Alternative[];
   userVerdict?: Verdict | null;
   correctedCode?: string | null;
+  // Провенанс ответа, если его подтвердила проверяющая ступень (LLM по top-3):
+  // "llm-top3" и короткая пометка. null/undefined — ответ дан классификатором.
+  verifier?: string | null;
+  verifierNote?: string | null;
 };
 export type Job = {
   job_id: string;
@@ -52,6 +56,7 @@ type ApiClassify = {
   query: string; code: string | null; title: string | null;
   confidence: number; confidence_raw: number | null; status: Status;
   clause_ref: string | null; clause_url: string | null;
+  verifier?: string | null; verifier_note?: string | null;
   alternatives?: ApiAlternative[];
 };
 type ApiBatch = {
@@ -115,6 +120,8 @@ function toResult(item: ApiClassify): Result {
     status: invalidCode ? 'review' : item.status,
     clauseRef: notFound || invalidCode ? null : item.clause_ref,
     url: notFound || invalidCode ? null : item.clause_url,
+    verifier: item.verifier ?? null,
+    verifierNote: item.verifier_note ?? null,
     alternatives: (item.alternatives ?? []).slice(0, 3).map(alt => ({
       code: alt.code, title: alt.title, confidence: alt.confidence,
       clauseRef: alt.clause_ref, url: alt.clause_url,

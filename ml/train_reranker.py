@@ -40,8 +40,8 @@ from ml.features import (
     build_known_stems,
     idf_table,
     lexical_score_prepared,
-    prepare_candidate,
     normalize,
+    prepare_candidate,
     stem,
     stems,
     tokens,
@@ -139,7 +139,21 @@ MODEL_WORDS = (
 # model must learn that a catalog modifier ("бытовой", "компьютерный") matching
 # around an unknown head noun is not a hit. The list is deliberately disjoint
 # from eval/labeled_examples.csv, which stays a clean measurement set; heads
-# that happen to be in the catalog vocabulary are skipped at training time.
+# that happen to be in the catalog vocabulary are skipped at generation time.
+#
+# A head is a *safe* negative only while nothing in the product claims the word.
+# Two filters apply, both at generation time (``make_negative_queries``):
+#
+#   * the catalog vocabulary — the position name is the answer;
+#   * ``ml.lexicon.BRIDGES`` — a bridged word is declared in scope by the
+#     lexicon, so a "must stay silent" label for it would be a wrong label, not
+#     a hard case. Eight heads moved in scope with the third bridge wave
+#     ("колонка" → «Громкоговорители», "дрель" → «Инструменты ручные
+#     электрические», "гантели" → «Инвентарь ... для занятий физкультурой»,
+#     plus "клавиатура", "сканер", "флешка", "миксер", "шуруповерт"). Leaving
+#     them in was not harmless: the calibration platform scored every correct
+#     answer to them as a miss, refitted the display map downwards by 0.67 logit
+#     and pushed the labeled-set ECE from 0.058 to 0.121 (experiment 29).
 OUT_OF_SCOPE_HEADS = (
     "диван",
     "кофеварка",
@@ -267,6 +281,8 @@ def make_negative_queries(
     for head in OUT_OF_SCOPE_HEADS:
         if stem(head) in known_stems:
             continue  # the catalog does mention it — not a safe negative
+        if bridged_targets(head):
+            continue  # the lexicon maps it to a position — in scope by declaration
         queries.append(head)
         queries.append(f"{head} {rng.choice(HARD_NEGATIVE_MODIFIERS)}")
         queries.append(f"{rng.choice(HARD_NEGATIVE_MODIFIERS)} {head}")
@@ -279,6 +295,10 @@ def make_negative_queries(
             )
         if rng.random() < 0.3:
             queries.append(_typo(head, rng))
+    # A probe must be out of scope *as a whole*, not only in its head noun: the
+    # lexicon also owns modifiers ("офисный" → «офисов»), and a probe carrying
+    # one is answered by the bridge, which then counts as a wrong answer.
+    queries = [query for query in queries if not bridged_targets(query)]
     for _ in range(garbage):
         words = [
             "".join(rng.choice(_GARBAGE_SYLLABLES) for _ in range(rng.randint(2, 4)))
@@ -735,13 +755,21 @@ def calibrate_thresholds(
 # Every query is scored through a faithful copy of the API's catalog pipeline
 # (retrieval shortlist → reranker → confidence model); ``api/tests/
 # test_calibration.py`` pins that copy against the real classifier.
+#
+# A modifier must add *no catalog content*: a modifier that also names a
+# position hijacks the retrieval instead of decorating it. "специализированные"
+# did exactly that — it beat the product word in nine of the platform rows
+# ("специализированные блокнот" → «Контейнеры специализированные») and made the
+# platform look 1.6 points harder than it is. The list therefore holds style
+# words only, and ``api/tests/test_calibration.py`` pins that no modifier stem
+# occurs in a catalog position name.
 CALIBRATION_MODIFIERS = (
     "демисезонные",
-    "спортивные",
-    "домашние",
+    "переносные",
+    "усиленные",
     "зимние",
     "утепленные",
-    "специализированные",
+    "облегченные",
     "дачные",
 )
 # Gentlest-slope policy: the map must reach the ECE target on the platform
@@ -856,12 +884,22 @@ def code_matches(predicted: str | None, expected: str) -> bool:
     )
 
 
-def build_calibration_cases(catalog: list[dict], rng: random.Random) -> list[tuple[str, str]]:
+def build_calibration_cases(
+    catalog: list[dict],
+    rng: random.Random,
+    excluded_queries: set[str] | None = None,
+) -> list[tuple[str, str]]:
     """``(query, expected_code)`` pairs of the calibration platform.
 
     An empty expected code marks an out-of-scope probe: the correct behaviour is
     silence, so any answered row counts as a miss.
+
+    ``excluded_queries`` (normalized) is the measurement set. It is filtered
+    here rather than by the caller: a bridge source can be a labeled query
+    verbatim ("квадрокоптер", "пазл", "скейтборд", "мангал" all are), and the
+    platform must never contain the rows the calibrated scale is judged on.
     """
+    excluded = excluded_queries or set()
     code_by_title = {item["name"]: (item.get("pp_code") or "") for item in catalog}
     cases: list[tuple[str, str]] = []
     for title, sources in sorted(bridge_sources_by_name(catalog).items()):
@@ -874,7 +912,7 @@ def build_calibration_cases(catalog: list[dict], rng: random.Random) -> list[tup
             cases.append((f"{rng.choice(CALIBRATION_MODIFIERS)} {source}", code))
     known_stems = build_known_stems([item["name"] for item in catalog])
     cases.extend((query, "") for query in make_negative_queries(rng, known_stems))
-    return cases
+    return [case for case in cases if normalize(case[0]) not in excluded]
 
 
 def fit_display_calibration(
@@ -891,8 +929,7 @@ def fit_display_calibration(
     """
     index = calibration_index(catalog)
     dense = DenseIndex.build([row["name"] for row in index]) if use_dense else None
-    cases = [case for case in build_calibration_cases(catalog, rng)
-             if normalize(case[0]) not in (excluded_queries or set())]
+    cases = build_calibration_cases(catalog, rng, excluded_queries)
     confidences: list[float] = []
     labels: list[int] = []
     for query, expected in cases:
@@ -1121,7 +1158,9 @@ def train(
     pair_probabilities: list[float] = []
     pair_correct: list[bool] = []
     confidence_index = calibration_index(catalog)
-    confidence_dense = DenseIndex.build([r["name"] for r in confidence_index]) if use_dense else None
+    confidence_dense = (
+        DenseIndex.build([r["name"] for r in confidence_index]) if use_dense else None
+    )
     if confidence_dense is not None:
         confidence_dense.warm_queries(list(by_query))
     for query, group in by_query.items():

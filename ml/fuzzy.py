@@ -19,9 +19,7 @@ _TOKEN_RE = re.compile(r"[а-яёa-z]+", re.IGNORECASE)
 # Single-letter inflection tails: only these make a prefix relation a typo
 # ("дрел" -> "дрель"); longer tails mean a different word ("футбол" -> "футболка").
 _INFLECTION_TAILS = {"ь", "я", "ы", "й", "а", "о", "е", "и"}
-# pymorphy parse score at or above which a token counts as a real dictionary
-# word: those are never "corrected" ("мойка" must not become "майка").
-_DICTIONARY_SCORE = 0.6
+
 
 
 @lru_cache(maxsize=1)
@@ -35,10 +33,24 @@ def _morph():
 
 
 def _is_dictionary_word(token: str) -> bool:
+    """True when pymorphy knows the token as a real Russian word form.
+
+    The test is ``Parse.is_known`` — "this form is in the morphological
+    dictionary" — not the parse *score*. pymorphy distributes probability over
+    interpretations, so an ordinary inflected word whose top reading wins only
+    half the mass («летнее» 0.50, «садовый» 0.50, «корм» 0.50, «складной» 0.10)
+    used to fall below a score gate and get "corrected" into a catalog word that
+    merely looks similar: «Платье женское летнее» → «… лесного», «Грабли
+    садовые» → «… судовые», «Корм для собак» → «корда для собак». Nine of the
+    274 labeled queries were rewritten that way, so retrieval and every reranker
+    feature saw a different product than the specialist typed. Genuine typos
+    («Монитр», «Клавитура», «Бумга», «Дрел») are exactly the tokens pymorphy
+    does *not* know, which is why ``is_known`` separates the two cases cleanly.
+    """
     morph = _morph()
     if morph is None:
         return False
-    return morph.parse(token)[0].score >= _DICTIONARY_SCORE
+    return any(parse.is_known for parse in morph.parse(token))
 
 
 def _edit_distance(a: str, b: str, cap: int) -> int:

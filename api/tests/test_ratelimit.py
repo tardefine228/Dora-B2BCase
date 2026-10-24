@@ -81,6 +81,10 @@ def test_bucket_refills_over_time(monkeypatch) -> None:
     monkeypatch.setattr(settings, "rate_limit_enabled", True)
     monkeypatch.setattr(settings, "rate_limit_rps", 20)
     monkeypatch.setattr(settings, "rate_limit_burst", 1)
+    # Warm the classifier first: a cold first request takes ~0.4 s (dictionaries,
+    # reranker), which is 8 tokens at 20 rps — far more than burst=1 — so the second
+    # request would legitimately be allowed and the assertion below would flake.
+    _classify(_ip())
     ip = _ip()
 
     assert _classify(ip) == 200

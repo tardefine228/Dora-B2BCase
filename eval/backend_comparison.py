@@ -116,6 +116,7 @@ def collect_cases() -> list[dict]:
             "disputed": (row.get("disputed") or "").strip(),
         }
         for row in labeled_eval.load_labeled(labeled_eval.LABELED)
+        if labeled_eval.label_kind(row) != "unclear"
     ]
 
 

@@ -2,3 +2,7 @@
 # (see INSTALL_TRANSFORMER in api/Dockerfile); torch itself comes from the CPU wheel index.
 -r requirements.txt
 sentence-transformers>=3.0,<6.0
+# XLM-R based embedders (BAAI/bge-m3, bge-m3-unsupervised) use a SentencePiece
+# tokenizer; without this package transformers falls back to a slow tokenizer and
+# warns on every load.
+sentencepiece>=0.2,<1.0

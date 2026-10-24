@@ -319,3 +319,62 @@ def test_qdrant_codeless_top_hit_is_demoted(qdrant_classifier) -> None:
     assert result.alternatives[0].code is None
     # The coded runner-up stays available as a real suggestion.
     assert any(a.code == "32.50.13.190" for a in result.alternatives[1:])
+
+
+# --- not_found hints: a lead is not a claim ---------------------------------
+
+
+def test_not_found_keeps_lexically_anchored_leads() -> None:
+    """«Нет в каталоге» must still hand the specialist ranked leads.
+
+    The old filter kept runner-ups whose *pair* probability cleared
+    ``threshold_review`` — but that number lives on the group-confidence scale,
+    and ``not_found`` already means the group confidence is below it, so the
+    filter could never pass: every out-of-catalog row in the labeled set came
+    back with an empty ``alternatives`` list even when the right position ranked
+    first. A lead now needs a content stem shared with the query.
+    """
+    from app.services.classifier import _distinct_alternatives
+
+    from ml.reranker import RankedCandidate
+
+    def candidate(code: str, title: str, probability: float) -> RankedCandidate:
+        return RankedCandidate(
+            code=code,
+            title=title,
+            clause_ref="1-1-01",
+            retrieval_score=0.1,
+            probability=probability,
+            payload={},
+        )
+
+    ranked = [
+        candidate("26.20.11", "Ноутбуки портативные", 0.05),
+        # Shares «ноутбук» with the query but scores far below any threshold.
+        candidate("26.20.12", "Ноутбуки промышленные", 0.01),
+        # Dense near-miss with nothing in common (the "false friend" case).
+        candidate("26.20.16", "Устройства ввода или вывода", 0.09),
+        candidate("28.23", "Машины вычислительные", 0.08),
+    ]
+    hints = _distinct_alternatives(ranked, "not_found", {"ноутбук"})
+    assert [hint.code for hint in hints] == ["26.20.12"]
+
+
+def test_not_found_returns_no_hint_when_nothing_is_anchored() -> None:
+    from app.services.classifier import _distinct_alternatives
+
+    from ml.reranker import RankedCandidate
+
+    ranked = [
+        RankedCandidate(
+            code="26.20.11",
+            title="Ноутбуки портативные",
+            clause_ref=None,
+            retrieval_score=0.02,
+            probability=0.02,
+            payload={},
+        )
+    ]
+    # «qwerty zxcvbn asdf»: no content stem of the query occurs in the catalog,
+    # so inventing a lead would be worse than returning nothing.
+    assert _distinct_alternatives(ranked, "not_found", {"qwerty"}) == []

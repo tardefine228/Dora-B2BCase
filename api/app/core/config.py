@@ -123,17 +123,18 @@ class Settings:
         self.model_local_only = _bool("MODEL_LOCAL_ONLY", default=False)
 
         # Decision floors for the semantic backend. The semantic raw scale is
-        # compressed, so its `review` floor is measured separately: 0.25 lifts the
-        # precision of an honest `not_found` from 89.8% to 97.2%
-        # (eval/experiments.md, эксп. 16) — measured while the semantic backend was
-        # still scored by the *lexical* artifact. With SEMANTIC_RERANKER=auto and a
-        # reranker trained for the embedder the raw scale moves, so re-measure it:
-        # eval/threshold_sweep.py --backend qdrant.
+        # compressed, so its `review` floor is measured separately from the catalog
+        # one. 0.45 is the measured optimum of the shipped vector artifact on the
+        # 274-row set: 152 correct decisions against 146 at the old 0.25, false
+        # codes on out-of-list goods 14 -> 4 (eval/experiments.md, эксп. 28), and
+        # 0.45 is also the median threshold the cross-validation picks (0.452), so
+        # it is a plateau, not a cell read off one table. The value was measured
+        # with the `label_kind` doctrine in place (docs/labeling-doctrine.md).
         # `ok` is aligned with the lexical floor (0.77) — it does not move any
         # measured metric, only how many answers are labelled confidently.
         # Empty string means "keep the artifact value".
         self.semantic_ok_floor = _optional_float("QDRANT_OK_FLOOR", 0.77)
-        self.semantic_review_floor = _optional_float("QDRANT_REVIEW_FLOOR", 0.25)
+        self.semantic_review_floor = _optional_float("QDRANT_REVIEW_FLOOR", 0.45)
 
         # Which artifact scores the semantic backend: `auto` prefers the reranker
         # trained for the active embedder (reranker.<tag>.json) and falls back to the
@@ -147,6 +148,22 @@ class Settings:
         self.admin_api_key = os.getenv("ADMIN_API_KEY", "")
         self.max_concurrent_inferences = _positive_int("MAX_CONCURRENT_INFERENCES", 1)
         self.classification_cache_size = _positive_int("CLASSIFICATION_CACHE_SIZE", 512)
+
+        # Third stage (off by default): a constrained LLM check of the top-3
+        # hypotheses for `review`/`not_found` answers only. Any OpenAI-compatible
+        # endpoint works; without a model the stage is simply absent
+        # (see api/app/services/llm_verifier.py, eval/experiments.md эксп. 30).
+        self.llm_verifier_enabled = _bool("LLM_VERIFIER_ENABLED", default=False)
+        self.llm_verifier_base_url = os.getenv(
+            "LLM_VERIFIER_BASE_URL", "https://api.openai.com/v1"
+        ).strip()
+        self.llm_verifier_api_key = os.getenv("LLM_VERIFIER_API_KEY", "").strip()
+        self.llm_verifier_model = os.getenv("LLM_VERIFIER_MODEL", "").strip()
+        self.llm_verifier_timeout_seconds = _optional_float("LLM_VERIFIER_TIMEOUT", 8.0) or 8.0
+        # A ceiling, not a target: one batch of 100 purchase lines must not turn
+        # into an unbounded bill. Calls beyond the budget are skipped and the
+        # answer stays the model's own.
+        self.llm_verifier_calls_per_minute = _positive_int("LLM_VERIFIER_CALLS_PER_MINUTE", 60)
         self.max_request_body_bytes = _positive_int("MAX_REQUEST_BODY_BYTES", 1_000_000)
         # Upload of a goods list file on the main page (POST /classify/file).
         self.max_upload_bytes = _positive_int("MAX_UPLOAD_BYTES", 10_000_000)

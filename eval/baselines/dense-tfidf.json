@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "config": {
+    "backend": "catalog",
+    "vector_search": true,
+    "embedder_backend": "tfidf",
+    "vector_store": "memory",
+    "embedder": "tfidf",
+    "reranker": "reranker.tfidf.json",
+    "scoring": "vector-features",
+    "semantic_reranker": "auto",
+    "review_threshold": 0.582,
+    "labeled_rows": 274,
+    "expected_rows": 201,
+    "not_found_rows": 32,
+    "contested_rows": 41,
+    "artifact_sha256": {
+      "reranker.tfidf.json": "3b0830b31f0d7c8ad94fff46cb10afc7789c890c3f1f70c1144d89150c234089"
+    },
+    "measured_at": "2026-10-24T14:54:43Z"
+  },
+  "metrics": {
+    "correct_silence": {
+      "correct": 31,
+      "total": 32
+    },
+    "exact_top1": {
+      "correct": 112,
+      "total": 112
+    },
+    "top1_expected": {
+      "correct": 192,
+      "total": 201
+    },
+    "top3_expected": {
+      "correct": 199,
+      "total": 201
+    },
+    "top1_all": {
+      "correct": 223,
+      "total": 233
+    },
+    "ok_precision": {
+      "correct": 177,
+      "total": 182
+    }
+  },
+  "ece": 0.0286
+}

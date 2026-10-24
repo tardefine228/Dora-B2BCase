@@ -428,6 +428,14 @@ def readiness() -> dict:
         "vector_health": vector_layer_health(),
         "job_store": settings.job_store,
         "queue_backend": settings.queue_backend,
+        # Third stage (эксп. 32): visible to operators, because "why is this code
+        # marked verified" must be answerable without reading the logs. `off` is
+        # the normal state of a deployment without an LLM key.
+        "llm_verifier": (
+            "off"
+            if not settings.llm_verifier_enabled or not settings.llm_verifier_model
+            else f"on:{settings.llm_verifier_model}"
+        ),
     }
 
 
@@ -735,7 +743,9 @@ def _render_decree(text: str, code: str) -> str:
     code_re = re.compile(r"\s(\d+(?:\.\d+){1,4})$")
     # Remove repeated OCR table headings from the presentation only.
     text = re.sub(
-        r"(?m)^(?:[ \t]*\d+[ \t]*\n)?[ \t]*Код товара[^\n]*\n(?:(?!\s*\d+\.\s|=== СТРАНИЦА)[^\n]*\n){0,12}?[ \t]*КПЕС[ \t]+2008[^\n]*",
+        r"(?m)^(?:[ \t]*\d+[ \t]*\n)?[ \t]*Код товара[^\n]*\n"
+        r"(?:(?!\s*\d+\.\s|=== СТРАНИЦА)[^\n]*\n){0,12}?"
+        r"[ \t]*КПЕС[ \t]+2008[^\n]*",
         "=== TABLE HEADER ===", text,
     )
     out: list[str] = []
@@ -745,7 +755,13 @@ def _render_decree(text: str, code: str) -> str:
         value = raw.strip()
         if not value:
             continue
-        if lines and entry_re.match(lines[-1]) and not entry_re.match(value) and not value.startswith("===") and lines[-1] != "=== TABLE HEADER ===":
+        previous_is_position = bool(lines) and bool(entry_re.match(lines[-1]))
+        if (
+            previous_is_position
+            and not entry_re.match(value)
+            and not value.startswith("===")
+            and lines[-1] != "=== TABLE HEADER ==="
+        ):
             # Keep the code at the end while appending wrapped name text.
             match = code_re.search(lines[-1])
             if match:
@@ -831,7 +847,9 @@ text-transform:uppercase;letter-spacing:.06em}}
 .page-break{{margin:26px 0 12px;color:#9aa3bd;font-size:12px;letter-spacing:.12em;
 text-transform:uppercase;border-bottom:1px dashed #e1e6f1;padding-bottom:6px}}
 .page-break:first-child{{margin-top:0}}
-.table-heading{{display:grid;grid-template-columns:2.6em minmax(0,1fr) auto;gap:10px;padding:12px;margin-bottom:8px;border-bottom:1px solid #dbe1ef;color:#657293;font-size:13px;font-weight:600}}
+.table-heading{{display:grid;grid-template-columns:2.6em minmax(0,1fr) auto;gap:10px;
+padding:12px;margin-bottom:8px;border-bottom:1px solid #dbe1ef;color:#657293;
+font-size:13px;font-weight:600}}
 .pos{{display:flex;align-items:baseline;gap:10px;padding:7px 12px;border-radius:10px;
 border:1px solid transparent}}
 .pos .num{{color:#9aa3bd;min-width:2.6em;font-variant-numeric:tabular-nums}}
@@ -841,7 +859,8 @@ color:#3a3fd6;border-radius:7px;padding:2px 9px;white-space:nowrap}}
 .pos.hit{{background:#fff3bf;border-color:#f0d264}}
 .pos.hit .name{{font-weight:700}}
 .cont{{color:#55618a;padding:0 12px;font-size:14px;line-height:1.5}}
-@media(max-width:600px){{.doc{{padding:18px 12px}}.pos{{flex-wrap:wrap}}.pos .code{{margin-left:3.6em}}h1{{font-size:22px}}}}
+@media(max-width:600px){{.doc{{padding:18px 12px}}.pos{{flex-wrap:wrap}}
+.pos .code{{margin-left:3.6em}}h1{{font-size:22px}}}}
 .hint{{color:#7584a8;font-size:13px;margin:16px 2px 0}}
 @media print{{.topline,.verify{{display:none}} body{{background:#fff}}
 .doc{{border:0;padding:0}}}}

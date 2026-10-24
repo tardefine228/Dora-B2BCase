@@ -81,6 +81,21 @@ def _display_confidence(reranker, raw_confidence: float) -> float:
     return min(max(float(calibrate(raw_confidence)), 0.0), 1.0)
 
 
+# How far a configured semantic floor may sit from the artifact's own trained
+# threshold before it is treated as "measured on a different artifact". Both are
+# group-confidence numbers on the same scale, so a large gap means the floor was
+# taken from a measurement of another file, not from noise.
+_SEMANTIC_FLOOR_DRIFT = 0.05
+
+# Measured ``review`` floor of the semantic backend, on the same raw scale the
+# shipped artifact produces for qdrant candidates. 0.45 is the optimum of the
+# 274-row set and the median threshold of the 5x20-fold cross-validation
+# (0.452), i.e. a plateau 0.42-0.45 rather than one cell of a table
+# (``eval/experiments.md``, эксп. 28). Lowering it answers more but emits codes
+# on goods the list does not contain: at 0.25 those false codes are 14 against 4.
+_SEMANTIC_REVIEW_FLOOR = 0.45
+
+
 def _apply_semantic_floors(reranker):
     """Retune the decision floors of a loaded reranker for semantic scores.
 
@@ -118,7 +133,32 @@ def _apply_semantic_floors(reranker):
             original["review"],
             model.threshold_review,
         )
+        _warn_if_floor_drifted(reranker, original, model)
     return reranker
+
+
+def _warn_if_floor_drifted(reranker, original: dict, model) -> None:
+    """Say it loudly when the semantic floor answers more than was measured safe.
+
+    The semantic raw scale is compressed, so its floor cannot be copied from the
+    artifact: 0.45 is what the 274-row measurement and the cross-validation agree
+    on (эксп. 28). Every answered-but-wrong code is a compliance risk, so a
+    *lower* configured floor is worth a warning — a higher one only silences more
+    and is a legitimate conservative choice.
+    """
+    if not getattr(reranker, "uses_dense", False):
+        return
+    if model.threshold_review >= _SEMANTIC_REVIEW_FLOOR - _SEMANTIC_FLOOR_DRIFT:
+        return
+    logger.warning(
+        "Порог semantic review=%s ниже измеренного %.2f (артефакт обучен под review=%s): "
+        "на 274 строках ложных кодов вне перечня 14 против 4, верных решений 146 против "
+        "152. Порог не запрещён, но он отвечает чаще, чем измерено безопасно "
+        "(eval/experiments.md, эксп. 28)",
+        model.threshold_review,
+        _SEMANTIC_REVIEW_FLOOR,
+        original["review"],
+    )
 
 
 def _apply_catalog_floors(reranker):
@@ -234,20 +274,53 @@ def _codeless_hint(best, confidence: float) -> Alternative:
     )
 
 
-def _distinct_alternatives(ranked, status: str, threshold_review: float) -> list[Alternative]:
+def _anchored(candidate, query_stems: set[str] | None) -> bool:
+    """Does the candidate position share a content stem with the query?"""
+    if not query_stems:
+        return False
+    from ml.features import content_stems, stems
+
+    return bool(query_stems & content_stems(set(stems(candidate.title))))
+
+
+def _query_content_stems(query: str) -> set[str]:
+    """Content stems of the query, with the lexicon bridges' canonical words."""
+    from ml.features import content_stems, stems
+    from ml.lexicon import bridged_targets
+
+    values = set(stems(query))
+    for target in bridged_targets(query).values():
+        values |= set(stems(target))
+    return content_stems(values)
+
+
+def _distinct_alternatives(
+    ranked, status: str, query_stems: set[str] | None = None
+) -> list[Alternative]:
     """Up to ``_MAX_ALTERNATIVES`` runner-up positions with distinct codes.
 
     The same position is often listed in several appendices (and Qdrant stores
     one point per appendix row), so the raw ranking contains duplicates that
-    would otherwise crowd out genuinely different suggestions. For ``not_found``
-    answers only candidates above the review threshold are kept.
+    would otherwise crowd out genuinely different suggestions.
+
+    A ``not_found`` answer used to keep only candidates whose *pair* probability
+    cleared ``threshold_review`` — but that threshold lives on the group
+    confidence scale, and ``not_found`` already means the group confidence is
+    below it, so the filter could never pass and the hint channel was dead: all
+    108 out-of-catalog rows in the labeled set came back with an empty
+    ``alternatives`` list even when the correct position ranked first. A lead
+    after «нет в каталоге» is now kept when it is lexically anchored in the
+    query — at least one content stem in common — so the specialist still gets
+    ranked leads, while a dense near-miss with nothing in common («false
+    friend») or a meaningless query («qwerty zxcvbn asdf») yields no invented
+    hint. The answer's ``status`` remains ``not_found``: a lead is not a claim.
     """
     alternatives: list[Alternative] = []
     seen_codes = {ranked[0].code}
     for candidate in ranked[1:]:
         if candidate.code in seen_codes:
             continue
-        if status == "not_found" and candidate.probability < threshold_review:
+        if status == "not_found" and not _anchored(candidate, query_stems):
             continue
         seen_codes.add(candidate.code)
         alternatives.append(
@@ -351,15 +424,33 @@ class CatalogClassifier:
     (lexical only) or a ready ``ml.dense.DenseIndex`` aligned with ``self.index``.
     """
 
-    def __init__(self, catalog_path: Path, reranker=None, dense="auto") -> None:
+    def __init__(self, catalog_path: Path, reranker=None, dense="auto", verifier=None) -> None:
         self.catalog_path = Path(catalog_path)
+        # Optional third stage (api/app/services/llm_verifier.py): a constrained
+        # check of the top-3 hypotheses for `review`/`not_found` only. ``None``
+        # keeps the pure model behaviour, which is the default.
+        self._verifier = verifier
         self.index: list[dict] = []
         self._load()
         if not self.index:
             raise ValueError(f"В каталоге нет записей: {self.catalog_path}")
         self._dense = _build_dense_index(self.index) if dense == "auto" else dense
         tag = self._dense.tag if self._dense is not None else None
-        loaded_reranker = reranker if reranker is not None else _load_reranker(tag)
+        # Same escape hatch as the qdrant backend: a wrong or untested artifact must
+        # be rollable back without rebuilding the image, and without losing vector
+        # candidates (VECTOR_SEARCH=false would drop those too).
+        reranker_tag = tag
+        if tag and settings.semantic_reranker == "lexical":
+            logger.warning(
+                "SEMANTIC_RERANKER=lexical: каталоговый режим скорит %s, а не "
+                "реранкером эмбеддера %s (векторы остаются кандидатами)",
+                "reranker.json",
+                tag,
+            )
+            reranker_tag = None
+        loaded_reranker = (
+            reranker if reranker is not None else _load_reranker(reranker_tag)
+        )
         self._reranker = _apply_catalog_floors(loaded_reranker)
         logger.info(
             "CatalogClassifier загружен: %d позиций из %s (reranker=%s, vector=%s)",
@@ -368,19 +459,32 @@ class CatalogClassifier:
             type(self._reranker).__name__ if self._reranker else "none",
             tag or "off",
         )
+        self._reranker_name = _reranker_artifact_name(self._reranker, reranker_tag)
 
     @property
     def vector_info(self) -> dict:
         """Status of the vector layer for /health (what is actually serving requests)."""
         if self._dense is None:
-            return {"enabled": False, "embedder": None, "dim": 0, "scoring": "lexical"}
+            return {
+                "enabled": False,
+                "embedder": None,
+                "dim": 0,
+                "positions": 0,
+                "store": None,
+                # Which artifact scores is part of the contract even without vectors:
+                # eval reports record it as provenance, and the rollback must be visible.
+                "reranker": self._reranker_name,
+                "scoring": "vector-features"
+                if getattr(self._reranker, "uses_dense", False)
+                else "lexical-reranker",
+            }
         return {
             "enabled": True,
             "embedder": self._dense.tag,
             "dim": self._dense.dim,
             "positions": len(self._dense.names),
             "store": self._dense.store,
-            "reranker": _reranker_artifact_name(self._reranker, self._dense.tag),
+            "reranker": self._reranker_name,
             "scoring": "vector-features"
             if getattr(self._reranker, "uses_dense", False)
             else "lexical-reranker",
@@ -461,8 +565,12 @@ class CatalogClassifier:
         # Typos ("Монитр", "Клавитура") are corrected against the catalog
         # vocabulary first: stems and embeddings cannot rescue absent tokens.
         from ml.fuzzy import autocorrect
+        from ml.query import name_variants
 
-        return self._classify_normalized(autocorrect(query.strip()))
+        text = query.strip()
+        return _best_answer(
+            self._classify_normalized(autocorrect(variant)) for variant in name_variants(text)
+        ).model_copy(update={"query": text})
 
     def classify_many(self, queries: list[str]) -> list[ClassifyResponse]:
         """Batch path (BE-7): one autocorrect pass, ONE batched encoding call.
@@ -476,16 +584,29 @@ class CatalogClassifier:
         if not queries:
             return []
         from ml.fuzzy import autocorrect
+        from ml.query import name_variants
 
-        normalized = [autocorrect(query.strip()) for query in queries]
+        originals = [query.strip() for query in queries]
+        # Every variant that will be scored is encoded once, in one batch: the
+        # name-only variant is a second text per purchase line.
+        variants = [name_variants(text) for text in originals]
+        to_encode = [autocorrect(variant) for group in variants for variant in group]
         if self._dense is not None:
             try:
-                self._dense.warm_queries([name for name in normalized if name])
+                self._dense.warm_queries([name for name in to_encode if name])
             except Exception:  # noqa: BLE001 - per-query encoding still works
                 logger.exception(
                     "Пакетное кодирование запросов не удалось — кодируем по одному"
                 )
-        return [self._classify_normalized(name) for name in normalized]
+        answers: list[ClassifyResponse] = []
+        position = 0
+        for text, group in zip(originals, variants, strict=True):
+            scored = []
+            for _variant in group:
+                scored.append(self._classify_normalized(to_encode[position]))
+                position += 1
+            answers.append(_best_answer(scored).model_copy(update={"query": text}))
+        return answers
 
     def _classify_normalized(self, normalized_query: str) -> ClassifyResponse:
         if not normalized_query:
@@ -642,7 +763,7 @@ class CatalogClassifier:
         raw_confidence = round(min(max(raw_confidence, 0.0), 1.0), 4)
         confidence = round(_display_confidence(self._reranker, raw_confidence), 4)
 
-        threshold_review = getattr(self._reranker, "threshold_review", 0.45)
+        query_stems = _query_content_stems(query)
 
         if status == "not_found" or not best.code:
             # Too weak to suggest a position — or the winning position has no
@@ -650,7 +771,12 @@ class CatalogClassifier:
             # one. Report "не найдено"; keep at most plausible near-misses in
             # alternatives, and a demoted codeless winner stays visible as the
             # first hint (with its title and source) for the specialist.
-            alternatives = _distinct_alternatives(ranked, "not_found", threshold_review)
+            # A demoted codeless winner is not a below-threshold silence: the
+            # query did hit the catalog, so its runner-ups stay unfiltered — only
+            # genuine "nothing matched" answers need the lexical-anchor rule.
+            alternatives = _distinct_alternatives(
+                ranked, "not_found" if status == "not_found" else "review", query_stems
+            )
             if status != "not_found":
                 logger.info(
                     "Позиция без кода ОКПД2 понижена до not_found: query=%r title=%r",
@@ -661,34 +787,126 @@ class CatalogClassifier:
                     _codeless_hint(best, confidence),
                     *alternatives[: _MAX_ALTERNATIVES - 1],
                 ]
-            return ClassifyResponse(
-                query=query,
-                code=None,
-                title=None,
-                confidence=0.0,
-                confidence_raw=0.0,
-                status="not_found",
-                clause_ref=None,
-                clause_url=None,
-                alternatives=alternatives,
-                latency_ms=0.0,
+            return _with_verifier(
+                self,
+                query,
+                ClassifyResponse(
+                    query=query,
+                    code=None,
+                    title=None,
+                    confidence=0.0,
+                    confidence_raw=0.0,
+                    status="not_found",
+                    clause_ref=None,
+                    clause_url=None,
+                    alternatives=alternatives,
+                    latency_ms=0.0,
+                ),
+                ranked,
             )
 
-        alternatives = _distinct_alternatives(ranked, status, threshold_review)
-        return ClassifyResponse(
-            query=query,
-            code=best.code,
-            title=best.title,
-            confidence=confidence,
-            confidence_raw=raw_confidence,
-            status=status,
-            clause_ref=best.clause_ref,
-            clause_url=clause_url_for(best.payload.get("record_id")),
-            code_role=best.payload.get("code_role"),
-            catalog_review_required=best.payload.get("catalog_review_required"),
-            alternatives=alternatives,
-            latency_ms=0.0,
+        alternatives = _distinct_alternatives(ranked, status, query_stems)
+        return _with_verifier(
+            self,
+            query,
+            ClassifyResponse(
+                query=query,
+                code=best.code,
+                title=best.title,
+                confidence=confidence,
+                confidence_raw=raw_confidence,
+                status=status,
+                clause_ref=best.clause_ref,
+                clause_url=clause_url_for(best.payload.get("record_id")),
+                code_role=best.payload.get("code_role"),
+                catalog_review_required=best.payload.get("catalog_review_required"),
+                alternatives=alternatives,
+                latency_ms=0.0,
+            ),
+            ranked,
         )
+
+
+def _with_verifier(classifier, query: str, answer: ClassifyResponse, ranked) -> ClassifyResponse:
+    """Let the optional LLM verifier confirm one of the offered codes.
+
+    Only weak answers are passed on: an ``ok`` answer is final. The verifier may
+    return a code **that was offered to it** or "none"; the rescued answer is
+    reported as ``review`` — a candidate for a human, never a confident ``ok`` —
+    and carries the provenance in ``verifier``/``verifier_note`` so a client can
+    tell a model answer from a verified one. Every failure mode (no key, no
+    network, timeout, invented code) leaves the answer untouched.
+    """
+    verifier = getattr(classifier, "_verifier", None)
+    if verifier is None or answer.status == "ok":
+        return answer
+    from app.services.llm_verifier import Candidate
+
+    offered = []
+    seen: set[str] = set()
+    for candidate in ranked:
+        code = (candidate.code or "").strip()
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        offered.append(Candidate(code=code, title=candidate.title or ""))
+        if len(offered) == verifier.max_candidates:
+            break
+    verdict = verifier.verify(query, offered)
+    if verdict is None:
+        return answer
+    if verdict.code is None:
+        # The model agrees that none of the positions fits. Silence stays silence,
+        # but the fact is recorded: the specialist learns the hypotheses were read.
+        return answer.model_copy(
+            update={"verifier": verifier.name, "verifier_note": "нет совпадений"}
+        )
+    chosen = next((cand for cand in ranked if (cand.code or "") == verdict.code), None)
+    if chosen is None:  # pragma: no cover - guarded by the verifier's whitelist
+        return answer
+    return answer.model_copy(
+        update={
+            "code": verdict.code,
+            "title": chosen.title,
+            "status": "review",
+            "clause_ref": chosen.clause_ref,
+            "clause_url": clause_url_for(chosen.payload.get("record_id")),
+            "code_role": chosen.payload.get("code_role"),
+            "catalog_review_required": chosen.payload.get("catalog_review_required"),
+            "verifier": verifier.name,
+            "verifier_note": "код подтверждён по top-3",
+        }
+    )
+
+
+def _best_answer(answers) -> ClassifyResponse:
+    """Pick the answer of the purchase-line variants by confidence.
+
+    A purchase line is scored twice when it has a specification tail (see
+    ``ml.query``): the full line and the product name alone. The attribute tail
+    is often what pushes an otherwise correct answer below the ``ok`` floor —
+    ``DDR4``, ``1000 об/мин`` and ``1 шт`` are words the catalog cannot know —
+    but it also carries disambiguation ("Плита Kronospan MDF;
+    древесно-волокнистая"), so neither variant is right on its own. The raw
+    confidence is the model's own estimate of being correct and it lives on the
+    same calibrated scale for both variants, so the more confident one wins;
+    a tie goes to the name-only variant, which is the cleaner input.
+
+    The caller overwrites ``query`` with the text the user actually sent.
+    """
+    candidates = list(answers)
+    assert candidates, "name_variants always yields at least one text"
+
+    def rank(answer: ClassifyResponse) -> tuple[int, float]:
+        # A silent answer is never better than an answered one, whatever its
+        # (zero) confidence says; otherwise the raw confidence decides.
+        return (0 if answer.status == "not_found" else 1, answer.confidence_raw or 0.0)
+
+    best = candidates[0]
+    for answer in candidates[1:]:
+        if rank(answer) >= rank(best):
+            best = answer
+    return best
 
 
 def _catalog_flags_lookup() -> dict[str, tuple[str | None, bool | None]]:
@@ -855,9 +1073,17 @@ class QdrantClassifier:
         return code_role, review_flag
 
     def classify_many(self, queries: list[str]) -> list[ClassifyResponse]:
-        normalized_queries = [query.strip() for query in queries]
-        if not normalized_queries:
+        from ml.query import name_variants
+
+        originals = [query.strip() for query in queries]
+        if not originals:
             return []
+
+        # A purchase line is searched twice when it has an attribute tail: the
+        # full line and the name alone (see ``ml.query``). Both variants go
+        # through one batched search, then the more confident answer wins.
+        variants = [name_variants(text) for text in originals]
+        normalized_queries = [variant for group in variants for variant in group]
 
         try:
             hit_groups = self._search_many(normalized_queries, top_k=10)
@@ -880,13 +1106,15 @@ class QdrantClassifier:
                 raw_confidence, status = self._reranker.evaluate(query, ranked)
                 raw_confidence = round(min(max(raw_confidence, 0.0), 1.0), 4)
                 confidence = round(_display_confidence(self._reranker, raw_confidence), 4)
-                threshold_review = getattr(self._reranker, "threshold_review", 0.45)
+                query_stems = _query_content_stems(query)
                 code_role, review_flag = self._catalog_flags_for(best.payload)
                 if status == "not_found" or not best.code:
                     # Invariant 5 (BE-9): ok/review without a code is forbidden, so
                     # a codeless winner («Не указан») is demoted and stays visible
                     # as the first alternative.
-                    alternatives = _distinct_alternatives(ranked, "not_found", threshold_review)
+                    alternatives = _distinct_alternatives(
+                        ranked, "not_found" if status == "not_found" else "review", query_stems
+                    )
                     if status != "not_found":
                         logger.info(
                             "Позиция без кода ОКПД2 понижена до not_found: query=%r title=%r",
@@ -912,7 +1140,7 @@ class QdrantClassifier:
                         )
                     )
                     continue
-                alternatives = _distinct_alternatives(ranked, status, threshold_review)
+                alternatives = _distinct_alternatives(ranked, status, query_stems)
                 clause_ref = best.clause_ref
                 clause_url = clause_url_for(best.payload.get("record_id"))
                 code, title = best.code, best.title
@@ -977,7 +1205,14 @@ class QdrantClassifier:
                     latency_ms=0.0,
                 )
             )
-        return results
+
+        answers: list[ClassifyResponse] = []
+        position = 0
+        for text, group in zip(originals, variants, strict=True):
+            chunk = results[position : position + len(group)]
+            position += len(group)
+            answers.append(_best_answer(chunk).model_copy(update={"query": text}))
+        return answers
 
 
 def _resolve_catalog_path() -> Path | None:
@@ -1014,7 +1249,12 @@ def build_classifier(backend: str | None = None) -> Classifier:
     catalog_path = _resolve_catalog_path()
     if catalog_path is None:
         raise FileNotFoundError("Каталог data.csv не найден. Проверьте DATA_DIR или CATALOG_PATH.")
-    return CatalogClassifier(catalog_path)
+    from app.services.llm_verifier import build_llm_verifier
+
+    verifier = build_llm_verifier(settings)
+    if verifier is not None:
+        logger.info("Третья ступень включена: %s (%s)", verifier.name, verifier.model)
+    return CatalogClassifier(catalog_path, verifier=verifier)
 
 
 class CachedClassifier:
