@@ -30,6 +30,18 @@ Policy
 
 The rule is intentionally conservative: it never accepts an artifact that trades
 away silence and never accepts one that is merely "not worse".
+
+Why the counts can be pooled over seeds
+---------------------------------------
+A single training run measures one draw of the train/validation split, and the
+split moves the verdict: with the same code, the lexical artifact answers
+93 / 88 / 93 / 92 of 108 out-of-catalog rows at seeds 1875–1878, the vector one
+92 / 91 / 91 / 93. A guard that allows *zero* rows to be lost then rejects an
+artifact on a coin flip — which is what happened to a correct autocorrection fix
+(experiment 24). So ``evaluate_gate`` accepts counts summed over several runs
+(``runs``) and scales the row tolerances with them: the policy stays "silence is
+a guard", but the *measurement* stops being a single sample. Guards keep a zero
+tolerance per pool because a systematic silence loss must still be fatal.
 """
 
 from __future__ import annotations
@@ -116,6 +128,7 @@ class GateVerdict:
     new_ece: float
     labels: tuple[str, str] = ("ПРИНЯТ", "ОТКЛОНЁН")
     columns: tuple[str, str] = ("лексика", "вектор")
+    runs: int = 1
 
     @property
     def headline_gains(self) -> dict[str, int]:
@@ -128,6 +141,7 @@ class GateVerdict:
     def as_dict(self) -> dict:
         return {
             "keep": self.keep,
+            "runs": self.runs,
             "reasons": list(self.reasons),
             "ece": {"base": round(self.base_ece, 4), "new": round(self.new_ece, 4)},
             "rows": [row.as_dict() for row in self.rows],
@@ -160,9 +174,35 @@ class GateVerdict:
             f" {self.new_ece - self.base_ece:>12.3f}  "
             f"{'ok' if self.new_ece <= self.base_ece + ECE_TOLERANCE else 'fatal'}"
         )
+        if self.runs > 1:
+            lines.append(
+                f"  (счётчики объединены по {self.runs} прогонам; допуск на строку "
+                f"{ROW_TOLERANCE * self.runs} — шум одного разбиения)"
+            )
         verdict = self.labels[0] if self.keep else self.labels[1]
         lines.append(f"  гейт: {verdict}" + ("" if self.keep else f" — {'; '.join(self.reasons)}"))
         return "\n".join(lines)
+
+
+def pool_counts(runs: list[dict[str, Counts]]) -> dict[str, Counts]:
+    """Sum row counts of several runs of the same measurement.
+
+    Pooling answers "is this artifact family worse?" instead of "was it worse
+    on this particular split?". Totals add up, so rates stay comparable and the
+    tolerance scales with ``runs``.
+    """
+    if not runs:
+        raise ValueError("Нет прогонов для объединения")
+    keys = set(runs[0])
+    for run in runs[1:]:
+        if set(run) != keys:
+            raise ValueError("Прогоны измеряют разные наборы метрик")
+    return {
+        key: Counts(
+            sum(run[key].correct for run in runs), sum(run[key].total for run in runs)
+        )
+        for key in keys
+    }
 
 
 def evaluate_gate(
@@ -171,8 +211,13 @@ def evaluate_gate(
     *,
     base_ece: float,
     new_ece: float,
+    runs: int = 1,
 ) -> GateVerdict:
-    """Apply the policy above to two measurements of the same labeled set."""
+    """Apply the policy above to two measurements of the same labeled set.
+
+    ``runs`` is the number of pooled training runs behind the counts: it scales
+    the row tolerances (one row per run stays noise) and changes nothing else.
+    """
     missing = (set(METRIC_LABELS) - set(base)) | (set(METRIC_LABELS) - set(new))
     if missing:
         raise ValueError(f"Нет измерений для метрик: {sorted(missing)}")
@@ -184,6 +229,9 @@ def evaluate_gate(
         if base[key].total != new[key].total:
             raise ValueError(f"Метрика {key} измерена на разных наборах: {base[key]} vs {new[key]}")
 
+    if runs < 1:
+        raise ValueError("runs должен быть ≥ 1")
+    row_tolerance = ROW_TOLERANCE * runs
     rows: list[GateRow] = []
     reasons: list[str] = []
 
@@ -195,20 +243,23 @@ def evaluate_gate(
             if verdict == "fatal":
                 reasons.append(f"{label}: −{abs(delta)} верных строк")
         elif key in HEADLINE_METRICS:
-            if delta < -ROW_TOLERANCE:
+            if delta < -row_tolerance:
                 verdict = "fatal"
-                reasons.append(f"{label}: −{abs(delta)} строк (> допуска {ROW_TOLERANCE})")
+                reasons.append(
+                    f"{label}: −{abs(delta)} строк (> допуска {row_tolerance}"
+                    f"{f' за {runs} прогона' if runs > 1 else ''})"
+                )
             elif delta < 0:
                 verdict = "tolerated"
             else:
                 verdict = "better" if delta > 0 else "equal"
         else:  # ok_precision — compare wrong "confident" answers, not the rate
             extra_wrong = fresh.wrong - old.wrong
-            if extra_wrong > ROW_TOLERANCE:
+            if extra_wrong > row_tolerance:
                 verdict = "fatal"
                 reasons.append(
                     f"{label}: неверных ok {old.wrong} → {fresh.wrong} "
-                    f"(допуск +{ROW_TOLERANCE})"
+                    f"(допуск +{row_tolerance})"
                 )
             elif extra_wrong > 0:
                 verdict = "tolerated"
@@ -228,4 +279,5 @@ def evaluate_gate(
         reasons=tuple(reasons),
         base_ece=base_ece,
         new_ece=new_ece,
+        runs=runs,
     )

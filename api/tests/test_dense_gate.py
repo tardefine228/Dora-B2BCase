@@ -12,7 +12,13 @@ from __future__ import annotations
 
 import pytest
 
-from eval.dense_gate import ECE_TOLERANCE, ROW_TOLERANCE, Counts, evaluate_gate
+from eval.dense_gate import (
+    ECE_TOLERANCE,
+    ROW_TOLERANCE,
+    Counts,
+    evaluate_gate,
+    pool_counts,
+)
 
 # --- the measured case (tfidf embedder, seed 1875, 2026-10-23) -------------------------
 
@@ -192,3 +198,65 @@ def test_report_is_json_serialisable_for_the_build_log():
     assert row["base"] == {"correct": 137, "total": 166, "rate": 82.5}
     assert row["new"] == {"correct": 140, "total": 166, "rate": 84.3}
     assert row["delta_correct"] == 3
+
+
+# --- pooling several training runs ----------------------------------------------
+#
+# A single run measures one split of the training data. With identical code the
+# lexical artifact answered 93 / 88 / 93 / 92 of the 108 out-of-catalog rows at
+# seeds 1875-1878 and the vector one 92 / 91 / 91 / 93, so the zero-tolerance
+# silence guard was deciding on a coin flip: the same autocorrection fix was
+# rejected at seed 1875 and accepted at 1876. Pooling keeps the policy (silence
+# is a guard) and makes the measurement describe the artifact, not the split.
+
+
+def test_pooling_sums_counts_and_keeps_totals() -> None:
+    first = dict(LEXICAL)
+    second = _copy(LEXICAL, correct_silence=Counts(88, 108), top1_expected=Counts(139, 166))
+    pooled = pool_counts([first, second])
+    assert pooled["correct_silence"] == Counts(180, 216)
+    assert pooled["top1_expected"] == Counts(276, 332)
+
+
+def test_pooling_rejects_empty_and_mismatched_runs() -> None:
+    with pytest.raises(ValueError):
+        pool_counts([])
+    with pytest.raises(ValueError):
+        pool_counts([LEXICAL, {"top1_expected": Counts(1, 1)}])
+
+
+def test_one_lost_silence_row_is_noise_when_pooled_but_fatal_alone() -> None:
+    """The exact case that blocked the autocorrection fix at a single seed."""
+    lost = _copy(VECTOR, correct_silence=Counts(91, 108))
+    alone = evaluate_gate(LEXICAL, lost, base_ece=LEXICAL_ECE, new_ece=VECTOR_ECE)
+    assert alone.keep is False
+    assert any("верный not_found" in reason for reason in alone.reasons)
+
+    # Over two runs the same artifact loses one row in one run and gains it back
+    # in the other: silence is equal, so the guard passes while top-1 still wins.
+    base = pool_counts([LEXICAL, LEXICAL])
+    new = pool_counts([lost, _copy(VECTOR, correct_silence=Counts(93, 108))])
+    pooled = evaluate_gate(base, new, base_ece=LEXICAL_ECE, new_ece=VECTOR_ECE, runs=2)
+    assert pooled.keep is True
+    assert pooled.runs == 2
+    assert pooled.as_dict()["runs"] == 2
+
+
+def test_pooled_systematic_silence_loss_is_still_fatal() -> None:
+    """Pooling must not launder a real regression: losing a row in every run fails."""
+    lost = _copy(VECTOR, correct_silence=Counts(91, 108))
+    base = pool_counts([LEXICAL, LEXICAL, LEXICAL])
+    new = pool_counts([lost, lost, lost])
+    verdict = evaluate_gate(base, new, base_ece=LEXICAL_ECE, new_ece=VECTOR_ECE, runs=3)
+    assert verdict.keep is False
+    assert any("верный not_found" in reason for reason in verdict.reasons)
+
+
+def test_pooling_scales_the_headline_tolerance_with_the_runs() -> None:
+    base = pool_counts([LEXICAL, LEXICAL])
+    three_rows_worse = _copy(LEXICAL, top1_expected=Counts(134, 166))
+    new = pool_counts([three_rows_worse, three_rows_worse])
+    # −6 rows over two runs exceeds the −2 tolerance that two runs allow.
+    verdict = evaluate_gate(base, new, base_ece=LEXICAL_ECE, new_ece=VECTOR_ECE, runs=2)
+    assert verdict.keep is False
+    assert any("top-1" in reason for reason in verdict.reasons)

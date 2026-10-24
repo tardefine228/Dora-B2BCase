@@ -9,14 +9,14 @@
     "reranker": "reranker.tfidf.json",
     "scoring": "vector-features",
     "semantic_reranker": "auto",
-    "review_threshold": 0.621,
+    "review_threshold": 0.622,
     "labeled_rows": 274,
     "expected_rows": 166,
     "not_found_rows": 108,
     "artifact_sha256": {
-      "reranker.tfidf.json": "ac0f46fde629b08ddd7037e30914bbb24700514f988168073e52e69d8127caf8"
+      "reranker.tfidf.json": "906c8c9b3384d8a53f4b11acb6e59ee5208e99c68faac97ab27fef0b65a36e09"
     },
-    "measured_at": "2026-10-24T06:13:53Z"
+    "measured_at": "2026-10-24T08:29:39Z"
   },
   "metrics": {
     "correct_silence": {
@@ -40,9 +40,9 @@
       "total": 274
     },
     "ok_precision": {
-      "correct": 133,
-      "total": 146
+      "correct": 134,
+      "total": 147
     }
   },
-  "ece": 0.0356
+  "ece": 0.0311
 }

@@ -171,8 +171,8 @@ def test_table_states_the_verdict_and_the_numbers():
 @pytest.mark.parametrize(
     ("name", "reranker", "top1", "ece"),
     (
-        ("lexical.json", "reranker.json", (137, 166), 0.0534),
-        ("dense-tfidf.json", "reranker.tfidf.json", (140, 166), 0.0356),
+        ("lexical.json", "reranker.json", (137, 166), 0.0558),
+        ("dense-tfidf.json", "reranker.tfidf.json", (140, 166), 0.0311),
     ),
 )
 def test_shipped_baselines_describe_the_shipped_configuration(name, reranker, top1, ece):
