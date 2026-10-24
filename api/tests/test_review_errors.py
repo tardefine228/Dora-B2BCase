@@ -11,7 +11,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from eval.review_errors import classify_kind, code_family, head_stems
+from eval.review_errors import (
+    answer_mechanic,
+    classify_kind,
+    code_family,
+    head_stems,
+)
 
 
 def test_code_family_groups_sibling_positions() -> None:
@@ -37,3 +42,29 @@ def test_sibling_subcode_is_reported_as_such() -> None:
     row = {"query": "Конвектор отопительный стальной", "expected_okpd2": "25.21.11.160"}
     response = SimpleNamespace(code="25.21.11.150", title="Конвекторы отопительные стальные")
     assert classify_kind(row, response) == "sibling_code"
+
+
+def test_exact_match_is_its_own_kind_not_a_sibling_code() -> None:
+    """Every correct answer shares a code family with itself.
+
+    Counting those as "sibling codes" made the mirror column meaningless: it read
+    "the same mechanic is marked correct in 140 rows" for a mechanic that had no
+    correct rows at all.
+    """
+    row = {"query": "Кроссовки мужские", "expected_okpd2": "15.2"}
+    response = SimpleNamespace(code="15.2", title="Обувь")
+    assert classify_kind(row, response) == "exact"
+
+
+def test_mechanic_ignores_the_verdict() -> None:
+    """The contradiction is between mechanics: same way of answering, opposite labels."""
+    correct = {"query": "Кроссовки мужские", "expected_okpd2": "15.2"}
+    wrong = {"query": "Конструктор детский", "expected_okpd2": ""}
+    correct_response = SimpleNamespace(code="15.2", title="Обувь")
+    wrong_response = SimpleNamespace(code="32.4", title="Игры и игрушки")
+
+    assert answer_mechanic(correct, correct_response) == "generic_category"
+    assert answer_mechanic(wrong, wrong_response) == "generic_category"
+    # …while their verdict-level kinds differ, which is exactly what the dataset says.
+    assert classify_kind(correct, correct_response) == "exact"
+    assert classify_kind(wrong, wrong_response) == "generic_category"
