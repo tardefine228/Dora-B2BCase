@@ -81,20 +81,30 @@ def test_qdrant_alternatives_have_distinct_codes() -> None:
     ]
 
 
-def test_qdrant_not_found_keeps_only_candidates_above_review() -> None:
+def test_qdrant_not_found_keeps_only_lexically_anchored_candidates() -> None:
+    """A lead after «нет в каталоге» must be anchored in the query.
+
+    The old rule kept runner-ups above ``threshold_review`` — a group-confidence
+    threshold compared against a pair probability, which a ``not_found`` answer
+    can never satisfy, so the hint channel was empty on every out-of-catalog
+    row. Now the runner-up has to share a content stem with the query.
+    """
     hits = [
         _hit("15.2", "Обувь", 0.25),
+        # Shares «обувь» with the query: a legitimate lead.
+        _hit("15.2.1", "Обувь специальная", 0.20),
+        # Dense near-misses with nothing in common are not invented as hints.
         _hit("14.1", "Одежда", 0.22),
         _hit("14.1", "Одежда", 0.21),
         _hit("13.2", "Ткани", 0.05),
     ]
     classifier = _qdrant_classifier(hits)
     classifier._reranker.evaluate = lambda query, ranked: (0.0, "not_found")  # type: ignore[method-assign]
-    response = classifier.classify("что-то неизвестное")
+    response = classifier.classify("Обувь неизвестная")
 
     assert response.status == "not_found"
     assert response.code is None
-    assert [alternative.code for alternative in response.alternatives] == ["14.1"]
+    assert [alternative.code for alternative in response.alternatives] == ["15.2.1"]
 
 
 def test_distinct_alternatives_shared_by_both_backends() -> None:
@@ -107,7 +117,7 @@ def test_distinct_alternatives_shared_by_both_backends() -> None:
         RankedCandidate(code="D", title="d", clause_ref=None, retrieval_score=0.0, probability=0.4),
         RankedCandidate(code="E", title="e", clause_ref=None, retrieval_score=0.0, probability=0.3),
     ]
-    alternatives = _distinct_alternatives(ranked, "review", 0.2)
+    alternatives = _distinct_alternatives(ranked, "review")
     assert [alternative.code for alternative in alternatives] == ["B", "C", "D"]
     # The catalog backend uses the very same helper.
     assert CatalogClassifier._rank_to_response.__code__.co_names.count("_distinct_alternatives")

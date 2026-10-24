@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "config": {
+    "backend": "catalog",
+    "vector_search": false,
+    "embedder_backend": "tfidf",
+    "vector_store": "memory",
+    "embedder": null,
+    "reranker": "reranker.json",
+    "scoring": "lexical-reranker",
+    "semantic_reranker": "auto",
+    "review_threshold": 0.687,
+    "labeled_rows": 274,
+    "expected_rows": 166,
+    "not_found_rows": 108,
+    "artifact_sha256": {
+      "reranker.json": "b216531c2d55e83c84ad1a45d1f437c44e32fc6a981b7ea5fd76e76e74d1abef"
+    },
+    "measured_at": "2026-10-24T08:27:50Z"
+  },
+  "metrics": {
+    "correct_silence": {
+      "correct": 93,
+      "total": 108
+    },
+    "exact_top1": {
+      "correct": 112,
+      "total": 112
+    },
+    "top1_expected": {
+      "correct": 137,
+      "total": 166
+    },
+    "top3_expected": {
+      "correct": 149,
+      "total": 166
+    },
+    "top1_all": {
+      "correct": 230,
+      "total": 274
+    },
+    "ok_precision": {
+      "correct": 131,
+      "total": 143
+    }
+  },
+  "ece": 0.0558
+}

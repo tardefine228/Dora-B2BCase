@@ -1,0 +1,131 @@
+{
+  "artifact": "reranker.tfidf.json",
+  "artifact_sha256": "906c8c9b3384d8a53f4b11acb6e59ee5208e99c68faac97ab27fef0b65a36e09",
+  "embedder_tag": "tfidf",
+  "catalog_rows": 984,
+  "baseline": {
+    "artifact": "reranker.json",
+    "sha256": "b216531c2d55e83c84ad1a45d1f437c44e32fc6a981b7ea5fd76e76e74d1abef",
+    "trained_in_run": true,
+    "path": null
+  },
+  "labeled_rows": 274,
+  "seeds": [
+    1875,
+    1876,
+    1877,
+    1878
+  ],
+  "decision_basis": "pooled",
+  "keep": true,
+  "runs": 4,
+  "reasons": [],
+  "ece": {
+    "base": 0.0435,
+    "new": 0.0402
+  },
+  "rows": [
+    {
+      "metric": "correct_silence",
+      "label": "верный not_found",
+      "base": {
+        "correct": 363,
+        "total": 432,
+        "rate": 84.0
+      },
+      "new": {
+        "correct": 366,
+        "total": 432,
+        "rate": 84.7
+      },
+      "delta_correct": 3,
+      "delta_wrong": -3,
+      "verdict": "better"
+    },
+    {
+      "metric": "exact_top1",
+      "label": "точные названия, top-1",
+      "base": {
+        "correct": 448,
+        "total": 448,
+        "rate": 100.0
+      },
+      "new": {
+        "correct": 448,
+        "total": 448,
+        "rate": 100.0
+      },
+      "delta_correct": 0,
+      "delta_wrong": 0,
+      "verdict": "equal"
+    },
+    {
+      "metric": "top1_expected",
+      "label": "top-1 (с кодом)",
+      "base": {
+        "correct": 559,
+        "total": 664,
+        "rate": 84.2
+      },
+      "new": {
+        "correct": 562,
+        "total": 664,
+        "rate": 84.6
+      },
+      "delta_correct": 3,
+      "delta_wrong": -3,
+      "verdict": "better"
+    },
+    {
+      "metric": "top3_expected",
+      "label": "top-3 (с кодом)",
+      "base": {
+        "correct": 607,
+        "total": 664,
+        "rate": 91.4
+      },
+      "new": {
+        "correct": 610,
+        "total": 664,
+        "rate": 91.9
+      },
+      "delta_correct": 3,
+      "delta_wrong": -3,
+      "verdict": "better"
+    },
+    {
+      "metric": "top1_all",
+      "label": "top-1 по всем",
+      "base": {
+        "correct": 922,
+        "total": 1096,
+        "rate": 84.1
+      },
+      "new": {
+        "correct": 928,
+        "total": 1096,
+        "rate": 84.7
+      },
+      "delta_correct": 6,
+      "delta_wrong": -6,
+      "verdict": "better"
+    },
+    {
+      "metric": "ok_precision",
+      "label": "точность статуса ok",
+      "base": {
+        "correct": 526,
+        "total": 576,
+        "rate": 91.3
+      },
+      "new": {
+        "correct": 535,
+        "total": 584,
+        "rate": 91.6
+      },
+      "delta_correct": 9,
+      "delta_wrong": -1,
+      "verdict": "better"
+    }
+  ]
+}

@@ -47,6 +47,12 @@ MODEL_LOCAL_ONLY: bool = os.getenv("MODEL_LOCAL_ONLY", "false").lower() in {
     "on",
 }
 MODEL_BATCH_SIZE: int = max(1, int(os.getenv("MODEL_BATCH_SIZE", "16")))
+# Truncate inputs to this many tokens (0 = keep the model default). Product names are
+# short (median 63 characters, the longest catalog row is 1164), while long-context
+# embedders such as BAAI/bge-m3 default to 8192 tokens: the buffers for that are pure
+# memory overhead and can alone exceed the container limit. 512 tokens fit every
+# catalog name with room to spare.
+MODEL_MAX_SEQ_LENGTH: int = max(0, int(os.getenv("MODEL_MAX_SEQ_LENGTH", "512")))
 
 # === Qdrant ===
 QDRANT_URL: str | None = os.getenv("QDRANT_URL") or None
