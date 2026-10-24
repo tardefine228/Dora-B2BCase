@@ -87,6 +87,14 @@ def _display_confidence(reranker, raw_confidence: float) -> float:
 # taken from a measurement of another file, not from noise.
 _SEMANTIC_FLOOR_DRIFT = 0.05
 
+# Measured ``review`` floor of the semantic backend, on the same raw scale the
+# shipped artifact produces for qdrant candidates. 0.45 is the optimum of the
+# 274-row set and the median threshold of the 5x20-fold cross-validation
+# (0.452), i.e. a plateau 0.42-0.45 rather than one cell of a table
+# (``eval/experiments.md``, эксп. 28). Lowering it answers more but emits codes
+# on goods the list does not contain: at 0.25 those false codes are 14 against 4.
+_SEMANTIC_REVIEW_FLOOR = 0.45
+
 
 def _apply_semantic_floors(reranker):
     """Retune the decision floors of a loaded reranker for semantic scores.
@@ -130,29 +138,26 @@ def _apply_semantic_floors(reranker):
 
 
 def _warn_if_floor_drifted(reranker, original: dict, model) -> None:
-    """Say it loudly when a configured floor does not belong to this artifact.
+    """Say it loudly when the semantic floor answers more than was measured safe.
 
-    ``QDRANT_REVIEW_FLOOR`` defaults to 0.25 and that number was measured when the
-    *lexical* artifact scored the semantic backend (эксп. 16). The shipped artifact
-    now uses vector features, whose raw scale is lower: measured on the 274-row set
-    with the semantic backend, ``review = 0.25`` answers half of the out-of-catalog
-    rows (correct silence 50 % against 97 % in the report) — see
-    ``eval/experiments.md``, эксп. 25. The value stays a deployment decision, but
-    the log must not let it pass silently.
+    The semantic raw scale is compressed, so its floor cannot be copied from the
+    artifact: 0.45 is what the 274-row measurement and the cross-validation agree
+    on (эксп. 28). Every answered-but-wrong code is a compliance risk, so a
+    *lower* configured floor is worth a warning — a higher one only silences more
+    and is a legitimate conservative choice.
     """
     if not getattr(reranker, "uses_dense", False):
         return
-    drift = abs(model.threshold_review - original["review"])
-    if drift <= _SEMANTIC_FLOOR_DRIFT:
+    if model.threshold_review >= _SEMANTIC_REVIEW_FLOOR - _SEMANTIC_FLOOR_DRIFT:
         return
     logger.warning(
-        "Порог semantic review=%s взят из настроек, а артефакт обучен под review=%s "
-        "(расхождение %.2f): сырая шкала у векторного артефакта другая. Измерено на "
-        "274 строках: при review=0.25 верная тишина 50%% вместо 97%%. Перемерьте порог: "
-        "python eval/run_eval.py --backend qdrant --sweep (eval/experiments.md, эксп. 25)",
+        "Порог semantic review=%s ниже измеренного %.2f (артефакт обучен под review=%s): "
+        "на 274 строках ложных кодов вне перечня 14 против 4, верных решений 146 против "
+        "152. Порог не запрещён, но он отвечает чаще, чем измерено безопасно "
+        "(eval/experiments.md, эксп. 28)",
         model.threshold_review,
+        _SEMANTIC_REVIEW_FLOOR,
         original["review"],
-        drift,
     )
 
 

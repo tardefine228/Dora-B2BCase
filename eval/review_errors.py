@@ -56,7 +56,7 @@ sys.path.insert(0, str(ROOT / "api"))
 
 from app.services.classifier import build_classifier  # noqa: E402
 
-from eval.run_eval import LABELED, codes_match, load_labeled  # noqa: E402
+from eval.run_eval import LABELED, codes_match, label_kind, load_labeled  # noqa: E402
 from ml.features import stems  # noqa: E402
 from ml.lexicon import bridged_targets  # noqa: E402
 
@@ -288,6 +288,8 @@ def main() -> int:
 
     outcomes: list[dict] = []
     for row in rows:
+        if label_kind(row) == "unclear":
+            continue  # no verdict: a catch-all position may or may not cover the goods
         query = (row["query"] or "").strip()
         expected = (row["expected_okpd2"] or "").strip()
         disputed = (row.get("disputed") or "0").strip() == "1"

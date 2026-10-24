@@ -3,9 +3,13 @@
 The labeled set is a *measurement* set: neither the reranker nor the thresholds
 are trained on it (see ``ml/train_reranker.py``). Match rules:
 
-* an empty ``expected_okpd2`` means the expected answer is ``not_found``;
-* otherwise the predicted code may match exactly or as a prefix of the expected
-  code (or vice versa) — "26.40.20" covers all television positions;
+* ``label_kind`` says what the row measures: ``code`` (a listed position is the
+  expected answer), ``absent`` (no position covers the goods — silence is the
+  expected answer) or ``unclear`` (only a residual «прочие / не включённые в
+  другие группировки» position, or another arguable reading, could cover the
+  goods: the row is *excluded* from pass/fail and reported as contested);
+* the predicted code may match exactly or as a prefix of the expected code (or
+  vice versa) — "26.40.20" covers all television positions;
 * ``top-3`` counts the expected code among the response alternatives.
 
 Besides the labeled set the script measures:
@@ -72,6 +76,23 @@ def codes_match(predicted: str | None, expected: str) -> bool:
         or predicted.startswith(expected + ".")
         or expected.startswith(predicted + ".")
     )
+
+
+LABEL_KINDS = ("code", "absent", "unclear")
+
+
+def label_kind(row: dict) -> str:
+    """What a labeled row measures: ``code``, ``absent`` or ``unclear``.
+
+    The column is what makes the silence metric honest: turning "the product name
+    does not occur in data.csv" into "the list has no position for these goods"
+    was a labeling shortcut (see ``eval/label_audit.csv``), so rows where only a
+    catch-all position could cover the goods are kept but not scored.
+    """
+    kind = (row.get("label_kind") or "").strip()
+    if kind in LABEL_KINDS:
+        return kind
+    return "code" if (row.get("expected_okpd2") or "").strip() else "absent"
 
 
 def load_labeled(path: Path) -> list[dict]:
@@ -199,10 +220,15 @@ def _classify_rows(classifier, rows: list[dict]) -> list[dict]:
     for row in rows:
         query = (row["query"] or "").strip()
         expected = (row["expected_okpd2"] or "").strip()
+        kind = label_kind(row)
         disputed = (row.get("disputed") or "0").strip() == "1"
         response = classifier.classify(query)
 
-        if not expected:
+        if kind == "unclear":
+            # Contested ground truth: recorded for transparency, never scored.
+            correct_top1 = False
+            correct_top3 = False
+        elif kind == "absent":
             correct_top1 = response.status == "not_found"
             correct_top3 = correct_top1
         else:
@@ -222,6 +248,7 @@ def _classify_rows(classifier, rows: list[dict]) -> list[dict]:
                 else response.confidence,
                 "correct_top1": correct_top1,
                 "correct_top3": correct_top3,
+                "label_kind": kind,
                 "disputed": disputed,
                 "title": response.title or "",
                 "notes": (row.get("notes") or "").strip(),
@@ -237,7 +264,10 @@ def calibration(results: list[dict], bins: int = ECE_BINS, key: str = "confidenc
     correctness is a different question (was silence right?). ECE is the
     confidence-weighted mean |accuracy − mean confidence| over equal-width bins.
     """
-    answered = [r for r in results if r["status"] != "not_found"]
+    answered = [
+        r for r in results
+        if r["status"] != "not_found" and _row_kind(r) != "unclear"
+    ]
     if not answered:
         return {"ece": 0.0, "bins": [], "answered": 0}
     table = []
@@ -264,6 +294,19 @@ def calibration(results: list[dict], bins: int = ECE_BINS, key: str = "confidenc
     return {"ece": round(ece, 4), "bins": table, "answered": len(answered)}
 
 
+def _row_kind(row: dict) -> str:
+    """Kind of an already classified row.
+
+    Classified rows always carry ``label_kind``; for ad-hoc dicts (tests, tools
+    that build rows by hand) the older convention still applies: an empty or
+    ``(not_found)`` expectation means the row measures silence.
+    """
+    kind = row.get("label_kind")
+    if kind:
+        return kind
+    return "absent" if row.get("expected") in ("", "(not_found)", None) else "code"
+
+
 def metric_counts(report: dict) -> dict[str, Counts]:
     """Raw row counts behind every gated metric — the only thing the gate trusts.
 
@@ -275,8 +318,9 @@ def metric_counts(report: dict) -> dict[str, Counts]:
     legitimately labels a different number of rows as confident.
     """
     results = report["results"]
-    with_expected = [r for r in results if r["expected"] != "(not_found)"]
-    without_expected = [r for r in results if r["expected"] == "(not_found)"]
+    with_expected = [r for r in results if _row_kind(r) == "code"]
+    without_expected = [r for r in results if _row_kind(r) == "absent"]
+    scored = [r for r in results if _row_kind(r) in ("code", "absent")]
     confident = [r for r in results if r["status"] == "ok"]
     exact = report.get("exact") or []
 
@@ -288,7 +332,7 @@ def metric_counts(report: dict) -> dict[str, Counts]:
         "exact_top1": counted(exact),
         "top1_expected": counted(with_expected),
         "top3_expected": counted(with_expected, "correct_top3"),
-        "top1_all": counted(results),
+        "top1_all": counted(scored),
         "ok_precision": counted(confident),
     }
 
@@ -300,8 +344,17 @@ def summarize(report: dict) -> dict:
     def rate(items: list[dict], key: str) -> float:
         return round(100 * sum(1 for r in items if r[key]) / len(items), 1) if items else 0.0
 
+    contested = [r for r in results if _row_kind(r) == "unclear"]
     summary = {
         "total": len(results),
+        "scored": len(results) - len(contested),
+        "contested_rows": len(contested),
+        "contested_answered": sum(1 for r in contested if r["status"] != "not_found"),
+        "contested_silence": (
+            round(100 * sum(1 for r in contested if r["status"] == "not_found") / len(contested), 1)
+            if contested
+            else 0.0
+        ),
         "top1_expected": round(counts["top1_expected"].rate, 1),
         "top3_expected": round(counts["top3_expected"].rate, 1),
         "correct_silence": round(counts["correct_silence"].rate, 1),
@@ -310,8 +363,13 @@ def summarize(report: dict) -> dict:
         "expected_rows": counts["top1_expected"].total,
         "not_found_rows": counts["correct_silence"].total,
         "status_distribution": dict(Counter(r["status"] for r in results)),
-        "disputed_top1": rate([r for r in results if r["disputed"]], "correct_top1"),
-        "clean_top1": rate([r for r in results if not r["disputed"]], "correct_top1"),
+        "disputed_top1": rate(
+            [r for r in results if r["disputed"] and _row_kind(r) != "unclear"], "correct_top1"
+        ),
+        "clean_top1": rate(
+            [r for r in results if not r["disputed"] and _row_kind(r) != "unclear"],
+            "correct_top1",
+        ),
     }
     summary["exact_rows"] = counts["exact_top1"].total
     summary["exact_top1"] = round(counts["exact_top1"].rate, 1)
@@ -328,7 +386,8 @@ def render_markdown(report: dict) -> str:
         f"**Режим:** `{report['backend']}`  ",
         f"**Примеров:** {summary['total']} "
         f"(с ожидаемым кодом: {summary['expected_rows']}, "
-        f"ожидается `not_found`: {summary['not_found_rows']})",
+        f"проверенно «вне перечня»: {summary['not_found_rows']}, "
+        f"спорных и не оцениваемых: {summary['contested_rows']})",
     ]
     info = getattr(report.get("classifier"), "vector_info", None) or {}
     if info:
@@ -343,8 +402,11 @@ def render_markdown(report: dict) -> str:
         "| --- | ---: |",
         f"| Top-1 (примеры с кодом) | {summary['top1_expected']}% |",
         f"| Top-3 (примеры с кодом) | {summary['top3_expected']}% |",
-        f"| Верный `not_found` (нет в перечне) | {summary['correct_silence']}% |",
-        f"| Top-1 по всем примерам | {summary['top1_all']}% |",
+        f"| Верный `not_found` (проверенные «вне перечня», {summary['not_found_rows']} шт.) "
+        f"| {summary['correct_silence']}% |",
+        f"| Top-1 по всем оцениваемым ({summary['scored']} шт.) | {summary['top1_all']}% |",
+        f"| Спорные строки: ответ дан / тишина | {summary['contested_answered']} из "
+        f"{summary['contested_rows']} / {summary['contested_silence']}% |",
         f"| Top-1 без спорных | {summary['clean_top1']}% |",
         f"| Top-1 по спорным | {summary['disputed_top1']}% |",
         f"| Точные названия каталога, top-1 ({summary['exact_rows']} шт.) "
@@ -402,8 +464,11 @@ def render_markdown(report: dict) -> str:
     lines += [
         "",
         "> Набор размечен вручную и служит измерением качества, а не юридической",
-        "> экспертизой. Спорные случаи помечены в `eval/labeled_examples.csv`",
-        "> колонкой `disputed`.",
+        "> экспертизой. Колонка `label_kind` делит строки на `code`, `absent` и",
+        "> `unclear`; последние не входят в проценты — по ним в перечне есть только",
+        "> остаточная позиция («прочие / не включённые в другие группировки»), и",
+        "> решение за юристом. Разбор каждой строки — `eval/label_audit.csv`,",
+        "> правила — `docs/labeling-doctrine.md`.",
         "",
     ]
     return "\n".join(lines)
@@ -500,6 +565,7 @@ def build_measurement(report: dict, classifier) -> dict:
         "labeled_rows": summary["total"],
         "expected_rows": summary["expected_rows"],
         "not_found_rows": summary["not_found_rows"],
+        "contested_rows": summary["contested_rows"],
         "artifact_sha256": artifacts,
         "measured_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }

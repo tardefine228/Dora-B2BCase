@@ -123,17 +123,18 @@ class Settings:
         self.model_local_only = _bool("MODEL_LOCAL_ONLY", default=False)
 
         # Decision floors for the semantic backend. The semantic raw scale is
-        # compressed, so its `review` floor is measured separately: 0.25 lifts the
-        # precision of an honest `not_found` from 89.8% to 97.2%
-        # (eval/experiments.md, эксп. 16) — measured while the semantic backend was
-        # still scored by the *lexical* artifact. With SEMANTIC_RERANKER=auto and a
-        # reranker trained for the embedder the raw scale moves, so re-measure it:
-        # eval/threshold_sweep.py --backend qdrant.
+        # compressed, so its `review` floor is measured separately from the catalog
+        # one. 0.45 is the measured optimum of the shipped vector artifact on the
+        # 274-row set: 152 correct decisions against 146 at the old 0.25, false
+        # codes on out-of-list goods 14 -> 4 (eval/experiments.md, эксп. 28), and
+        # 0.45 is also the median threshold the cross-validation picks (0.452), so
+        # it is a plateau, not a cell read off one table. The value was measured
+        # with the `label_kind` doctrine in place (docs/labeling-doctrine.md).
         # `ok` is aligned with the lexical floor (0.77) — it does not move any
         # measured metric, only how many answers are labelled confidently.
         # Empty string means "keep the artifact value".
         self.semantic_ok_floor = _optional_float("QDRANT_OK_FLOOR", 0.77)
-        self.semantic_review_floor = _optional_float("QDRANT_REVIEW_FLOOR", 0.25)
+        self.semantic_review_floor = _optional_float("QDRANT_REVIEW_FLOOR", 0.45)
 
         # Which artifact scores the semantic backend: `auto` prefers the reranker
         # trained for the active embedder (reranker.<tag>.json) and falls back to the

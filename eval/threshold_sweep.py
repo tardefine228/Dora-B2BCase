@@ -41,37 +41,63 @@ import run_eval as labeled_eval  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.services.classifier import build_classifier  # noqa: E402
 
+from ml.features import normalize  # noqa: E402
+
 OK_GRID = (0.30, 0.40, 0.50, 0.60, 0.70, 0.75, 0.77, 0.80, 0.85, 0.90)
 REVIEW_GRID = (0.08, 0.10, 0.12, 0.14, 0.165, 0.18, 0.20, 0.22, 0.25, 0.30, 0.35)
 CSV_FIELDS = ("query", "expected", "raw", "top1_code", "top1_correct", "silence_expected")
 
 
 def collect(backend: str) -> list[dict]:
-    """One classification pass: keep the raw confidence of every row."""
+    """One classification pass: keep the raw confidence of every row.
+
+    The leading code comes from the ranking, not from ``response.code``: the
+    classifier has already applied the configured floor, so reading the response
+    would make every sweep point below it look identical (the bug that made
+    ``review = 0.25`` and ``0.45`` print the same numbers after the default moved).
+    """
     settings.classifier_backend = backend
     classifier = build_classifier(backend)
+    reranker = getattr(classifier, "_reranker", None)
+    captured: dict[str, list] = {}
+    captured_raw: dict[str, float] = {}
+    original = reranker.evaluate
+
+    def spy(query, ranked):
+        captured[normalize(query)] = ranked
+        result = original(query, ranked)
+        captured_raw[normalize(query)] = float(result[0] or 0.0)
+        return result
+
+    reranker.evaluate = spy  # type: ignore[method-assign]
     rows = []
-    for row in labeled_eval.load_labeled(labeled_eval.LABELED):
-        query = (row["query"] or "").strip()
-        expected = (row["expected_okpd2"] or "").strip()
-        response = classifier.classify(query)
-        # The top-1 code is independent of the thresholds: a lower `review`
-        # floor only changes the *status*, never which position leads.
-        correct = (
-            labeled_eval.codes_match(response.code, expected)
-            if expected
-            else response.status == "not_found"
-        )
-        rows.append(
-            {
-                "query": query,
-                "expected": expected or "(not_found)",
-                "raw": round(float(response.confidence_raw or 0.0), 4),
-                "top1_code": response.code or "(not_found)",
-                "top1_correct": int(bool(correct)),
-                "silence_expected": int(not expected),
-            }
-        )
+    try:
+        for row in labeled_eval.load_labeled(labeled_eval.LABELED):
+            if labeled_eval.label_kind(row) == "unclear":
+                continue  # contested ground truth: no pass/fail to sweep
+            query = (row["query"] or "").strip()
+            expected = (row["expected_okpd2"] or "").strip()
+            classifier.classify(query)  # fills `captured` / `captured_raw`
+            ranked = captured.get(normalize(query)) or []
+            top_code = getattr(ranked[0], "code", None) if ranked else None
+            # The top-1 code is independent of the thresholds: a lower `review`
+            # floor only changes the *status*, never which position leads.
+            correct = labeled_eval.codes_match(top_code, expected) if expected else False
+            rows.append(
+                {
+                    "query": query,
+                    "expected": expected or "(not_found)",
+                    # Raw score of the leading candidate: `not_found` zeroes the
+                    # response's `confidence_raw`, which would flatten every point
+                    # below the configured floor into "no answer".
+                    "raw": round(captured_raw.get(normalize(query), 0.0), 4),
+                    "top1_code": top_code or "(not_found)",
+                    "top1_correct": int(bool(correct)),
+                    "silence_expected": int(not expected),
+                }
+            )
+    finally:
+        reranker.evaluate = original  # type: ignore[method-assign]
     return rows
 
 

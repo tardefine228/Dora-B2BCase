@@ -171,8 +171,10 @@ def test_table_states_the_verdict_and_the_numbers():
 @pytest.mark.parametrize(
     ("name", "reranker", "top1", "ece"),
     (
-        ("lexical.json", "reranker.json", (137, 166), 0.0558),
-        ("dense-tfidf.json", "reranker.tfidf.json", (140, 166), 0.0311),
+        # После аудита разметки (docs/labeling-doctrine.md): 201 строка с кодом
+        # вместо 166, поэтому числа и ECE другие — это другое измерение, не регрессия.
+        ("lexical.json", "reranker.json", (147, 201), 0.0572),
+        ("dense-tfidf.json", "reranker.tfidf.json", (150, 201), 0.0979),
     ),
 )
 def test_shipped_baselines_describe_the_shipped_configuration(name, reranker, top1, ece):
@@ -201,9 +203,19 @@ def test_baseline_artifact_hash_matches_the_shipped_file():
 
 
 def test_baselines_can_be_compared_with_each_other_row_by_row():
-    """Same dataset, so the comparison must work — and the vector run must win."""
+    """Same dataset, so the comparison must work and show what vectors buy.
+
+    The vector artifact wins where it was trained to win (+3 top-1, +7 top-3) and
+    is still flagged by the strict rule, because its *calibrated* confidence is
+    now worse: on the corrected labels ECE is 0.058 against 0.098, above the
+    0.01 tolerance. That is a real open item, not a test artefact — the Platt map
+    was fitted while a third of the "outside" rows were labelled by grep, and it
+    now reads as under-confidence. Refitting it is model work (эксп. 28).
+    """
     lexical = load_measurement(BASELINES / "lexical.json")
     dense = load_measurement(BASELINES / "dense-tfidf.json")
     verdict = evaluate_regression(lexical, dense)
-    assert verdict.keep is True
     assert verdict.headline_gains["top1_expected"] == 3
+    assert verdict.headline_gains["top3_expected"] == 7
+    assert verdict.keep is False
+    assert any("ECE" in reason for reason in verdict.reasons), verdict.reasons
