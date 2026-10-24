@@ -81,6 +81,13 @@ def _display_confidence(reranker, raw_confidence: float) -> float:
     return min(max(float(calibrate(raw_confidence)), 0.0), 1.0)
 
 
+# How far a configured semantic floor may sit from the artifact's own trained
+# threshold before it is treated as "measured on a different artifact". Both are
+# group-confidence numbers on the same scale, so a large gap means the floor was
+# taken from a measurement of another file, not from noise.
+_SEMANTIC_FLOOR_DRIFT = 0.05
+
+
 def _apply_semantic_floors(reranker):
     """Retune the decision floors of a loaded reranker for semantic scores.
 
@@ -118,7 +125,35 @@ def _apply_semantic_floors(reranker):
             original["review"],
             model.threshold_review,
         )
+        _warn_if_floor_drifted(reranker, original, model)
     return reranker
+
+
+def _warn_if_floor_drifted(reranker, original: dict, model) -> None:
+    """Say it loudly when a configured floor does not belong to this artifact.
+
+    ``QDRANT_REVIEW_FLOOR`` defaults to 0.25 and that number was measured when the
+    *lexical* artifact scored the semantic backend (эксп. 16). The shipped artifact
+    now uses vector features, whose raw scale is lower: measured on the 274-row set
+    with the semantic backend, ``review = 0.25`` answers half of the out-of-catalog
+    rows (correct silence 50 % against 97 % in the report) — see
+    ``eval/experiments.md``, эксп. 25. The value stays a deployment decision, but
+    the log must not let it pass silently.
+    """
+    if not getattr(reranker, "uses_dense", False):
+        return
+    drift = abs(model.threshold_review - original["review"])
+    if drift <= _SEMANTIC_FLOOR_DRIFT:
+        return
+    logger.warning(
+        "Порог semantic review=%s взят из настроек, а артефакт обучен под review=%s "
+        "(расхождение %.2f): сырая шкала у векторного артефакта другая. Измерено на "
+        "274 строках: при review=0.25 верная тишина 50%% вместо 97%%. Перемерьте порог: "
+        "python eval/run_eval.py --backend qdrant --sweep (eval/experiments.md, эксп. 25)",
+        model.threshold_review,
+        original["review"],
+        drift,
+    )
 
 
 def _apply_catalog_floors(reranker):
