@@ -40,8 +40,8 @@ from ml.features import (
     build_known_stems,
     idf_table,
     lexical_score_prepared,
-    prepare_candidate,
     normalize,
+    prepare_candidate,
     stem,
     stems,
     tokens,
@@ -1121,7 +1121,9 @@ def train(
     pair_probabilities: list[float] = []
     pair_correct: list[bool] = []
     confidence_index = calibration_index(catalog)
-    confidence_dense = DenseIndex.build([r["name"] for r in confidence_index]) if use_dense else None
+    confidence_dense = (
+        DenseIndex.build([r["name"] for r in confidence_index]) if use_dense else None
+    )
     if confidence_dense is not None:
         confidence_dense.warm_queries(list(by_query))
     for query, group in by_query.items():

@@ -37,6 +37,7 @@ from ml.config import (
     MODEL_BATCH_SIZE,
     MODEL_DEVICE,
     MODEL_LOCAL_ONLY,
+    MODEL_MAX_SEQ_LENGTH,
     MODEL_NAME,
     MODELS_DIR,
     SPACY_MODEL,
@@ -212,8 +213,17 @@ class SentenceTransformerEncoder:
             local_files_only=MODEL_LOCAL_ONLY,
         )
         self.dim = int(self._model.get_sentence_embedding_dimension())
+        if MODEL_MAX_SEQ_LENGTH:
+            # A long-context model (bge-m3: 8192 tokens) allocates buffers for the
+            # configured length; catalog names never need more than a few hundred.
+            self._model.max_seq_length = MODEL_MAX_SEQ_LENGTH
         if DEBUG:
-            logger.info("Embedding model loaded in %.1f seconds", time.perf_counter() - started)
+            logger.info(
+                "Embedding model loaded in %.1f seconds (dim=%d, max_seq_length=%d)",
+                time.perf_counter() - started,
+                self.dim,
+                getattr(self._model, "max_seq_length", 0),
+            )
 
     def encode(self, texts: list[str], normalize: bool = True) -> list[list[float]]:
         return self._encode(texts, self._doc_prefix, normalize)
@@ -380,16 +390,45 @@ def spacy_available() -> bool:
     )
 
 
+_fallback_warned = False
+
+
+def _warn_about_silent_fallback(fallback: str) -> None:
+    """Say it out loud when an installed transformer is skipped.
+
+    ``auto`` degrading to spaCy/TF-IDF is the most expensive silent failure in this
+    project: the service looks healthy, only ``/health/ready`` reveals that the
+    embedder is not the one baked into the image. Warning once per process keeps
+    that visible without spamming the log.
+    """
+    global _fallback_warned
+    if _fallback_warned:
+        return
+    _fallback_warned = True
+    logger.warning(
+        "EMBEDDER_BACKEND=auto: sentence-transformers установлен, но MODEL_NAME=%r — "
+        "не каталог с весами модели; используется %s. Скачайте модель "
+        "(python scripts/download_model.py <repo_id> <dir>) и укажите этот каталог в "
+        "MODEL_NAME; чтобы откат не был тихим, задайте EMBEDDER_BACKEND="
+        "sentence-transformers.",
+        MODEL_NAME,
+        fallback,
+    )
+
+
 def resolve_backend() -> str:
     backend = EMBEDDER_BACKEND.strip().lower()
-    if backend == "auto":
-        # `auto` never downloads a model at run time: the transformer is used only when
-        # its weights are already on disk (baked into the image or mounted). Ask for a
-        # hub download explicitly with EMBEDDER_BACKEND=sentence-transformers.
-        if sentence_transformers_available() and Path(MODEL_NAME).is_dir():
-            return "sentence-transformers"
-        return "spacy" if spacy_available() else "tfidf"
-    return backend
+    if backend != "auto":
+        return backend
+    # `auto` never downloads a model at run time: the transformer is used only when
+    # its weights are already on disk (baked into the image or mounted). Ask for a
+    # hub download explicitly with EMBEDDER_BACKEND=sentence-transformers.
+    if sentence_transformers_available() and Path(MODEL_NAME).is_dir():
+        return "sentence-transformers"
+    fallback = "spacy" if spacy_available() else "tfidf"
+    if sentence_transformers_available():
+        _warn_about_silent_fallback(fallback)
+    return fallback
 
 
 def _build_spacy_encoder() -> SpacyVectorEncoder:

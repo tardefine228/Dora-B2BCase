@@ -18,21 +18,29 @@ Besides the labeled set the script measures:
 * **threshold sweep** (``--sweep``) — metrics as a function of the ``review``
   threshold, with the model fixed (used to pick ``REVIEW_CONFIDENCE_FLOOR``).
 
-Quality gates (``--min-top1``, ``--min-top3``, ``--min-silence``,
-``--min-exact``) make the script exit non-zero when a metric regresses, so CI
-can fail the build.
+Quality gates. CI does not use absolute floors any more: it measures the shipped
+configuration and compares it row by row with a recorded measurement
+(``--baseline eval/baselines/<config>.json``, policy in ``eval/quality_gate.py``).
+A floor on a rate can silently stop describing anything once the artifact cannot be
+rebuilt; a recorded measurement cannot. ``--report`` writes the actual measurement
+in the same format, so refreshing a baseline is an explicit, reviewable copy.
+``--min-top1``/``--min-top3``/``--min-silence``/``--min-exact`` stay for ad-hoc use.
 
 Usage:
     PYTHONPATH=api python eval/run_eval.py [--backend catalog|qdrant] [--output eval/eval_report.md]
-        [--sweep] [--min-top1 80 --min-top3 88 --min-silence 50 --min-exact 95]
+        [--sweep] [--baseline eval/baselines/dense-tfidf.json] [--report /tmp/actual.json]
+        [--min-top1 80 --min-top3 88 --min-silence 50 --min-exact 95]
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
+import json
 import sys
 from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,10 +50,15 @@ sys.path.insert(0, str(ROOT / "api"))
 from app.core.config import settings  # noqa: E402
 from app.services.classifier import build_classifier  # noqa: E402
 
+from eval.dense_gate import Counts  # noqa: E402
+
 LABELED = ROOT / "eval" / "labeled_examples.csv"
 CATALOG_CSV = ROOT / "data" / "data.csv"
 EXACT_NAME_STEP = 10  # every 10th catalog row → ~110 literal queries
-SWEEP_THRESHOLDS = (0.10, 0.12, 0.14, 0.16, 0.165, 0.18, 0.20, 0.22, 0.25, 0.30)
+# The sweep grid is derived from the answers themselves (see ``sweep_thresholds``): a
+# fixed list can only describe one confidence scale, and the calibrated catalog scale
+# (review ~0.62-0.68) is nowhere near the raw qdrant one (~0.10-0.30).
+SWEEP_POINTS = 6
 ECE_BINS = 5
 
 
@@ -107,6 +120,29 @@ def evaluate_exact_names(classifier, names: list[tuple[str, str]]) -> list[dict]
     return exact
 
 
+def sweep_thresholds(
+    confidences: list[float], own: float | None, points: int = SWEEP_POINTS
+) -> list[float]:
+    """Thresholds that can actually change an answer, spread over the observed range.
+
+    Only the confidences the model reported matter: a threshold between two of them
+    is the same decision as the one just above. Quantiles keep the table readable for
+    any scale (raw qdrant, calibrated catalog, a future embedder) instead of hard-coding
+    a grid that silently stops making sense.
+    """
+    values = sorted(value for value in confidences if value > 0)
+    if not values:
+        return []
+    last = len(values) - 1
+    quantiles = {
+        round(values[min(last, int(index / points * last))], 3)
+        for index in range(points + 1)
+    }
+    if own is not None:
+        quantiles.add(round(own, 3))
+    return sorted(quantiles)
+
+
 def _review_threshold(classifier) -> float | None:
     reranker = getattr(classifier, "_reranker", None)
     model = getattr(reranker, "confidence_model", None)
@@ -125,10 +161,23 @@ def run(backend: str, *, sweep: bool = False) -> dict:
     sweep_rows: list[dict] = []
     original_threshold = _review_threshold(classifier)
     if sweep and original_threshold is not None:
-        for threshold in SWEEP_THRESHOLDS:
+        probe = _classify_rows(classifier, rows)
+        seen: set[tuple] = set()
+        for threshold in sweep_thresholds(
+            [row["confidence"] for row in probe], original_threshold
+        ):
             _set_review_threshold(classifier, threshold)
             point = summarize({"results": _classify_rows(classifier, rows)})
             point["threshold"] = threshold
+            # Keep decision points, not arithmetic: a threshold whose answers are
+            # identical to the previous row is noise in the table.
+            signature = tuple(
+                point[key]
+                for key in ("top1_expected", "top3_expected", "correct_silence", "top1_all")
+            )
+            if signature in seen and abs(threshold - original_threshold) > 1e-9:
+                continue
+            seen.add(signature)
             sweep_rows.append(point)
         _set_review_threshold(classifier, original_threshold)
 
@@ -140,6 +189,8 @@ def run(backend: str, *, sweep: bool = False) -> dict:
         "exact": exact,
         "sweep": sweep_rows,
         "review_threshold": original_threshold,
+        # Kept for provenance: which artifact and embedder produced these numbers.
+        "classifier": classifier,
     }
 
 
@@ -213,29 +264,57 @@ def calibration(results: list[dict], bins: int = ECE_BINS, key: str = "confidenc
     return {"ece": round(ece, 4), "bins": table, "answered": len(answered)}
 
 
-def summarize(report: dict) -> dict:
+def metric_counts(report: dict) -> dict[str, Counts]:
+    """Raw row counts behind every gated metric — the only thing the gate trusts.
+
+    Rates are derived from these counts below, so the number printed in the report
+    and the number the gate compares can never diverge.
+
+    ``ok_precision`` deliberately has a model-chosen denominator: it is the share of
+    *confident* answers (status ``ok``) that were right, and a different artifact
+    legitimately labels a different number of rows as confident.
+    """
     results = report["results"]
     with_expected = [r for r in results if r["expected"] != "(not_found)"]
     without_expected = [r for r in results if r["expected"] == "(not_found)"]
+    confident = [r for r in results if r["status"] == "ok"]
+    exact = report.get("exact") or []
+
+    def counted(items: list[dict], key: str = "correct_top1") -> Counts:
+        return Counts(sum(1 for r in items if r[key]), len(items))
+
+    return {
+        "correct_silence": counted(without_expected),
+        "exact_top1": counted(exact),
+        "top1_expected": counted(with_expected),
+        "top3_expected": counted(with_expected, "correct_top3"),
+        "top1_all": counted(results),
+        "ok_precision": counted(confident),
+    }
+
+
+def summarize(report: dict) -> dict:
+    results = report["results"]
+    counts = metric_counts(report)
 
     def rate(items: list[dict], key: str) -> float:
         return round(100 * sum(1 for r in items if r[key]) / len(items), 1) if items else 0.0
 
     summary = {
         "total": len(results),
-        "top1_expected": rate(with_expected, "correct_top1"),
-        "top3_expected": rate(with_expected, "correct_top3"),
-        "correct_silence": rate(without_expected, "correct_top1"),
-        "top1_all": rate(results, "correct_top1"),
-        "expected_rows": len(with_expected),
-        "not_found_rows": len(without_expected),
+        "top1_expected": round(counts["top1_expected"].rate, 1),
+        "top3_expected": round(counts["top3_expected"].rate, 1),
+        "correct_silence": round(counts["correct_silence"].rate, 1),
+        "top1_all": round(counts["top1_all"].rate, 1),
+        "ok_precision": round(counts["ok_precision"].rate, 1),
+        "expected_rows": counts["top1_expected"].total,
+        "not_found_rows": counts["correct_silence"].total,
         "status_distribution": dict(Counter(r["status"] for r in results)),
         "disputed_top1": rate([r for r in results if r["disputed"]], "correct_top1"),
         "clean_top1": rate([r for r in results if not r["disputed"]], "correct_top1"),
     }
-    exact = report.get("exact") or []
-    summary["exact_rows"] = len(exact)
-    summary["exact_top1"] = rate(exact, "correct_top1")
+    summary["exact_rows"] = counts["exact_top1"].total
+    summary["exact_top1"] = round(counts["exact_top1"].rate, 1)
     summary["ece"] = calibration(results)["ece"]
     summary["ece_raw"] = calibration(results, key="confidence_raw")["ece"]
     return summary
@@ -250,7 +329,14 @@ def render_markdown(report: dict) -> str:
         f"**Примеров:** {summary['total']} "
         f"(с ожидаемым кодом: {summary['expected_rows']}, "
         f"ожидается `not_found`: {summary['not_found_rows']})",
-        "",
+    ]
+    info = getattr(report.get("classifier"), "vector_info", None) or {}
+    if info:
+        lines.append(
+            f"**Скорит:** `{info.get('reranker') or '—'}` · {info.get('scoring')} · "
+            f"эмбеддер: {info.get('embedder') or 'выключен'}"
+        )
+    lines += ["",
         "## Метрики",
         "",
         "| Метрика | Значение |",
@@ -360,6 +446,79 @@ def _render_sweep(sweep: list[dict], current: float | None) -> list[str]:
     return lines
 
 
+def _sha256(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _embedder_backend() -> str | None:
+    try:
+        from ml.embedder import resolve_backend
+
+        return resolve_backend()
+    except Exception:  # noqa: BLE001 - provenance must never break the measurement
+        return None
+
+
+def build_measurement(report: dict, classifier) -> dict:
+    """The gated numbers plus the configuration they were measured on.
+
+    The provenance is the point: a baseline without the artifact hash and the resolved
+    upstream settings cannot be checked later, which is exactly how the old absolute
+    floors rotted.
+    """
+    from eval.quality_gate import measurement
+
+    summary = summarize(report)
+    counts = metric_counts(report)
+    info = getattr(classifier, "vector_info", None) or {}
+    reranker_name = info.get("reranker")
+    artifacts: dict[str, str | None] = {}
+    if reranker_name:
+
+        candidates = [ROOT / "ml" / "artifacts" / reranker_name, ROOT / "models" / reranker_name]
+        for candidate in candidates:
+            digest = _sha256(candidate)
+            if digest:
+                artifacts[reranker_name] = digest
+                break
+        else:  # pragma: no cover - the artifact is always shipped or rebuilt
+            artifacts[reranker_name] = None
+
+    config = {
+        "backend": report["backend"],
+        "vector_search": bool(getattr(settings, "vector_search", False)),
+        "embedder_backend": _embedder_backend(),
+        "vector_store": getattr(settings, "vector_store", None),
+        "embedder": info.get("embedder"),
+        "reranker": reranker_name,
+        "scoring": info.get("scoring"),
+        "semantic_reranker": getattr(settings, "semantic_reranker", None),
+        "review_threshold": report.get("review_threshold"),
+        "labeled_rows": summary["total"],
+        "expected_rows": summary["expected_rows"],
+        "not_found_rows": summary["not_found_rows"],
+        "artifact_sha256": artifacts,
+        "measured_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    return measurement(counts, summary["ece"], config=config)
+
+
+def compare_with_baseline(actual: dict, baseline_path: Path) -> str | None:
+    """Print the comparison; return the failure text when the build must fail."""
+    from eval.quality_gate import evaluate_regression, load_measurement
+
+    baseline = load_measurement(baseline_path)
+    verdict = evaluate_regression(baseline, actual)
+    print(f"  базовая линия: {baseline_path}")
+    print(verdict.table())
+    if verdict.keep:
+        return None
+    return "; ".join(verdict.reasons)
+
+
 def check_gates(summary: dict, args: argparse.Namespace) -> list[str]:
     """Return human-readable failures for every gate that is not met."""
     gates = (
@@ -384,6 +543,18 @@ def main() -> int:
     parser.add_argument("--min-top3", type=float, default=None, help="гейт: top-3 с кодом, %%")
     parser.add_argument("--min-silence", type=float, default=None, help="гейт: тишина, %%")
     parser.add_argument("--min-exact", type=float, default=None, help="гейт: точные названия, %%")
+    parser.add_argument(
+        "--report",
+        type=Path,
+        default=None,
+        help="записать замер (счётчики, ECE, провенанс) в JSON — формат базовой линии",
+    )
+    parser.add_argument(
+        "--baseline",
+        type=Path,
+        default=None,
+        help="сравнить с записанным замером; регрессия → код возврата 1",
+    )
     args = parser.parse_args()
 
     report = run(args.backend, sweep=args.sweep)
@@ -412,8 +583,22 @@ def main() -> int:
         print("КАЧЕСТВО НИЖЕ ПОРОГА:")
         for failure in failures:
             print(f"  - {failure}")
-        return 1
-    return 0
+
+    actual = build_measurement(report, report["classifier"])
+    if args.report is not None:
+        args.report.write_text(
+            json.dumps(actual, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        print(f"Measurement: {args.report}")
+
+    if args.baseline is not None:
+        regression = compare_with_baseline(actual, args.baseline)
+        if regression:
+            print("РЕГРЕССИЯ ОТНОСИТЕЛЬНО БАЗОВОЙ ЛИНИИ:")
+            print(f"  - {regression}")
+            failures.append(regression)
+
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
