@@ -155,15 +155,57 @@ def test_calibration_platform_mirrors_the_api_confidence() -> None:
 def test_calibration_platform_does_not_reuse_labeled_queries() -> None:
     """The measurement set must stay out of the calibration platform."""
     from ml.catalog_loader import load_catalog
+    from ml.features import normalize
     from ml.train_reranker import build_calibration_cases
 
     catalog = load_catalog()
-    cases = build_calibration_cases(catalog, random.Random(1875 + 1))
-    platform_queries = {query.strip().casefold() for query, _expected in cases}
     labeled = {query.casefold() for query in _labeled_queries()}
+    excluded = {normalize(query) for query in labeled}
+    cases = build_calibration_cases(catalog, random.Random(1875 + 1), excluded)
+    platform_queries = {query.strip().casefold() for query, _expected in cases}
 
     assert platform_queries & labeled == set()
     assert len(cases) >= 300
     # Both halves of the platform are present: curated words and probes.
     assert any(expected for _query, expected in cases)
     assert any(not expected for _query, expected in cases)
+
+
+def test_negative_probes_never_contradict_the_lexicon() -> None:
+    """A word the lexicon maps to a position must not be a "stay silent" probe.
+
+    The probes are the negative half of the calibration platform: any answer to
+    them counts as a wrong answer. The third bridge wave put eight former probe
+    heads in scope ("колонка" → «Громкоговорители» — the labeled set even
+    expects a code for «Беспроводная колонка»), so keeping them would have
+    scored correct answers as misses and refitted the display map downwards.
+    """
+    from ml.features import build_known_stems
+    from ml.lexicon import bridged_targets
+    from ml.train_reranker import OUT_OF_SCOPE_HEADS, make_negative_queries
+
+    probe_heads = [head for head in OUT_OF_SCOPE_HEADS if not bridged_targets(head)]
+    assert probe_heads, "пул негативных голов пуст"
+    assert len(probe_heads) < len(OUT_OF_SCOPE_HEADS), "ни одна голова не размечена лексиконом"
+
+    queries = make_negative_queries(random.Random(1875), build_known_stems(["Ноутбуки"]))
+    assert len(queries) >= 300
+    contradiction = [query for query in queries if bridged_targets(query)]
+    assert contradiction == [], contradiction
+
+
+def test_calibration_modifiers_carry_no_catalog_content() -> None:
+    """A modifier that names a position hijacks retrieval instead of decorating it.
+
+    "специализированные" matched «Контейнеры специализированные» and won over the
+    product word in nine platform rows, which biased the platform's accuracy and
+    with it the fitted display map.
+    """
+    from ml.catalog_loader import load_catalog
+    from ml.features import stem, stems
+    from ml.train_reranker import CALIBRATION_MODIFIERS
+
+    catalog_words = {word for item in load_catalog() for word in stems(item["name"])}
+    collisions = [m for m in CALIBRATION_MODIFIERS if stem(m) in catalog_words]
+    assert collisions == [], collisions
+    assert len(set(CALIBRATION_MODIFIERS)) >= 4

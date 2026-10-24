@@ -95,6 +95,13 @@ def classifier() -> CatalogClassifier:
         ("Ситец набивной", "13.2"),
         ("Покрышка грузовая", "22.11.1"),
         ("Двери металлические входные", "25.12.10.000"),
+        # Третья волна: товар называется своим словом, перечень — официальным.
+        ("Перфоратор Bosch", "28.24.1"),
+        ("Микрофон динамический", "26.40.41.000"),
+        ("Дрон квадрокоптер", "30.30.32.150"),
+        ("Снегоход буран", "29.10.52.110"),
+        ("Мангал", "27.51.28"),
+        ("Пазл", "32.4"),
     ],
 )
 def test_bridged_queries_reach_their_category(classifier, query: str, code: str) -> None:
@@ -157,6 +164,41 @@ def test_ambiguous_products_do_not_bridge_to_unrelated_categories(query):
 )
 def test_ambiguous_products_keep_bridges_in_confirmed_context(query, target):
     assert target in bridged_targets(query).values()
+
+
+@pytest.mark.parametrize(
+    ("query", "forbidden"),
+    [
+        # Уничтожитель документов — офисная машина, а не «бумага и картон».
+        ("Шредер для бумаги", "бумага"),
+        # Модификатор комнаты решает: кухонная мебель против офисной.
+        ("Стол офисный", "кухонная"),
+        # Без «металлическая» кровать/шкаф — не металлическая мебель.
+        ("Кровать деревянная", "металлическая"),
+        ("Шкаф книжный", "металлическая"),
+        # Настольный компьютер — не повод тянуть любую компьютерную периферию.
+        ("Гарнитура для компьютера", "вычислительные"),
+        # Холодильная камера против камеры наблюдения.
+        ("Камера холодильная", "камеры"),
+    ],
+)
+def test_new_bridges_respect_their_guards(query, forbidden):
+    assert forbidden not in bridged_targets(query).values()
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("Шредер для бумаги", "офисные"),
+        ("Бумага офисная А4", "бумага"),
+        ("Стол кухонный", "кухонная"),
+        ("Кровать металлическая", "металлическая"),
+        ("Компьютер настольный", "вычислительные"),
+        ("Камера видеонаблюдения", "камеры"),
+    ],
+)
+def test_new_bridges_fire_in_their_context(query, expected):
+    assert expected in bridged_targets(query).values()
 
 
 def test_training_does_not_label_ambiguous_bare_words_as_positive():
