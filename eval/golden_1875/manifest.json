@@ -1,0 +1,40 @@
+{
+  "dataset_kind": "synthetic_positive_fixtures",
+  "catalog_sha256": "040def4d00ff59802410c7339f586f5e98bb3ec56ddf0ff006d4bdc7d857b961",
+  "source_text_sha256": "0ceabb6b856eade4c2c4374e0b05282ef2732a82ee8c441794b24368ba045e26",
+  "source_report": {
+    "parser_version": "1.0.0",
+    "source": "pp_1875.pdf",
+    "source_sha256": "e805cf3b73913eef5a92f290bc2d7b605957753c4c69f16834116ab59cff30f1",
+    "pages": 145,
+    "rows": 1126,
+    "positions": 899,
+    "warnings": 66,
+    "positions_by_appendix": {
+      "1": 151,
+      "2": 465,
+      "3": 277,
+      "4": 6
+    },
+    "status": "review_required"
+  },
+  "rows": 500,
+  "unique_product_names": 500,
+  "description_length_counts": {
+    "short": 150,
+    "medium": 200,
+    "long": 150
+  },
+  "appendix_counts": {
+    "2": 300,
+    "1": 175,
+    "3": 25
+  },
+  "files": {
+    "test_batch_1.csv": "b902e44ab0712b041ef00b9b4e4a74848bf5ab2a5fb8456780944dbdfda57e23",
+    "test_batch_2.csv": "db22c2c0a1a0e122edd75d224b297b0d086d517e855b3ff256410bf3896b5954",
+    "test_batch_3.csv": "749605675fe6abc45fbd9514f647b9df8b288b72bbf0c11e858acf1256da956f",
+    "test_batch_4.csv": "99c8c7d74cc22a4bb21e915094d1888211a99116f7295b2f430cc250097bcdd3",
+    "test_batch_5.csv": "bfe896055855cf8e4cc1e57fe021da5f808c9f31d69b5b7cc80bdb42c8976921"
+  }
+}
