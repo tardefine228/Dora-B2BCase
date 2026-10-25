@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, followBatch, type Result, type UploadAccepted, type Verdict } from './api';
+import { api, followBatch, type Job, type Result, type UploadAccepted, type Verdict } from './api';
 import { exportResults, exportResultsCsv } from './files';
 import { STATUS_HELP, STATUS_LABEL, codeLabel, duplicateAppendixHint, notFoundHint, verifierNote } from './status';
 import { orderResults, type SortMode } from './rows';
 import { storage } from './storage';
+import { isRunningJob, navigationType, parseJobMarker, readStoredView, type StoredView } from './view';
 
-const HISTORY_KEY = 'dora:local-history:v1';
-const HISTORY_ENABLED_KEY = 'dora:history-enabled:v1';
 const ACTIVE_JOB_KEY = 'dora:active-job:v1';
+// Ключи удалённой локальной истории: их надо стирать у тех, кто успел включить
+// галочку, иначе названия товаров останутся в браузере без всякого UI.
+const LEGACY_HISTORY_KEYS = ['dora:local-history:v1', 'dora:history-enabled:v1'];
 const message = (error: unknown) => error instanceof Error ? error.message : 'Ошибка. Попробуйте ещё раз.';
 const percent = (value: number | null) => value === null ? '—' : `${Math.round(value * 100)}%`;
 const isSafeUrl = (url: string | null): url is string => !!url && (/^\/source\/[\w-]+$/.test(url) || /^https?:\/\//i.test(url));
@@ -99,13 +101,10 @@ function ResultCard({ result, compact = false, onSaved }: { result: Result; comp
   </div>;
 }
 
-function readLocalHistory(): Result[] {
-  try { const raw = JSON.parse(storage.getItem(HISTORY_KEY) ?? '[]'); return Array.isArray(raw) ? raw.slice(0, 30) as Result[] : []; }
-  catch { return []; }
-}
-
-function readSession() {
-  try { return JSON.parse(sessionStorage.getItem('dora:current-view:v1') ?? '{}'); }
+function readSession(): StoredView {
+  // Просмотр возвращается только по «Назад» (ушли в пункт перечня и вернулись).
+  // При обычном открытии сайта запись удаляется: см. src/view.ts.
+  try { return readStoredView(sessionStorage, navigationType()) ?? {}; }
   catch { return {}; }
 }
 const savedView = readSession();
@@ -122,40 +121,30 @@ export default function App() {
   const [sort, setSort] = useState<SortMode>('original');
   const [drag, setDrag] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [historyEnabled, setHistoryEnabled] = useState(() => storage.getItem(HISTORY_ENABLED_KEY) === 'yes');
-  const [history, setHistory] = useState<Result[]>(readLocalHistory);
   const [storageWarning, setStorageWarning] = useState('');
+  // Одноразовая строка о том, что прошлая обработка не восстановлена.
+  const [notice, setNotice] = useState('');
   const input = useRef<HTMLInputElement>(null);
   const abort = useRef<AbortController | null>(null);
   const locked = useRef(false);
 
   useEffect(() => {
-    if (historyEnabled && !storage.setItem(HISTORY_KEY, JSON.stringify(history))) {
-      setStorageWarning('Не удалось сохранить историю в браузере. Текущие результаты доступны до закрытия страницы.');
-    }
-  }, [history, historyEnabled]);
+    // Локальная история проверок удалена из интерфейса (она не была нужна для
+    // работы и хранила названия товаров). Заодно вычищаем записи у тех, кто её
+    // включал: без UI они остались бы в браузере навсегда.
+    for (const key of LEGACY_HISTORY_KEYS) storage.removeItem(key);
+  }, []);
 
   useEffect(() => {
     try { sessionStorage.setItem('dora:current-view:v1', JSON.stringify({ name, result, filename, fileInfo, progress, results })); }
-    catch { setStorageWarning('Не удалось сохранить текущие результаты для возврата. Скачайте CSV перед переходом по ссылке.'); }
+    catch { setStorageWarning('Не удалось сохранить текущие результаты для возврата по «Назад». Скачайте CSV перед переходом по ссылке.'); }
   }, [name, result, filename, fileInfo, progress, results]);
 
-  function saveHistory(items: Result[]) {
-    if (storage.getItem(HISTORY_ENABLED_KEY) !== 'yes') return;
-    setHistory(old => {
-      const next = [...items, ...old].slice(0, 30);
-      return next;
-    });
-  }
   function saveVerdict(r: Result, verdict: Verdict, corrected: string | null) {
     const mark = (item: Result) => item.name === r.name && item.code === r.code
       ? { ...item, userVerdict: verdict, correctedCode: corrected } : item;
     setResult(old => old ? mark(old) : old);
     setResults(old => old.map(mark));
-    setHistory(old => {
-      const updated = old.map(mark);
-      return updated;
-    });
   }
   async function follow(jobId: string, total: number) {
     abort.current?.abort();
@@ -171,8 +160,9 @@ export default function App() {
       }, controller.signal);
       if (controller.signal.aborted) return;
       setResults(done.results);
-      if (done.status === 'completed') saveHistory(done.results);
-      else setError(done.error ?? 'Не удалось обработать все товары. Частичные результаты сохранены.');
+      if (done.status !== 'completed') {
+        setError(done.error ?? 'Не удалось обработать все товары. Частичные результаты сохранены.');
+      }
       storage.removeItem(ACTIVE_JOB_KEY);
     } catch (e) {
       if (!controller.signal.aborted) {
@@ -185,23 +175,39 @@ export default function App() {
     }
   }
   useEffect(() => {
-    const existing = storage.getItem(ACTIVE_JOB_KEY);
-    if (existing) {
-      try {
-        const v = JSON.parse(existing) as { id: string; total: number };
-        if (v.id && Number.isInteger(v.total) && v.total > 0 && v.total <= 100) void follow(v.id, v.total);
-        else storage.removeItem(ACTIVE_JOB_KEY);
-      } catch { storage.removeItem(ACTIVE_JOB_KEY); }
-    }
+    void resumeActiveJob();
     return () => { abort.current?.abort(); locked.current = false; };
   }, []);
+
+  /**
+   * Возобновляет только *идущую* обработку.
+   *
+   * Задание лежит в localStorage, чтобы пережить закрытие вкладки, но показывать
+   * результаты задания, которое завершилось в прошлой сессии, нельзя: страница
+   * открывается пустой, а о потере результатов честно сообщает строка ниже.
+   */
+  async function resumeActiveJob() {
+    const marker = parseJobMarker(storage.getItem(ACTIVE_JOB_KEY));
+    if (!marker) { storage.removeItem(ACTIVE_JOB_KEY); return; }
+    let job: Job;
+    try { job = await api.getBatch(marker.id); }
+    catch { return; }  // Сервер недоступен — не пугаем и не теряем задание.
+    if (!isRunningJob(job.status)) {
+      storage.removeItem(ACTIVE_JOB_KEY);
+      const name = marker.filename ? `«${marker.filename}»` : 'файла';
+      setNotice(`Обработка ${name} завершилась, пока страница была закрыта. Результаты не восстановлены — загрузите файл снова, если они нужны.`);
+      return;
+    }
+    if (marker.filename) setFilename(marker.filename);
+    await follow(marker.id, job.total || marker.total);
+  }
 
   async function single() {
     if (locked.current) return;
     const value = name.trim();
     if (!value) { setError('Введите название товара.'); return; }
-    locked.current = true; setBusy('single'); setError(''); setResult(null); setResults([]); setProgress(null);
-    try { const found = await api.classify(value); setResult(found); saveHistory([found]); }
+    locked.current = true; setBusy('single'); setError(''); setNotice(''); setResult(null); setResults([]); setProgress(null);
+    try { const found = await api.classify(value); setResult(found); }
     catch (e) { setError(message(e)); }
     finally { locked.current = false; setBusy(null); }
   }
@@ -212,11 +218,11 @@ export default function App() {
       setError('Поддерживаются Excel (.xlsx), CSV, PDF, DOCX, JSON и текстовые файлы.'); return;
     }
     if (file.size > 9_500_000) { setError('Файл должен быть меньше 9,5 МБ (ограничение на загрузку).'); return; }
-    locked.current = true; setBusy('file'); setError(''); setFileInfo(null); setFilename(''); setResults([]); setProgress(null); setResult(null);
+    locked.current = true; setBusy('file'); setError(''); setNotice(''); setFileInfo(null); setFilename(''); setResults([]); setProgress(null); setResult(null);
     try {
       const accepted = await api.uploadFile(file);
       setFilename(file.name); setFileInfo(accepted);
-      if (!storage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ id: accepted.job_id, total: accepted.total }))) {
+      if (!storage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ id: accepted.job_id, total: accepted.total, filename: file.name }))) {
         setStorageWarning('Браузер не сохранил задание. Дождитесь завершения обработки, не закрывая страницу.');
       }
       locked.current = false;
@@ -268,6 +274,7 @@ export default function App() {
         </section>
       </div>
       {error && <div className="error" role="alert">{error}</div>}
+      {notice && <p className="hint" role="status">{notice}</p>}
       {storageWarning && <p className="error" role="status">{storageWarning}</p>}
       <div aria-live="polite" aria-busy={!!busy}>
         {progress && <section className="card progress" aria-label="Прогресс обработки">
@@ -301,35 +308,6 @@ export default function App() {
             </tr>)}</tbody></table></div>
         </section>}
       </div>
-      <section className="card history">
-        <div className="toolbar"><h2>История проверок на этом устройстве</h2>
-          {history.length > 0 && <span className="toolbar-actions">
-            <button type="button" className="outline small" disabled={exporting} onClick={async () => {
-              setExporting(true); try { await exportResults(history); } catch (e) { setError(message(e)); }
-              finally { setExporting(false); }
-            }}>Экспорт истории</button>
-            <button type="button" className="outline small" onClick={() => {
-              if (!storage.removeItem(HISTORY_KEY)) setStorageWarning('Не удалось удалить историю из хранилища браузера.');
-              setHistory([]);
-            }}>Очистить историю</button>
-          </span>}
-        </div>
-        <label className="history-optin"><input type="checkbox" checked={historyEnabled} onChange={e => {
-          const enabled = e.target.checked;
-          if (storage.setItem(HISTORY_ENABLED_KEY, enabled ? 'yes' : 'no')) {
-            setHistoryEnabled(enabled);
-          } else {
-            setStorageWarning('Хранилище браузера недоступно. Не удалось изменить настройку истории.');
-          }
-        }}/> Сохранять новые проверки в истории этого браузера (необязательно)</label>
-        <p className="hint">Названия товаров могут содержать рабочую информацию. По умолчанию история выключена; записи остаются только в этом браузере.</p>
-        {history.length === 0 ? <p className="muted">История пуста.</p> :
-          <details className="details"><summary>Показать последние проверки ({history.length})</summary>
-            <ul className="history-list">{history.map((r,i) => <li key={`${r.name}-${i}`}>
-              <strong>{r.name}</strong> — {r.code ?? 'Нет кода'} · {STATUS_LABEL[r.status]} · {percent(r.confidence)}{r.userVerdict ? ` · Оценка: ${r.userVerdict === 'correct' ? 'верно' : r.userVerdict === 'incorrect' ? `неверно (${r.correctedCode})` : 'нет в перечне'}` : ''}
-            </li>)}</ul>
-          </details>}
-      </section>
       <footer>Подбор кода — подсказка, а не юридический вердикт.<br/>Результат требует проверки специалистом.</footer>
     </main>
   </>;
