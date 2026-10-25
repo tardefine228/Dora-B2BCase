@@ -502,15 +502,17 @@ def _reranker_artifact_name(reranker, tag: str | None) -> str | None:
     if reranker is None:
         return None
     try:
-        from ml.reranker import reranker_artifact_name, reranker_artifact_path
+        from ml.reranker import reranker_artifact_name, tagged_reranker_path
     except Exception:  # pragma: no cover - ml import already failed in _load_reranker
         return None
     if getattr(reranker, "meta", {}).get("fallback"):
         return "heuristic"
     if tag:
-        name = reranker_artifact_name(tag)
-        if reranker_artifact_path(tag).is_file():
-            return name
+        # Only the embedder's *own* artifact counts: a gate-rejected model
+        # falls back to reranker.json, and /health must say so instead of
+        # reporting the tagged name for a model that is not serving.
+        if tagged_reranker_path(tag).is_file():
+            return reranker_artifact_name(tag)
     return reranker_artifact_name()
 
 
