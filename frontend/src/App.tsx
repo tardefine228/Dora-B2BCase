@@ -6,9 +6,10 @@ import { orderResults, type SortMode } from './rows';
 import { storage } from './storage';
 import { isRunningJob, navigationType, parseJobMarker, readStoredView, type StoredView } from './view';
 
-const HISTORY_KEY = 'dora:local-history:v1';
-const HISTORY_ENABLED_KEY = 'dora:history-enabled:v1';
 const ACTIVE_JOB_KEY = 'dora:active-job:v1';
+// Ключи удалённой локальной истории: их надо стирать у тех, кто успел включить
+// галочку, иначе названия товаров останутся в браузере без всякого UI.
+const LEGACY_HISTORY_KEYS = ['dora:local-history:v1', 'dora:history-enabled:v1'];
 const message = (error: unknown) => error instanceof Error ? error.message : 'Ошибка. Попробуйте ещё раз.';
 const percent = (value: number | null) => value === null ? '—' : `${Math.round(value * 100)}%`;
 const isSafeUrl = (url: string | null): url is string => !!url && (/^\/source\/[\w-]+$/.test(url) || /^https?:\/\//i.test(url));
@@ -100,11 +101,6 @@ function ResultCard({ result, compact = false, onSaved }: { result: Result; comp
   </div>;
 }
 
-function readLocalHistory(): Result[] {
-  try { const raw = JSON.parse(storage.getItem(HISTORY_KEY) ?? '[]'); return Array.isArray(raw) ? raw.slice(0, 30) as Result[] : []; }
-  catch { return []; }
-}
-
 function readSession(): StoredView {
   // Просмотр возвращается только по «Назад» (ушли в пункт перечня и вернулись).
   // При обычном открытии сайта запись удаляется: см. src/view.ts.
@@ -125,8 +121,6 @@ export default function App() {
   const [sort, setSort] = useState<SortMode>('original');
   const [drag, setDrag] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [historyEnabled, setHistoryEnabled] = useState(() => storage.getItem(HISTORY_ENABLED_KEY) === 'yes');
-  const [history, setHistory] = useState<Result[]>(readLocalHistory);
   const [storageWarning, setStorageWarning] = useState('');
   // Одноразовая строка о том, что прошлая обработка не восстановлена.
   const [notice, setNotice] = useState('');
@@ -135,32 +129,22 @@ export default function App() {
   const locked = useRef(false);
 
   useEffect(() => {
-    if (historyEnabled && !storage.setItem(HISTORY_KEY, JSON.stringify(history))) {
-      setStorageWarning('Не удалось сохранить историю в браузере. Текущие результаты доступны до закрытия страницы.');
-    }
-  }, [history, historyEnabled]);
+    // Локальная история проверок удалена из интерфейса (она не была нужна для
+    // работы и хранила названия товаров). Заодно вычищаем записи у тех, кто её
+    // включал: без UI они остались бы в браузере навсегда.
+    for (const key of LEGACY_HISTORY_KEYS) storage.removeItem(key);
+  }, []);
 
   useEffect(() => {
     try { sessionStorage.setItem('dora:current-view:v1', JSON.stringify({ name, result, filename, fileInfo, progress, results })); }
     catch { setStorageWarning('Не удалось сохранить текущие результаты для возврата по «Назад». Скачайте CSV перед переходом по ссылке.'); }
   }, [name, result, filename, fileInfo, progress, results]);
 
-  function saveHistory(items: Result[]) {
-    if (storage.getItem(HISTORY_ENABLED_KEY) !== 'yes') return;
-    setHistory(old => {
-      const next = [...items, ...old].slice(0, 30);
-      return next;
-    });
-  }
   function saveVerdict(r: Result, verdict: Verdict, corrected: string | null) {
     const mark = (item: Result) => item.name === r.name && item.code === r.code
       ? { ...item, userVerdict: verdict, correctedCode: corrected } : item;
     setResult(old => old ? mark(old) : old);
     setResults(old => old.map(mark));
-    setHistory(old => {
-      const updated = old.map(mark);
-      return updated;
-    });
   }
   async function follow(jobId: string, total: number) {
     abort.current?.abort();
@@ -176,8 +160,9 @@ export default function App() {
       }, controller.signal);
       if (controller.signal.aborted) return;
       setResults(done.results);
-      if (done.status === 'completed') saveHistory(done.results);
-      else setError(done.error ?? 'Не удалось обработать все товары. Частичные результаты сохранены.');
+      if (done.status !== 'completed') {
+        setError(done.error ?? 'Не удалось обработать все товары. Частичные результаты сохранены.');
+      }
       storage.removeItem(ACTIVE_JOB_KEY);
     } catch (e) {
       if (!controller.signal.aborted) {
@@ -222,7 +207,7 @@ export default function App() {
     const value = name.trim();
     if (!value) { setError('Введите название товара.'); return; }
     locked.current = true; setBusy('single'); setError(''); setNotice(''); setResult(null); setResults([]); setProgress(null);
-    try { const found = await api.classify(value); setResult(found); saveHistory([found]); }
+    try { const found = await api.classify(value); setResult(found); }
     catch (e) { setError(message(e)); }
     finally { locked.current = false; setBusy(null); }
   }
@@ -323,35 +308,6 @@ export default function App() {
             </tr>)}</tbody></table></div>
         </section>}
       </div>
-      <section className="card history">
-        <div className="toolbar"><h2>История проверок на этом устройстве</h2>
-          {history.length > 0 && <span className="toolbar-actions">
-            <button type="button" className="outline small" disabled={exporting} onClick={async () => {
-              setExporting(true); try { await exportResults(history); } catch (e) { setError(message(e)); }
-              finally { setExporting(false); }
-            }}>Экспорт истории</button>
-            <button type="button" className="outline small" onClick={() => {
-              if (!storage.removeItem(HISTORY_KEY)) setStorageWarning('Не удалось удалить историю из хранилища браузера.');
-              setHistory([]);
-            }}>Очистить историю</button>
-          </span>}
-        </div>
-        <label className="history-optin"><input type="checkbox" checked={historyEnabled} onChange={e => {
-          const enabled = e.target.checked;
-          if (storage.setItem(HISTORY_ENABLED_KEY, enabled ? 'yes' : 'no')) {
-            setHistoryEnabled(enabled);
-          } else {
-            setStorageWarning('Хранилище браузера недоступно. Не удалось изменить настройку истории.');
-          }
-        }}/> Сохранять новые проверки в истории этого браузера (необязательно)</label>
-        <p className="hint">Названия товаров могут содержать рабочую информацию. По умолчанию история выключена; записи остаются только в этом браузере.</p>
-        {history.length === 0 ? <p className="muted">История пуста.</p> :
-          <details className="details"><summary>Показать последние проверки ({history.length})</summary>
-            <ul className="history-list">{history.map((r,i) => <li key={`${r.name}-${i}`}>
-              <strong>{r.name}</strong> — {r.code ?? 'Нет кода'} · {STATUS_LABEL[r.status]} · {percent(r.confidence)}{r.userVerdict ? ` · Оценка: ${r.userVerdict === 'correct' ? 'верно' : r.userVerdict === 'incorrect' ? `неверно (${r.correctedCode})` : 'нет в перечне'}` : ''}
-            </li>)}</ul>
-          </details>}
-      </section>
       <footer>Подбор кода — подсказка, а не юридический вердикт.<br/>Результат требует проверки специалистом.</footer>
     </main>
   </>;
