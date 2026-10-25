@@ -22,6 +22,18 @@ def _positive_int(name: str, default: int) -> int:
     return value
 
 
+def _non_negative_int(name: str, default: int) -> int:
+    """Like ``_positive_int``, but 0 is a meaningful value ("keep forever")."""
+    raw_value = os.getenv(name, str(default))
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a non-negative integer") from exc
+    if value < 0:
+        raise ValueError(f"{name} must be a non-negative integer")
+    return value
+
+
 def _bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -213,6 +225,18 @@ class Settings:
         self.job_ttl_hours = _positive_int("JOB_TTL_HOURS", 24)
         self.job_max_active = _positive_int("JOB_MAX_ACTIVE", 16)
         self.job_max_stored = _positive_int("JOB_MAX_STORED", 512)
+
+        # Retention for the two logs that grow on every request (BE-5). 0 = keep
+        # forever. The audit log holds copies of procurement descriptions, so it is
+        # trimmed by default; feedback is training data (ML-4) and is kept unless an
+        # operator decides otherwise. Only PostgreSQL keeps these tables.
+        self.audit_retention_days = _non_negative_int("AUDIT_RETENTION_DAYS", 90)
+        self.feedback_retention_days = _non_negative_int("FEEDBACK_RETENTION_DAYS", 0)
+        self.maintenance_interval_hours = _positive_int("MAINTENANCE_INTERVAL_HOURS", 24)
+        # Catalog snapshots kept for rollback (POST /admin/catalog/rollback). One
+        # snapshot per upload, so 10 covers a quarter of quarterly decree updates
+        # with room for a mistake in between.
+        self.catalog_snapshot_keep = _positive_int("CATALOG_SNAPSHOT_KEEP", 10)
 
 
 settings = Settings()

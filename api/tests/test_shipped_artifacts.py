@@ -111,7 +111,11 @@ def test_shipped_tfidf_embedder_is_fitted_on_the_current_catalog():
 
     assert shipped["doc_count"] == current.doc_count
     assert shipped["dim"] == current.dim
-    assert shipped["doc_frequencies"] == current.doc_frequencies
+    assert shipped["doc_frequencies"] == current.doc_frequencies, (
+        "каталог data/data.csv изменился, а артефакт — нет: пересоберите "
+        "`python scripts/build_model.py --models-dir models`, положите "
+        "`models/tfidf_embedder.json` сюда и обновите sha256 в ml/artifacts/README.md"
+    )
 
 
 def test_both_rerankers_were_trained_by_the_current_trainer():

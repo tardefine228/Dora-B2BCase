@@ -138,6 +138,43 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Frontend regression tests
+        working-directory: frontend
+        run: npm test
+
       - name: Type-check and build the UI
         working-directory: frontend
         run: npm run build
+
+      - name: Install browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser and accessibility tests
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - name: Browser failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failures
+          path: frontend/test-results/
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Explicit lightweight mode checks packaging and service wiring, not E5 quality.
+    env:
+      INSTALL_TRANSFORMER: "false"
+      EMBEDDER_BACKEND: tfidf
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and exercise Compose services
+        run: bash scripts/docker_smoke.sh --build
+      - name: Container logs
+        if: failure()
+        run: docker compose logs --tail=100
+      - name: Stop test containers
+        if: always()
+        run: docker compose down

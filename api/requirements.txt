@@ -11,6 +11,11 @@ PyMuPDF>=1.24,<2
 psycopg[binary,pool]>=3.2,<4
 celery>=5.4,<6
 redis>=5.0,<9
+# Schema migrations for PostgreSQL (BE-5): the API runs `upgrade head` at startup,
+# so the schema has one description instead of CREATE TABLE IF NOT EXISTS spread
+# over the code. Alembic pulls SQLAlchemy in; both are only imported when
+# JOB_STORE=postgres.
+alembic>=1.13,<2
 
 # Monitoring: /metrics in the Prometheus text exposition format (BE-6)
 prometheus-client>=0.20,<1.0

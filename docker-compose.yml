@@ -39,6 +39,14 @@ x-app-env: &app-env
   QUEUE_BACKEND: "celery"
   REDIS_URL: "redis://redis:6379/0"
   JOB_TTL_HOURS: "${JOB_TTL_HOURS:-24}"
+  # Срок хранения двух журналов (BE-5). 0 = хранить вечно. Журнал запросов
+  # содержит копии описаний закупок, поэтому чистится по умолчанию; вердикты —
+  # это обучающие данные (ML-4), их не удаляем без явного решения.
+  AUDIT_RETENTION_DAYS: "${AUDIT_RETENTION_DAYS:-90}"
+  FEEDBACK_RETENTION_DAYS: "${FEEDBACK_RETENTION_DAYS:-0}"
+  MAINTENANCE_INTERVAL_HOURS: "${MAINTENANCE_INTERVAL_HOURS:-24}"
+  # Сколько снимков каталога хранить для POST /admin/catalog/rollback.
+  CATALOG_SNAPSHOT_KEEP: "${CATALOG_SNAPSHOT_KEEP:-10}"
   ADMIN_API_KEY: "${ADMIN_API_KEY:-}"
   MAX_CONCURRENT_INFERENCES: "${MAX_CONCURRENT_INFERENCES:-1}"
   CLASSIFICATION_CACHE_SIZE: "${CLASSIFICATION_CACHE_SIZE:-512}"
@@ -68,6 +76,7 @@ x-app-build: &app-build
   dockerfile: api/Dockerfile
   args:
     INSTALL_TRANSFORMER: "${INSTALL_TRANSFORMER:-true}"
+    ALLOW_DEGRADE: "${ALLOW_DEGRADE:-false}"
     EMBEDDER_MODEL: "${EMBEDDER_MODEL:-intfloat/multilingual-e5-small}"
 
 services:
