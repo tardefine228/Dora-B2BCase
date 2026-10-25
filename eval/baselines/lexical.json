@@ -15,9 +15,9 @@
     "not_found_rows": 32,
     "contested_rows": 41,
     "artifact_sha256": {
-      "reranker.json": "34c9cfffe998d0316e33f9e873dfaa5e292cd139dbbfdb72498bcf6a18214cae"
+      "reranker.json": "0863430621afe96eba09ac7181429e84842e081849601e9049735abea07f3c0f"
     },
-    "measured_at": "2026-10-25T06:30:19Z"
+    "measured_at": "2026-10-25T16:48:12Z"
   },
   "metrics": {
     "correct_silence": {
