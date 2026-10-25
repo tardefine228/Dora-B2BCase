@@ -5,7 +5,9 @@ pytest>=8,<9
 ruff>=0.6,<1.0
 pre-commit>=3.7,<5.0
 # Offline ML pipeline tests (TF-IDF embedder + Qdrant local mode):
-qdrant-client>=1.14,<2.0
+# Locked to the server pinned in docker-compose.yml (qdrant/qdrant:v1.14.1):
+# the client warns and behaves undefined when the minors drift apart.
+qdrant-client>=1.14,<1.15
 numpy>=1.26,<3
 # docker-compose sanity tests:
 PyYAML>=6,<7

@@ -177,3 +177,76 @@ def test_sqlite_job_volume_has_a_writable_mount_point() -> None:
     dockerfile = (ROOT / "api" / "Dockerfile").read_text(encoding="utf-8")
     assert "mkdir -p /app/jobs" in dockerfile
     assert "chown app:app /app/jobs" in dockerfile
+
+
+# --- сборка образа ------------------------------------------------------------------
+
+
+def test_docker_image_ships_every_eval_module_the_training_step_imports() -> None:
+    """`build_model.py --dense --gate` runs *inside* the image (api/Dockerfile).
+
+    It imports ``eval.run_eval``, ``eval.dense_gate`` and ``eval.quality_gate``, but
+    ``.dockerignore`` drops ``eval/*``. For one release only two of the three were
+    copied, so the training step died on ModuleNotFoundError in 0.4 s — swallowed by
+    ``|| echo`` — and every image quietly shipped without the dense reranker
+    (the log then says «Нет реранкера для эмбеддера … используем лексический»).
+    This test derives the required files from the imports themselves.
+    """
+    import ast
+
+    dockerfile = (ROOT / "api" / "Dockerfile").read_text(encoding="utf-8")
+    ignored = (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+
+    imported: set[str] = set()
+    for script in (ROOT / "scripts" / "build_model.py", ROOT / "eval" / "run_eval.py"):
+        tree = ast.parse(script.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                if module.startswith("eval."):
+                    imported.add(module.split(".", 1)[1])
+    assert {"dense_gate", "quality_gate", "run_eval"} <= imported
+
+    for module in sorted(imported):
+        path = f"eval/{module}.py"
+        assert (ROOT / path).is_file(), f"{path} нет в репозитории"
+        assert f"!{path}" in ignored, f"{path} отфильтрован .dockerignore и не попадёт в контекст"
+        assert path in dockerfile, f"{path} не копируется в образ (api/Dockerfile)"
+
+
+def test_worker_builds_from_the_local_definition_instead_of_pulling(compose) -> None:
+    """`docker compose up --build` must not start with a failed pull of `dora-app`.
+
+    The worker shares the api image by tag; without its own `build` section compose
+    treats that tag as a remote image and prints
+    «✘ Image dora-app Error pull access denied for dora-app» before the api build
+    provides it. Both services must therefore carry the same build definition.
+    """
+    services = compose["services"]
+    api_build = services["api"]["build"]
+    worker_build = services["worker"].get("build")
+    assert worker_build == api_build
+    assert services["worker"]["image"] == services["api"]["image"]
+
+
+def test_qdrant_client_pin_matches_the_pinned_server() -> None:
+    """A client/server minor gap of more than one makes Qdrant warn on every start.
+
+    The stack logged «Qdrant client version 1.20.0 is incompatible with server
+    version 1.14.1» on every boot: the image pins the server, the Python client was
+    open-ended. Keep them in one minor, and bump both together (a server jump needs
+    a volume backup — see eval/docker-target-checklist.md).
+    """
+    import re
+
+    compose_text = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    server = re.search(r"image:\s*qdrant/qdrant:v(\d+)\.(\d+)", compose_text)
+    assert server, "в docker-compose.yml не найден образ qdrant/qdrant:vX.Y"
+    server_minor = int(server.group(2))
+
+    requirements = (ROOT / "api" / "requirements.txt").read_text(encoding="utf-8")
+    client = re.search(r"qdrant-client(?:\[[^\]]*\])?>=1\.(\d+),<1\.(\d+)", requirements)
+    assert client, "qdrant-client должен быть закреплён как >=1.X,<1.Y"
+    low, high = int(client.group(1)), int(client.group(2))
+    # The pin must describe the server's own minor and nothing else.
+    assert low <= server_minor < high, (low, server_minor, high)

@@ -23,6 +23,8 @@ bash scripts/docker_smoke.sh --build   # сборка + все проверки 
 | 7 | Классификация | `curl -s -X POST localhost:8000/classify -H 'Content-Type: application/json' -d '{"name":"Электрочайники"}'` | код `27.51.24.110` | |
 | 8 | Перезапуск Qdrant | `docker compose restart qdrant` → `curl localhost:6333/healthz` | данные volume `qdrant_data` сохранены (коллекция доступна) | |
 | 9 | Перезапуск API с загруженным каталогом | `docker compose restart api` → `GET /admin/catalog` | `rows` не сброшены (volume `catalog_data`) | |
+| 10 | Векторный реранкер | в логе сборки: `gate: артефакт …` / в логе старта: строка про реранкер | либо `gate: принят` и `reranker.tfidf.json` скорит, либо `gate: ОТКЛОНЁН` с причиной в `/app/ml/artifacts/dense-gate.json`; молчаливого «нет реранкера» без вердикта быть не должно | |
+| 11 | Версии Qdrant | `docker compose logs api \| grep -i qdrant` | нет `Qdrant client version … is incompatible`; клиент закреплён под сервер (`qdrant-client>=1.14,<1.15` ↔ `v1.14.1`) | |
 | 10 | Переиндексация (нужен `ML_ENABLED=true`) | `POST /admin/reindex` с `X-Admin-API-Key` | job `completed`, `indexed` ≈ числу строк каталога | |
 | 11 | Размеры образов | `docker images` | записать `api` (и `qdrant`) | |
 | 12 | RAM/CPU | `docker stats --no-stream` | API ≤ `API_MEMORY_LIMIT`, Qdrant ≤ `QDRANT_MEMORY_LIMIT` | |
