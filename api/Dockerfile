@@ -71,7 +71,11 @@ COPY --chown=app:app --from=ui-build /ui/dist ./frontend
 COPY --chown=app:app data/data.csv data/data.json data/source_text.txt ./data/
 COPY scripts ./scripts
 # Labeled set + scorer: the transformer step keeps vector features only if they help.
-COPY eval/run_eval.py eval/labeled_examples.csv ./eval/
+# Everything `build_model.py --dense --gate` imports at run time: run_eval scores the
+# gate, dense_gate pools the reliability table, quality_gate records the verdict.
+# A missing module here fails the step instantly and is swallowed by `|| echo`, so
+# the image would ship with the lexical reranker only (see the test that pins this).
+COPY eval/run_eval.py eval/labeled_examples.csv eval/dense_gate.py eval/quality_gate.py ./eval/
 RUN if [ "$INSTALL_TRANSFORMER" = "true" ]; then \
       ( DATA_DIR=/app/data EMBEDDER_BACKEND=sentence-transformers MODEL_NAME=/opt/models/embedder \
          MODEL_LOCAL_ONLY=true python scripts/build_model.py --dense --gate --models-dir /app/ml/artifacts \

@@ -212,7 +212,13 @@ class SentenceTransformerEncoder:
             device=MODEL_DEVICE,
             local_files_only=MODEL_LOCAL_ONLY,
         )
-        self.dim = int(self._model.get_sentence_embedding_dimension())
+        # sentence-transformers 5 renamed this to `get_embedding_dimension`;
+        # the old name still works but logs a FutureWarning on every start.
+        dimension = getattr(self._model, "get_embedding_dimension", None)
+        if callable(dimension):
+            self.dim = int(dimension())
+        else:  # pragma: no cover - sentence-transformers < 5
+            self.dim = int(self._model.get_sentence_embedding_dimension())
         if MODEL_MAX_SEQ_LENGTH:
             # A long-context model (bge-m3: 8192 tokens) allocates buffers for the
             # configured length; catalog names never need more than a few hundred.

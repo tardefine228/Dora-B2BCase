@@ -103,6 +103,10 @@ services:
     restart: unless-stopped
 
   worker:
+    # Same definition as `api`: without `build` here compose treats the tag as a
+    # pullable image and `up --build` starts with
+    # «✘ Image dora-app Error pull access denied» before the api build provides it.
+    build: *app-build
     image: dora-app
     command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--concurrency=1"]
     environment:

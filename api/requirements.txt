@@ -19,7 +19,9 @@ prometheus-client>=0.20,<1.0
 numpy>=1.26,<3
 pymorphy3>=2.0,<3
 pymorphy3-dicts-ru>=2.4,<3
-qdrant-client>=1.14,<2.0
+# Locked to the server pinned in docker-compose.yml (qdrant/qdrant:v1.14.1):
+# the client warns and behaves undefined when the minors drift apart.
+qdrant-client>=1.14,<1.15
 # Offline Russian word vectors: the fallback embedder when no transformer model is baked in.
 spacy>=3.7,<3.9
 ru_core_news_md @ https://github.com/explosion/spacy-models/releases/download/ru_core_news_md-3.8.0/ru_core_news_md-3.8.0-py3-none-any.whl
