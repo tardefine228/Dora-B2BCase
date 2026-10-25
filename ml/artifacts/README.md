@@ -12,7 +12,7 @@
 | `reranker.json` | `34c9cfffe998d0316e33f9e873dfaa5e292cd139dbbfdb72498bcf6a18214cae` | лексический реранкер (веса `dense_*` = 0): работает, когда векторных признаков нет | `python scripts/build_model.py --models-dir models` |
 | `reranker.tfidf.json` | `3b0830b31f0d7c8ad94fff46cb10afc7789c890c3f1f70c1144d89150c234089` | реранкер с векторными признаками под эмбеддер `tfidf`; **именно он скорит в каталоговом режиме при `VECTOR_SEARCH=true`** | `python scripts/build_model.py --dense --gate --gate-seeds 1875,1876,1877,1878 --models-dir models` |
 | `dense-gate.json` | `5561786e13cccc9386a8eda8a97169eac3b8d0f39ac4d90f17a4a197d476d403` | отчёт допуска для `reranker.tfidf.json`: метрики по строкам, sha256 кандидата и базы | тот же прогон `--dense --gate` |
-| `tfidf_embedder.json` | `b35b93d11415b91b870705132fd07423a6427a0c26973d650341b87e0083da52` | tfidf-эмбеддер: 512 измерений, 3–4-граммы, 1126 названий | `scripts/build_model.py` (шаг подгонки эмбеддера) |
+| `tfidf_embedder.json` | `f1dfb7ff97c891104cbbc722ce2ff5ebe49a2b63a39f48d0912972a42f0202a3` | tfidf-эмбеддер: 512 измерений, 3–4-граммы, 1126 названий | `scripts/build_model.py` (шаг подгонки эмбеддера) |
 
 ## Происхождение и воспроизводимость
 
@@ -27,7 +27,10 @@
   хранит sha256 проверенного файла, а допуск сравнивает метрики, а не хеши.
 * `tfidf_embedder.json` различается между сборками только полем `trained_at`; частоты документов
   совпадают — это проверяет
-  `test_shipped_tfidf_embedder_is_fitted_on_the_current_catalog`.
+  `test_shipped_tfidf_embedder_is_fitted_on_the_current_catalog`. Значит правка
+  `data/data.csv` (даже на одну строку) требует пересборки эмбеддера: файл перестаёт совпадать
+  с каталогом, CI это ловит, а исправление — `python scripts/build_model.py --models-dir models`
+  и новый sha256 в таблице выше тем же коммитом.
 * `dense-gate.json` — отчёт прогона допуска от 2026-10-24; его `baseline.sha256`
   (`9395a262…`) — это `reranker.json` **той** сборки: база переобучается тем же кодом в том же
   прогоне, поэтому отчёт доказуемо относится к своей паре файлов. Отгруженный `reranker.json`
