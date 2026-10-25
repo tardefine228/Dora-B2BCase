@@ -601,13 +601,41 @@ def reranker_artifact_name(tag: str | None = None) -> str:
     return f"reranker.{safe}.json"
 
 
-def reranker_artifact_path(tag: str | None = None) -> Path:
-    """MODELS_DIR first (user-provided/rebuilt), then the artifact shipped in ml/artifacts."""
+def tagged_reranker_path(tag: str) -> Path:
+    """Strictly the artifact trained for ``tag`` — no lexical fallback.
+
+    Used to tell "this embedder has its own model" from "we degraded to
+    ``reranker.json``": the fallback must stay visible in the logs and in
+    ``/health``, so a missing or gate-rejected artifact cannot pass silently.
+    """
     name = reranker_artifact_name(tag)
-    custom = MODELS_DIR / name
-    if custom.is_file():
-        return custom
-    return ARTIFACTS_DIR / name
+    for directory in (MODELS_DIR, ARTIFACTS_DIR):
+        candidate = directory / name
+        if candidate.is_file():
+            return candidate
+    return MODELS_DIR / name
+
+
+def reranker_artifact_path(tag: str | None = None) -> Path:
+    """MODELS_DIR first (user-provided/rebuilt), then the artifact shipped in ml/artifacts.
+
+    A dense artifact the quality gate rejected (``ml.gate``) is skipped: the
+    decision is recorded, not deleted, but it must not serve requests. When the
+    tagged artifact is absent or rejected, the lexical ``reranker.json`` is
+    returned — use :func:`tagged_reranker_path` to ask whether the embedder's own
+    model exists at all.
+    """
+    from ml.gate import artifact_allowed
+
+    if tag and artifact_allowed(tag):
+        tagged = tagged_reranker_path(tag)
+        if tagged.is_file():
+            return tagged
+    for directory in (MODELS_DIR, ARTIFACTS_DIR):
+        candidate = directory / RERANKER_ARTIFACT_NAME
+        if candidate.is_file():
+            return candidate
+    return MODELS_DIR / RERANKER_ARTIFACT_NAME
 
 
 def load_reranker(
@@ -619,16 +647,27 @@ def load_reranker(
     vector features is preferred; without one the lexical ``reranker.json`` is used.
     """
     if path is None and tag:
-        tagged = reranker_artifact_path(tag)
-        if tagged.is_file():
+        from ml.gate import artifact_allowed, decision_for
+
+        tagged = tagged_reranker_path(tag)
+        if tagged.is_file() and artifact_allowed(tag):
             path = tagged
         else:
-            logger.warning(
-                "Нет реранкера для эмбеддера %s — используем лексический reranker.json "
-                "(векторный поиск пополнит кандидатов, но не влияет на скоринг). "
-                "Соберите модель: python scripts/build_model.py --dense",
-                tag,
-            )
+            gated = decision_for(tag)
+            if gated is not None and gated.get("decision") == "rejected":
+                logger.warning(
+                    "Реранкер эмбеддера %s отклонён гейтом качества (%s) — "
+                    "служит лексический reranker.json",
+                    tag,
+                    gated.get("reason", ""),
+                )
+            else:
+                logger.warning(
+                    "Нет реранкера для эмбеддера %s — используем лексический reranker.json "
+                    "(векторный поиск пополнит кандидатов, но не влияет на скоринг). "
+                    "Соберите модель: python scripts/build_model.py --dense",
+                    tag,
+                )
     artifact = path or reranker_artifact_path()
     if artifact.is_file():
         reranker = LogisticReranker.load(artifact)

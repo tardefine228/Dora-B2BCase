@@ -1167,6 +1167,7 @@ def train(
     use_dense: bool = False,
     dataset_output: Path | None = None,
     excluded_queries: set[str] | None = None,
+    feedback_path: Path | None = None,
 ) -> LogisticReranker:
     rng = random.Random(seed)
     catalog = load_catalog()
@@ -1189,6 +1190,23 @@ def train(
     )
     excluded_queries = {normalize(q) for q in (excluded_queries or set())}
     pairs = [p for p in pairs if normalize(p.query) not in excluded_queries]
+    # Hard negatives from specialist verdicts (ML-4). The synthetic platform cannot
+    # invent the queries people actually type, so a real wrong answer with the code
+    # a specialist corrected it to is worth more than any generated probe. Mined
+    # pairs join the platform *before* the split, so both groups are represented in
+    # every batch and no query group straddles train/validation.
+    feedback_pairs = 0
+    if feedback_path is not None:
+        from ml.hard_negatives import load_feedback, mine_feedback_pairs
+
+        mined = mine_feedback_pairs(load_feedback(feedback_path), catalog, dense=dense)
+        feedback_pairs = len(mined)
+        pairs.extend(mined)
+        if mined:
+            print(
+                f"  hard negatives from feedback: {feedback_pairs} pairs "
+                f"({sum(1 for pair in mined if pair.label == 1)} positive)"
+            )
     train_pairs, validation_pairs = split_query_groups(pairs, rng, validation_share)
     if dataset_output is not None:
         import csv
@@ -1327,6 +1345,7 @@ def train(
         "corpus_rows": len(catalog),
         "embedder": dense.tag if dense is not None else None,
         "hard_negative_queries": len(negative_queries),
+        "feedback_pairs": feedback_pairs,
     }
 
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -1360,8 +1379,20 @@ def main() -> None:
         action="store_true",
         help="add vector-search features (uses the active embedder; see EMBEDDER_BACKEND)",
     )
+    parser.add_argument(
+        "--feedback",
+        type=Path,
+        default=None,
+        help="CSV/JSONL export of specialist verdicts; wrong answers become hard negatives",
+    )
     args = parser.parse_args()
-    train(args.output, max_queries=args.max_queries, seed=args.seed, use_dense=args.dense)
+    train(
+        args.output,
+        max_queries=args.max_queries,
+        seed=args.seed,
+        use_dense=args.dense,
+        feedback_path=args.feedback,
+    )
 
 
 if __name__ == "__main__":
