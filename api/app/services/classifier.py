@@ -318,6 +318,10 @@ _SCOPE_MODIFIERS = frozenset(
         "трехфазн",
         "однофазн",
         "усиленн",
+        # «Компьютерный» описывает область применения, а не товар: «компьютерный
+        # блендер» — блендер, «компьютерный стол» — стол. Без этого слова правило
+        # слабой подсказки якорило блендер в «Томографы компьютерные» (эксп. 36).
+        "компьютерн",
     }
 )
 
@@ -377,13 +381,39 @@ def _codeless_hint(best, confidence: float) -> Alternative:
     )
 
 
-def _anchored(candidate, query_stems: set[str] | None) -> bool:
-    """Does the candidate position share a content stem with the query?"""
+# Stems that carry no product identity on their own: «питание» is food in the
+# decree («…для детского питания») and power in a purchase line («источник
+# бесперебойного питания»). As an anchor it only invents false leads, so it is
+# removed before the overlap test — the words around it («бесперебойн»,
+# «источник», «блок») still anchor the position.
+_AMBIGUOUS_ANCHOR_STEMS = frozenset({"пита"})  # stem of «питание/питания/питании»
+
+
+def _shared_stems(candidate, query_stems: set[str] | None) -> set[str]:
+    """Content stems the candidate's title shares with the query."""
     if not query_stems:
-        return False
+        return set()
     from ml.features import content_stems, stems
 
-    return bool(query_stems & content_stems(set(stems(candidate.title))))
+    return query_stems & content_stems(set(stems(candidate.title)))
+
+
+def _anchored(candidate, query_stems: set[str] | None) -> bool:
+    """Does the candidate position share a *meaningful* content stem with the query?"""
+    return bool(_shared_stems(candidate, query_stems) - _AMBIGUOUS_ANCHOR_STEMS)
+
+
+def _only_ambiguous_overlap(candidate, query_stems: set[str] | None) -> bool:
+    """The position matches the query *only* through a word like «питание».
+
+    A ``review`` answer keeps its runner-ups, so the specialist sees what else
+    ranked high — but «Свинина замороженная … для детского питания» is not a
+    lead for «Источник бесперебойного питания (ИБП)». Candidates with no overlap
+    at all are kept: they are the retriever's own ranking, not an invented
+    lexical link.
+    """
+    shared = _shared_stems(candidate, query_stems)
+    return bool(shared) and not (shared - _AMBIGUOUS_ANCHOR_STEMS)
 
 
 def _query_content_stems(query: str) -> set[str]:
@@ -411,19 +441,28 @@ def _distinct_alternatives(
     confidence scale, and ``not_found`` already means the group confidence is
     below it, so the filter could never pass and the hint channel was dead: all
     108 out-of-catalog rows in the labeled set came back with an empty
-    ``alternatives`` list even when the correct position ranked first. A lead
-    after «нет в каталоге» is now kept when it is lexically anchored in the
-    query — at least one content stem in common — so the specialist still gets
-    ranked leads, while a dense near-miss with nothing in common («false
-    friend») or a meaningless query («qwerty zxcvbn asdf») yields no invented
-    hint. The answer's ``status`` remains ``not_found``: a lead is not a claim.
+    ``alternatives`` list even when the correct position ranked first. A lead is
+    now kept when it is lexically anchored in the query — at least one content
+    stem in common — so the specialist still gets ranked leads, while a dense
+    near-miss with nothing in common («false friend») or a meaningless query
+    («qwerty zxcvbn asdf») yields no invented hint.
+
+    «review» answers keep their runner-ups on purpose: the «top-3» label counts
+    them, and a specialist reading a weak answer benefits from seeing what else
+    the retriever ranked high. What is dropped there is only a candidate whose
+    *whole* overlap with the query is an ambiguous word (``_only_ambiguous_overlap``,
+    эксп. 36), never the ranking itself. The answer's ``status`` is decided
+    elsewhere: a lead is not a claim.
     """
     alternatives: list[Alternative] = []
     seen_codes = {ranked[0].code}
     for candidate in ranked[1:]:
         if candidate.code in seen_codes:
             continue
-        if status == "not_found" and not _anchored(candidate, query_stems):
+        if status == "not_found":
+            if not _anchored(candidate, query_stems):
+                continue
+        elif _only_ambiguous_overlap(candidate, query_stems):
             continue
         seen_codes.add(candidate.code)
         alternatives.append(
