@@ -137,3 +137,12 @@ def test_bootstrap_is_deterministic_and_refuses_unpaired_rows():
         assert "разных наборах" in str(error)
     else:  # pragma: no cover - the call must raise
         raise AssertionError("bootstrap должен требовать парные строки")
+
+
+def test_the_noise_report_names_the_sign_of_a_miscalibration():
+    """Over- and under-confidence are not equally bad, so the report says which."""
+    from eval.calibration_noise import _direction
+
+    assert "переуверенность" in _direction({"confidence": 0.9, "accuracy": 0.5})
+    assert "недоуверенность" in _direction({"confidence": 0.5, "accuracy": 0.9})
+    assert "почти точное" in _direction({"confidence": 0.70, "accuracy": 0.71})

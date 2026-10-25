@@ -198,11 +198,23 @@ def _dominant_difference(
             f"разница объясняется строками уверенности {band[0]:.1f}–{band[1]:.1f}, "
             f"которые отвечает только одна из конфигураций"
         )
+    direction = _direction(new)
     return (
         f"почти вся разница — в интервале {band[0]:.1f}–{band[1]:.1f}: "
         f"{old['count']} строк против {new['count']}, точность "
         f"{old['accuracy']:.3f} против {new['accuracy']:.3f}, средняя уверенность "
-        f"{old['confidence']:.3f} против {new['confidence']:.3f}"
+        f"{old['confidence']:.3f} против {new['confidence']:.3f} — у вектора это "
+        f"{direction}"
+    )
+
+
+def _direction(bin_stats: dict) -> str:
+    """Name the sign of a miscalibration, because the two signs are not equal."""
+    gap = bin_stats["confidence"] - bin_stats["accuracy"]
+    if abs(gap) < 0.02:
+        return "почти точное попадание"
+    return "переуверенность (обещает больше, чем даёт)" if gap > 0 else (
+        "недоуверенность (обещает меньше, чем даёт)"
     )
 
 
@@ -276,6 +288,10 @@ def _markdown(
             "**Вектор**",
             "",
             *_reliability_table(candidate),
+            "",
+            "Переуверенность опасна: она превращает подсказку в обещание. Недоуверенность",
+            "безопасна: статус `review` и так значит «проверьте этот пункт». Поэтому знак",
+            "разницы важен не меньше её модуля.",
             "",
             "Это не оправдание допуска, а граница разрешения набора: один и тот же код",
             "с другим сидом обучения даёт ECE от 0.012 до 0.038 (эксп. 36, `ece_per_run`",
