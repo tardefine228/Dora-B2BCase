@@ -35,6 +35,14 @@ class FeedbackRequest(APIModel):
     predicted_code: str | None = Field(default=None, max_length=32)
     verdict: Literal["correct", "incorrect", "absent"]
     corrected_code: str | None = Field(default=None, max_length=32)
+    comment: str | None = Field(
+        default=None,
+        max_length=1000,
+        description=(
+            "Свободный комментарий специалиста. Уходит в выгрузку вердиктов "
+            "(GET /admin/feedback/export) вместе с остальными полями."
+        ),
+    )
 
 
 class FeedbackSaved(APIModel):
@@ -227,12 +235,55 @@ class CatalogIssue(APIModel):
     severity: Literal["error", "warning"]
 
 
+class MaintenanceReport(APIModel):
+    """Что сделала очистка по сроку хранения (BE-5)."""
+
+    dry_run: bool = Field(default=False, description="true — только подсчёт, ничего не удалено.")
+    audit_deleted: int = Field(ge=0, description="Удалено (или будет) строк журнала запросов.")
+    feedback_deleted: int = Field(ge=0, description="Удалено (или будет) строк вердиктов.")
+    audit_retention_days: int = Field(
+        ge=0, description="Глубина журнала запросов; 0 — хранить вечно."
+    )
+    feedback_retention_days: int = Field(
+        ge=0, description="Глубина вердиктов; 0 — хранить вечно."
+    )
+    skipped: str | None = Field(
+        default=None,
+        description="Причина, по которой очистка не выполнялась (не postgres, хранение отключено).",
+    )
+
+
 class CatalogInfo(APIModel):
     rows: int = Field(ge=0)
     columns: list[str] = Field(default_factory=list)
     sha256: str
     modified_at: str | None = None
     source_files: list[str] = Field(default_factory=list)
+
+
+class CatalogVersion(APIModel):
+    """Снимок каталога, сохранённый перед загрузкой новой редакции."""
+
+    version_id: str
+    rows: int = Field(ge=0)
+    created_at: str = ""
+    sha256: str = ""
+    files: list[str] = Field(default_factory=list)
+
+
+class CatalogVersionsResponse(APIModel):
+    versions: list[CatalogVersion] = Field(default_factory=list)
+    keep: int = Field(ge=1, description="Сколько последних снимков хранится.")
+    current: CatalogInfo | None = None
+
+
+class CatalogRollbackResponse(APIModel):
+    restored: CatalogVersion
+    catalog: CatalogInfo
+    reindex_required: bool = Field(
+        default=False,
+        description="true, если после отката нужно выполнить POST /admin/reindex.",
+    )
 
 
 class CatalogUploadResponse(APIModel):

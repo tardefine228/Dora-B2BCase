@@ -8,9 +8,10 @@ import json
 import logging
 import secrets
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import (
     BackgroundTasks,
@@ -53,6 +54,7 @@ from app.job_store import (
     init_job_store,
     start_job,
 )
+from app.maintenance import purge_expired
 from app.middleware.observe import ObserveMiddleware
 from app.middleware.ratelimit import RateLimitMiddleware
 from app.middleware.size_limit import RequestSizeLimitMiddleware
@@ -61,21 +63,31 @@ from app.schemas import (
     BatchJobAccepted,
     BatchJobStatusResponse,
     CatalogInfo,
+    CatalogRollbackResponse,
     CatalogUploadResponse,
+    CatalogVersion,
+    CatalogVersionsResponse,
     ClassifyRequest,
     ClassifyResponse,
     FeedbackRequest,
     FeedbackSaved,
     FileBatchJobAccepted,
+    MaintenanceReport,
     ReindexJobAccepted,
     ReindexJobStatusResponse,
     SourceFragment,
 )
 from app.services.catalog_io import (
+    CatalogVersion as CatalogVersionRecord,
+)
+from app.services.catalog_io import (
     catalog_facts,
+    export_catalog_csv,
+    list_versions,
     normalize_rows,
     parse_catalog_bytes,
     resolve_data_dir,
+    restore_version,
     validate_rows,
     write_catalog,
 )
@@ -85,7 +97,7 @@ from app.services.classifier import (
     reset_classifier,
     vector_layer_health,
 )
-from app.services.feedback_store import save_feedback
+from app.services.feedback_store import export_feedback, list_feedback, save_feedback
 from app.services.file_items import (
     SUPPORTED_EXTENSIONS,
     FileParseError,
@@ -123,6 +135,35 @@ DECREE_OFFICIAL_SOURCES: tuple[tuple[str, str, str], ...] = (
 )
 
 
+async def maintenance_loop(interval_seconds: float | None = None) -> None:
+    """Trim the audit and feedback logs, then once per interval (BE-5).
+
+    Runs immediately: a deployment that has been up for months gets its old rows
+    removed on restart, not after another day. Failures are logged and retried on
+    the next tick — retention is housekeeping, it must never take the API down.
+    """
+    interval = (
+        interval_seconds
+        if interval_seconds is not None
+        else settings.maintenance_interval_hours * 3600
+    )
+    while True:
+        try:
+            await asyncio.to_thread(purge_expired)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - housekeeping must not kill the loop
+            logger.exception("Очистка по сроку хранения не удалась, повтор через интервал")
+        await asyncio.sleep(interval)
+
+
+def _maintenance_enabled() -> bool:
+    """Only PostgreSQL keeps the two logs, and only with a configured retention."""
+    if settings.job_store != "postgres":
+        return False
+    return settings.audit_retention_days > 0 or settings.feedback_retention_days > 0
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Warm the classifier once; keep liveness available if an optional ML backend fails."""
@@ -137,7 +178,14 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         app.state.classifier_error = str(exc)
         logger.exception("Не удалось инициализировать классификатор")
-    yield
+    housekeeping = asyncio.create_task(maintenance_loop()) if _maintenance_enabled() else None
+    try:
+        yield
+    finally:
+        if housekeeping is not None:
+            housekeeping.cancel()
+            with suppress(asyncio.CancelledError):
+                await housekeeping
 
 
 app = FastAPI(
@@ -497,6 +545,7 @@ def submit_feedback(payload: FeedbackRequest) -> FeedbackSaved:
             payload.corrected_code.strip()
             if payload.verdict == "incorrect" and payload.corrected_code
             else None,
+            (payload.comment or "").strip() or None,
         )
     except Exception as exc:
         logger.exception("Не удалось сохранить feedback")
@@ -504,6 +553,103 @@ def submit_feedback(payload: FeedbackRequest) -> FeedbackSaved:
             status_code=503, detail="Не удалось сохранить оценку. Повторите позже."
         ) from exc
     return FeedbackSaved(id=record_id)
+
+
+@app.post(
+    "/admin/maintenance/purge",
+    response_model=MaintenanceReport,
+    tags=["admin"],
+    summary="Применить срок хранения журнала запросов и вердиктов (BE-5)",
+    dependencies=[Depends(require_admin_key)],
+)
+def purge_logs(
+    dry_run: Annotated[
+        bool,
+        Query(description="Только посчитать, сколько строк попадёт под очистку."),
+    ] = False,
+) -> MaintenanceReport:
+    """Удалить строки старше `AUDIT_RETENTION_DAYS` / `FEEDBACK_RETENTION_DAYS`.
+
+    Планировщик делает это сам при старте и раз в `MAINTENANCE_INTERVAL_HOURS`;
+    эндпоинт нужен, чтобы проверить настройку (`dry_run=true`) и не ждать сутки.
+    """
+    try:
+        report = purge_expired(dry_run=dry_run)
+    except Exception as exc:  # noqa: BLE001 - psycopg raises different errors
+        logger.exception("Очистка по сроку хранения не удалась")
+        raise HTTPException(
+            status_code=503, detail="Не удалось применить срок хранения. Повторите позже."
+        ) from exc
+    return MaintenanceReport(**report.as_dict())
+
+
+@app.get(
+    "/admin/feedback/export",
+    tags=["admin"],
+    summary="Выгрузить вердикты специалистов для обучения",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {"text/csv": {}, "application/x-ndjson": {}},
+            "description": "Файл выгрузки (вложение).",
+        },
+        403: {"description": "Нет или неверный X-Admin-API-Key."},
+        503: {"description": "Административные эндпоинты отключены (нет ADMIN_API_KEY)."},
+    },
+    dependencies=[Depends(require_admin_key)],
+)
+def export_feedback_log(
+    since: Annotated[
+        datetime | None,
+        Query(description="Начало периода (ISO 8601), включительно."),
+    ] = None,
+    until: Annotated[
+        datetime | None,
+        Query(description="Конец периода (ISO 8601), включительно."),
+    ] = None,
+    verdict: Annotated[
+        Literal["correct", "incorrect", "absent"] | None,
+        Query(description="Только один тип вердикта."),
+    ] = None,
+    fmt: Annotated[
+        Literal["csv", "jsonl"],
+        Query(alias="format", description="csv — для Excel и обучения, jsonl — построчно."),
+    ] = "csv",
+    limit: Annotated[
+        int | None,
+        Query(ge=1, le=100_000, description="Не больше N последних записей."),
+    ] = None,
+) -> Response:
+    """Отдать вердикты в формате, который читает `ml.hard_negatives.load_feedback`.
+
+    До появления этого эндпоинта вердикты писались в БД и прочитать их было
+    нечем, поэтому hard-negative майнинг (ML-4) не мог начать работать: механизм
+    есть, данных нет. Колонки совпадают с ожиданиями загрузчика, так что файл
+    уходит в обучение без правок:
+
+        GET /admin/feedback/export?format=csv > feedback.csv
+        python -m ml.train_reranker --feedback feedback.csv
+    """
+    try:
+        rows = list_feedback(since=since, until=until, verdict=verdict, limit=limit)
+    except Exception as exc:  # noqa: BLE001 - storage backends raise different errors
+        logger.exception("Не удалось выгрузить вердикты")
+        raise HTTPException(
+            status_code=503, detail="Хранилище вердиктов недоступно. Повторите позже."
+        ) from exc
+    body = export_feedback(rows, fmt)
+    extension = "jsonl" if fmt == "jsonl" else "csv"
+    media_type = "application/x-ndjson" if fmt == "jsonl" else "text/csv"
+    filename = f"feedback-{datetime.now(UTC).strftime('%Y%m%d-%H%M')}.{extension}"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        # A browser download of a possibly large log should not be cached by proxies.
+        "Cache-Control": "no-store",
+        "X-Feedback-Rows": str(len(rows)),
+    }
+    return Response(
+        content=body.encode("utf-8"), media_type=f"{media_type}; charset=utf-8", headers=headers
+    )
 
 
 @app.post(
@@ -943,6 +1089,125 @@ def get_reindex_status(job_id: str) -> ReindexJobStatusResponse:
     )
 
 
+def _reset_after_catalog_change() -> bool:
+    """Drop the caches so the next request sees the newly installed catalog.
+
+    Returns whether a reindex is required (ML/qdrant mode). Shared by upload and
+    rollback: both replace `data.csv`/`data.json` and both must invalidate the
+    same things, or the running process keeps answering from the old catalog.
+    """
+    reset_classifier()
+    reset_source_lookup()
+    try:
+        from ml.embedder import reset_encoder_cache
+
+        reset_encoder_cache()
+    except Exception:  # pragma: no cover - ML stack is optional
+        logger.exception("Не удалось сбросить кэш эмбеддера после смены каталога")
+    return bool(settings.ml_enabled and settings.classifier_backend == "qdrant")
+
+
+def _version_model(version: CatalogVersionRecord) -> CatalogVersion:
+    return CatalogVersion(
+        version_id=version.version_id,
+        rows=version.rows,
+        created_at=version.created_at,
+        sha256=version.sha256,
+        files=version.files,
+    )
+
+
+@app.get(
+    "/admin/catalog/export",
+    tags=["admin"],
+    summary="Скачать установленный каталог (data.csv) для резервной копии",
+    response_class=Response,
+    responses={
+        200: {"content": {"text/csv": {}}, "description": "Файл каталога (вложение)."},
+        404: {"description": "Каталог ещё не установлен."},
+    },
+    dependencies=[Depends(require_admin_key)],
+)
+def download_catalog() -> Response:
+    """Отдать текущий `data.csv` ровно в том виде, в котором он работает.
+
+    Нужно перед загрузкой новой редакции: если новая окажется неверной, вернуть
+    прежнюю можно через `POST /admin/catalog/rollback` (снимки делаются
+    автоматически), а этот файл — независимая копия вне контейнера.
+    """
+    try:
+        content = export_catalog_csv(resolve_data_dir())
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
+    return Response(
+        content=content,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="catalog-{stamp}.csv"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.get(
+    "/admin/catalog/versions",
+    response_model=CatalogVersionsResponse,
+    tags=["admin"],
+    summary="Снимки каталога, сделанные перед загрузками",
+    dependencies=[Depends(require_admin_key)],
+)
+def catalog_versions() -> CatalogVersionsResponse:
+    data_dir = resolve_data_dir()
+    return CatalogVersionsResponse(
+        versions=[_version_model(version) for version in list_versions(data_dir)],
+        keep=settings.catalog_snapshot_keep,
+        current=catalog_facts(data_dir) if (data_dir / "data.csv").is_file() else None,
+    )
+
+
+@app.post(
+    "/admin/catalog/rollback",
+    response_model=CatalogRollbackResponse,
+    tags=["admin"],
+    summary="Откатить каталог к предыдущей загруженной редакции",
+    dependencies=[Depends(require_admin_key)],
+)
+def rollback_catalog(
+    version: Annotated[
+        str | None,
+        Query(description="Идентификатор снимка; по умолчанию — самый свежий."),
+    ] = None,
+) -> CatalogRollbackResponse:
+    """Вернуть каталог, который работал до последней загрузки.
+
+    Состояние, которое заменяется, тоже снимается — поэтому повторный откат
+    возвращает предыдущее состояние (откат обратим). Кэши сбрасываются, так что
+    ответы меняются сразу, без перезапуска контейнера.
+    """
+    data_dir = resolve_data_dir()
+    try:
+        catalog_info, restored = restore_version(
+            data_dir, version, keep=settings.catalog_snapshot_keep
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    reindex_required = _reset_after_catalog_change()
+    logger.warning(
+        "Каталог откачен к снимку %s: строк=%d, reindex_required=%s",
+        restored.version_id,
+        catalog_info.rows,
+        reindex_required,
+    )
+    return CatalogRollbackResponse(
+        restored=_version_model(restored),
+        catalog=catalog_info,
+        reindex_required=reindex_required,
+    )
+
+
 @app.get(
     "/admin/catalog",
     response_model=CatalogInfo,
@@ -989,18 +1254,17 @@ async def upload_catalog(
 
     if report.ok and not dry_run:
         rows = normalize_rows(parsed)
-        catalog_info = write_catalog(rows, resolve_data_dir())
+        # The catalog being replaced is snapshotted inside write_catalog, so
+        # `POST /admin/catalog/rollback` can undo this upload.
+        catalog_info = write_catalog(
+            rows,
+            resolve_data_dir(),
+            snapshot=True,
+            keep=settings.catalog_snapshot_keep,
+        )
         applied = True
         # Drop caches so the next request sees the new catalog immediately.
-        reset_classifier()
-        reset_source_lookup()
-        try:
-            from ml.embedder import reset_encoder_cache
-
-            reset_encoder_cache()
-        except Exception:  # pragma: no cover - ML stack is optional
-            logger.exception("Не удалось сбросить кэш эмбеддера после обновления каталога")
-        reindex_required = bool(settings.ml_enabled and settings.classifier_backend == "qdrant")
+        reindex_required = _reset_after_catalog_change()
         if auto_reindex and reindex_required:
             try:
                 job = create_reindex_job()

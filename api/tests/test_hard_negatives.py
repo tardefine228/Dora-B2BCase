@@ -167,3 +167,46 @@ def test_train_accepts_feedback_export(tmp_path: Path) -> None:
     reranker = train(output, max_queries=5, feedback_path=path)
     assert output.is_file()
     assert reranker.meta["feedback_pairs"] > 0
+
+
+def test_every_api_verdict_literal_carries_the_expected_signal() -> None:
+    """The API's verdict vocabulary must be the loader's vocabulary.
+
+    `POST /feedback` accepts exactly three literals. If one of them is missing
+    from the verdict sets, its rows are silently dropped at training time — the
+    export would look complete while a whole class of verdicts never became a
+    training pair. This test is the contract between `FeedbackRequest` and the
+    miner.
+    """
+    from typing import get_args
+
+    from app.schemas import FeedbackRequest
+
+    from ml.hard_negatives import (
+        VERDICT_CORRECT,
+        VERDICT_INCORRECT,
+        VERDICT_OUT_OF_SCOPE,
+        FeedbackRecord,
+    )
+
+    verdict_field = FeedbackRequest.model_fields["verdict"]
+    literals = set(get_args(verdict_field.annotation))
+    assert literals == {"correct", "incorrect", "absent"}
+
+    for literal in literals:
+        record = FeedbackRecord(query="Мышь компьютерная", verdict=literal)
+        buckets = {
+            "correct": record.is_correct,
+            "incorrect": record.is_incorrect,
+            "absent": record.is_out_of_scope,
+        }
+        assert buckets[literal], (
+            f"вердикт {literal!r} не распознан: он попадёт в выгрузку, "
+            "но не станет обучающей парой"
+        )
+        assert sum(int(value) for value in buckets.values()) == 1, literal
+
+    # The three sets must stay disjoint: one verdict cannot mean two things.
+    assert not (VERDICT_CORRECT & VERDICT_INCORRECT)
+    assert not (VERDICT_CORRECT & VERDICT_OUT_OF_SCOPE)
+    assert not (VERDICT_INCORRECT & VERDICT_OUT_OF_SCOPE)

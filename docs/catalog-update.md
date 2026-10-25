@@ -42,6 +42,60 @@
    Если каталог изменился настолько, что артефакт перестал воспроизводиться,
    CI-шаг «Shipped artifacts match a rebuild» это покажет: пересоберите модель.
 
+## Короткая процедура: заменить перечень и вернуть прежний
+
+Всё делается через API с `X-Admin-API-Key`, перезапуск контейнера не нужен.
+Порядок рассчитан на человека без Python — обычный терминал или PowerShell.
+
+**1. Сохраните копию того, что сейчас работает.**
+Копия внутри контейнера тоже останется (снимок), но внешняя надёжнее: она не
+пропадёт при пересоздании volume.
+
+```bash
+curl -H "X-Admin-API-Key: $ADMIN_API_KEY" \
+     -o catalog-current.csv http://localhost:8000/admin/catalog/export
+```
+
+```powershell
+# Windows PowerShell
+curl.exe -H "X-Admin-API-Key: $env:ADMIN_API_KEY" `
+  -o catalog-current.csv http://localhost:8000/admin/catalog/export
+```
+
+**2. Проверьте новый файл, ничего не меняя** (`dry_run=true` — путь по умолчанию
+для первой попытки; ответ покажет `rows_valid`, `errors[]`, `warnings[]`).
+
+```bash
+curl -X POST "http://localhost:8000/admin/catalog?dry_run=true" \
+     -H "X-Admin-API-Key: $ADMIN_API_KEY" \
+     -F "file=@new_catalog.csv"
+```
+
+**3. Установите** — та же команда без `dry_run`. Ответ содержит `catalog.sha256`:
+запишите его, по нему потом видно, какая редакция работает.
+
+**4. Проверьте ответы** на двух-трёх контрольных позициях (`POST /classify`) —
+каталог уже подхвачен, старых кэшей нет.
+
+**5. Если новая редакция неверна — откат** (снимок сделан автоматически перед
+загрузкой; кэши сбрасываются, ответы меняются сразу):
+
+```bash
+curl -X POST http://localhost:8000/admin/catalog/rollback \
+     -H "X-Admin-API-Key: $ADMIN_API_KEY"
+```
+
+Ответ: `restored.version_id`, `catalog.rows`, `catalog.sha256`. Посмотреть, что
+вообще есть, можно через `GET /admin/catalog/versions` (хранится
+`CATALOG_SNAPSHOT_KEEP=10` последних снимков, старые удаляются).
+
+Откат обратим: состояние, которое он заменяет, тоже снимается. Повторный откат
+вернёт то, от чего вы только что отказались, — это удобно, если откатились по
+ошибке. Если снимков нет (например, это самая первая загрузка) — ответ 409.
+
+В ML-режиме (`CLASSIFIER_BACKEND=qdrant`) после загрузки и после отката нужна
+переиндексация: `POST /admin/reindex` или `?auto_reindex=true` при загрузке.
+
 ## Ограничения
 
 - Размер файла ≤ 5 МБ, тело запроса ≤ `MAX_REQUEST_BODY_BYTES`

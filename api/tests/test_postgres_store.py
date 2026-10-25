@@ -70,3 +70,71 @@ def test_audit_log_is_written(store):
     with store._pool.connection() as conn:
         count = conn.execute("SELECT COUNT(*) FROM classification_log").fetchone()[0]
     assert count == 1
+
+
+# --- schema migrations and retention on a real PostgreSQL -------------------
+# Everything above runs without a database; these two need TEST_DATABASE_URL and
+# are the end-to-end check of what `test_migrations.py` verifies statically.
+
+
+def test_store_brings_the_schema_to_the_declared_head(store) -> None:
+    from app.migrations_runner import REVISION_HEAD, current_revision
+
+    assert current_revision(DATABASE_URL) == REVISION_HEAD
+    with store._pool.connection() as conn:
+        columns = {
+            row[0]
+            for row in conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'classification_feedback'"
+            )
+        }
+    # 0002_feedback_comment: the column appears on an existing database too.
+    assert "comment" in columns
+
+
+def test_retention_purges_old_rows_and_keeps_fresh_ones(store) -> None:
+    from app import maintenance
+    from app.core.config import settings
+    from app.services.feedback_store import save_feedback
+
+    save_feedback("Старый вердикт", "01.1", "correct", None, "старое")
+    with store._pool.connection() as conn:
+        conn.execute(
+            "UPDATE classification_feedback SET created_at = now() - interval '400 days' "
+            "WHERE query = 'Старый вердикт'"
+        )
+        conn.execute(
+            "INSERT INTO classification_log (source, query, status, confidence) "
+            "VALUES ('single', 'старый запрос', 'ok', 0.9)"
+        )
+        conn.execute(
+            "UPDATE classification_log SET ts = now() - interval '400 days' "
+            "WHERE query = 'старый запрос'"
+        )
+
+    original = settings.audit_retention_days, settings.feedback_retention_days
+    try:
+        settings.audit_retention_days = 90
+        settings.feedback_retention_days = 365
+        dry = maintenance.purge_expired(dry_run=True)
+        assert dry.audit_deleted >= 1
+        assert dry.feedback_deleted >= 1
+        # Dry run changed nothing.
+        with store._pool.connection() as conn:
+            assert conn.execute(
+                "SELECT count(*) FROM classification_log WHERE query = 'старый запрос'"
+            ).fetchone()[0] == 1
+
+        report = maintenance.purge_expired()
+        assert report.audit_deleted >= 1
+        assert report.feedback_deleted >= 1
+        with store._pool.connection() as conn:
+            assert conn.execute(
+                "SELECT count(*) FROM classification_log WHERE query = 'старый запрос'"
+            ).fetchone()[0] == 0
+            assert conn.execute(
+                "SELECT count(*) FROM classification_feedback WHERE query = 'Старый вердикт'"
+            ).fetchone()[0] == 0
+    finally:
+        settings.audit_retention_days, settings.feedback_retention_days = original

@@ -29,6 +29,11 @@ bash scripts/docker_smoke.sh --build   # сборка + все проверки 
 | 11 | Размеры образов | `docker images` | записать `api` (и `qdrant`) | |
 | 12 | RAM/CPU | `docker stats --no-stream` | API ≤ `API_MEMORY_LIMIT`, Qdrant ≤ `QDRANT_MEMORY_LIMIT` | |
 | 13 | Ресурсы ML-режима | запуск с `ML_ENABLED=true` + модель в `./models` | RSS API после загрузки модели; время ответа `/classify` | |
+| 14 | Миграции схемы применились сами | `docker compose logs api \| grep -i миграц` или `docker compose exec api python -c "from app.migrations_runner import current_revision; from app.core.config import settings; print(current_revision(settings.database_url))"` | ревизия `0002_feedback_comment`, ручных `alembic`-команд не требуется; на уже существующем volume таблицы не пересозданы | |
+| 15 | Колонка `comment` в журнале вердиктов | `docker compose exec postgres psql -U dora -d dora -c "\d classification_feedback"` | есть `comment` — значит миграция 0002 применилась на живой базе | |
+| 16 | Срок хранения журналов | `curl -X POST "localhost:8000/admin/maintenance/purge?dry_run=true" -H "X-Admin-API-Key: …"` | `audit_retention_days: 90`, `feedback_retention_days: 0`, `skipped: null`; удаление — тем же запросом без `dry_run` | |
+| 17 | Резервная копия каталога и откат | `GET /admin/catalog/export` (файл сохраняется), затем `POST /admin/catalog/rollback` | `restored.version_id` непустой, `catalog.sha256` совпадает с записанным до загрузки | |
+| 18 | Выгрузка вердиктов | `POST /feedback` (вердикт), затем `GET /admin/feedback/export` | файл `feedback-*.csv`, в нём строка вердикта, `comment` перенесён | |
 
 ## Режимы запуска
 
@@ -53,7 +58,9 @@ Swagger) и проверьте `GET /admin/reindex/{job_id}` до статуса
 - [ ] загруженный через `POST /admin/catalog` каталог переживает перезапуск;
 - [ ] размеры образов и потребление RAM записаны в таблицу выше;
 - [ ] ML-режим: `/admin/reindex` → `completed`, классификация работает, повторная
-      переиндексация не оставляет «висящих» коллекций.
+      переиндексация не оставляет «висящих» коллекций;
+- [ ] миграции применились при старте без ручных команд, `comment` на месте;
+- [ ] откат каталога возвращает предыдущую редакцию без перезапуска контейнера.
 
 ## Семантический режим: отдельный свип порога
 
