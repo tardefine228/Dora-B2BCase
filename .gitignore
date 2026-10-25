@@ -60,3 +60,6 @@ eval_report_ci_dense.json
 # Generated at runtime
 data/dense_cache/
 *.sqlite*
+
+frontend/test-results/
+frontend/playwright-report/

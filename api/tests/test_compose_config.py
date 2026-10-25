@@ -114,14 +114,16 @@ def test_vector_search_is_on_and_served_from_qdrant(compose) -> None:
     assert "INSTALL_TRANSFORMER" in build_args and "EMBEDDER_MODEL" in build_args
 
 
-def test_dockerfile_bakes_the_embedder_with_a_safe_fallback() -> None:
+def test_dockerfile_bakes_the_embedder_with_explicit_fallback() -> None:
     dockerfile = (ROOT / "api" / "Dockerfile").read_text(encoding="utf-8")
     assert "ARG INSTALL_TRANSFORMER" in dockerfile
     assert "requirements-ml.txt" in dockerfile
     assert "scripts/download_model.py" in dockerfile
     assert "build_model.py --dense --gate" in dockerfile
-    # A failed transformer step must not fail the whole build.
-    assert "|| echo" in dockerfile
+    # A broken ML build must not silently pass the acceptance checks.
+    assert "ARG ALLOW_DEGRADE=false" in dockerfile
+    assert dockerfile.count('if [ "$ALLOW_DEGRADE" = "true" ]') == 2
+    assert "ERROR: transformer step failed (ALLOW_DEGRADE=false)" in dockerfile
     assert "USER app" in dockerfile
     # Fail-fast preflight: a blocked Hugging Face must be diagnosed in seconds,
     # not after ten minutes of dead downloads, and name the step that died.
