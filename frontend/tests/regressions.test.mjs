@@ -114,7 +114,8 @@ test('API errors retain validation messages', async t => {
   await assert.rejects(api.classify(''), /Name required/);
 });
 
-test('CSV neutralizes formulas and preserves delimiter and quote escaping', async t => {
+// Перехватывает файл, который экспорт отдаёт браузеру: возвращает геттер блоба.
+function captureDownload(t) {
   let blob;
   t.mock.method(URL, 'createObjectURL', value => { blob = value; return 'blob:test'; });
   t.mock.method(globalThis, 'setTimeout', () => 0);
@@ -125,13 +126,38 @@ test('CSV neutralizes formulas and preserves delimiter and quote escaping', asyn
   t.after(() => {
     if (previous) Object.defineProperty(globalThis, 'document', previous); else delete globalThis.document;
   });
+  return () => blob;
+}
+
+test('CSV neutralizes formulas and preserves delimiter and quote escaping', async t => {
+  const capture = captureDownload(t);
   const names = ['=1+1', '+1', '-1', '@SUM(A1)', '  =1', '\tformula', 'Обычный; "товар"'];
   exportResultsCsv(names.map(name => ({
     name, code: '27.51.24.110', title: null, status: 'ok', confidence: 0.9,
     confidenceRaw: -0.1, clauseRef: null, url: null,
   })));
-  const csv = await blob.text();
+  const csv = await capture().text();
   for (const name of names.slice(0, -1)) assert.ok(csv.includes(`'${name};`));
   assert.ok(csv.includes('"Обычный; ""товар""";27.51.24.110;'));
   assert.ok(csv.includes(';0.9;-0.1;'));
+});
+
+test('CSV carries the row number of the uploaded file as the last column', async t => {
+  const capture = captureDownload(t);
+  // Позиции из файла: после сортировки по уверенности порядок другой, а номера
+  // должны остаться файловыми — по ним специалист сверяет строку с выгрузкой.
+  exportResultsCsv([
+    { name: 'Второй', code: null, title: null, status: 'not_found', confidence: 0, confidenceRaw: 0, clauseRef: null, url: null },
+    { name: 'Первый', code: '26.20.11', title: null, status: 'ok', confidence: 0.9, confidenceRaw: 0.8, clauseRef: null, url: null },
+  ], [7, 3]);
+  const csv = await capture().text();
+  const lines = csv.trim().split('\r\n');
+  assert.ok(lines[0].endsWith(';row'), lines[0]);
+  assert.ok(lines[1].endsWith(';7'), lines[1]);
+  assert.ok(lines[2].endsWith(';3'), lines[2]);
+  // Без позиций нумерация идёт по порядку выгрузки.
+  exportResultsCsv([
+    { name: 'Один', code: null, title: null, status: 'not_found', confidence: 0, confidenceRaw: 0, clauseRef: null, url: null },
+  ]);
+  assert.ok((await capture().text()).trim().endsWith(';1'));
 });

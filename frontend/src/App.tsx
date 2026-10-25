@@ -223,9 +223,15 @@ export default function App() {
     } catch (e) { setError(message(e)); }
     finally { locked.current = false; setBusy(null); if (input.current) input.current.value = ''; }
   }
-  const sorted = [...results].sort((a, b) => sort === 'name'
-    ? a.name.localeCompare(b.name, 'ru')
-    : sort === 'confidence' ? (b.confidence ?? -1) - (a.confidence ?? -1) : 0);
+  // Номер товара — его позиция в загруженном файле. Он не пересчитывается при
+  // сортировке: специалист сверяет строку ответа с исходной выгрузкой, и «19»
+  // должно означать девятнадцатую строку файла, а не девятнадцатую на экране.
+  const rows = results.map((result, index) => ({ result, position: index + 1 }));
+  const sorted = [...rows].sort((a, b) => sort === 'name'
+    ? a.result.name.localeCompare(b.result.name, 'ru')
+    : sort === 'confidence' ? (b.result.confidence ?? -1) - (a.result.confidence ?? -1) : 0);
+  const ordered = sorted.map(row => row.result);
+  const positions = sorted.map(row => row.position);
 
   return <>
     <header><div className="brand"><span className="brand-icon"><Icon/></span>Классификатор товаров</div></header>
@@ -276,22 +282,25 @@ export default function App() {
         </section>}
         {result && <section className="card result"><ResultCard result={result} onSaved={saveVerdict}/></section>}
         {results.length > 0 && <section className="card result">
-          <div className="result-heading"><h2>Результаты списка</h2></div>
+          <div className="result-heading"><h2>Результаты списка</h2>
+            <span className="muted">№ — номер товара в файле, он не меняется при сортировке</span>
+          </div>
           <div className="toolbar"><label htmlFor="sort">Сортировка
             <select id="sort" value={sort} onChange={e => setSort(e.target.value as typeof sort)}>
               <option value="original">Как в файле</option><option value="name">По названию</option><option value="confidence">По уверенности</option>
             </select></label>
             <span className="toolbar-actions">
               <button type="button" className="outline" disabled={exporting} onClick={async () => { setExporting(true);
-                try { await exportResults(sorted); } catch (e) { setError(message(e)); } finally { setExporting(false); }
+                try { await exportResults(ordered, positions); } catch (e) { setError(message(e)); } finally { setExporting(false); }
               }}>{exporting ? 'Сохраняем…' : 'Скачать Excel'}</button>
               <button type="button" className="outline" disabled={exporting} onClick={() => {
-                try { exportResultsCsv(sorted); } catch (e) { setError(message(e)); }
+                try { exportResultsCsv(ordered, positions); } catch (e) { setError(message(e)); }
               }}>Скачать CSV</button>
             </span>
           </div>
-          <div className="table-scroll"><table><thead><tr><th scope="col">Товар</th><th scope="col">Код и статус</th><th scope="col">Уверенность</th><th scope="col">Подробности</th></tr></thead>
-            <tbody>{sorted.map(r => <tr key={results.indexOf(r)}>
+          <div className="table-scroll"><table><thead><tr><th scope="col" className="row-num">№</th><th scope="col">Товар</th><th scope="col">Код и статус</th><th scope="col">Уверенность</th><th scope="col">Подробности</th></tr></thead>
+            <tbody>{sorted.map(({ result: r, position }) => <tr key={position}>
+              <td className="row-num">{position}</td>
               <td>{r.name}</td><td>{r.code ?? '—'}{r.code && <span className="cell-status">Категория: {r.title ?? 'название не указано'}</span>}<span className="muted cell-status">{STATUS_LABEL[r.status]}</span></td>
               <td>{percent(r.confidence)}</td><td><SourceLink url={r.url}/>
                 <details className="details"><summary>Проверить результат</summary><ResultCard result={r} compact onSaved={saveVerdict}/></details></td>

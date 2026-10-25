@@ -23,6 +23,7 @@ button.small{font-size:13px;min-height:40px;padding:9px 14px}
 .field-error{color:#992e28;font-size:13px;margin:12px 0}
 .field-success{color:#1b6a40;font-size:13px;margin:12px 0}
 .cell-status{display:block;margin-top:5px;font-size:12px}
+.row-num{width:58px;text-align:right;color:#657293;font-variant-numeric:tabular-nums;white-space:nowrap}
 .compact-result{margin-top:12px;line-height:1.5}
 .compact-result small{font-size:12px;color:#657293;display:block}
 .history{margin-top:20px}
