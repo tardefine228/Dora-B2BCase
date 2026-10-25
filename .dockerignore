@@ -10,6 +10,11 @@ frontend/dist
 eval/*
 !eval/run_eval.py
 !eval/labeled_examples.csv
+# scripts/build_model.py --dense --gate runs inside the image; without these
+# the step dies on ImportError in 0.4 s and the image silently ships without
+# the dense reranker (vector search then only widens the shortlist).
+!eval/dense_gate.py
+!eval/quality_gate.py
 data/*
 !data/data.csv
 !data/data.json
