@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, followBatch, type Result, type UploadAccepted, type Verdict } from './api';
+import { api, followBatch, type Job, type Result, type UploadAccepted, type Verdict } from './api';
 import { exportResults, exportResultsCsv } from './files';
 import { STATUS_HELP, STATUS_LABEL, codeLabel, duplicateAppendixHint, notFoundHint, verifierNote } from './status';
 import { orderResults, type SortMode } from './rows';
 import { storage } from './storage';
+import { isRunningJob, navigationType, parseJobMarker, readStoredView, type StoredView } from './view';
 
 const HISTORY_KEY = 'dora:local-history:v1';
 const HISTORY_ENABLED_KEY = 'dora:history-enabled:v1';
@@ -104,8 +105,10 @@ function readLocalHistory(): Result[] {
   catch { return []; }
 }
 
-function readSession() {
-  try { return JSON.parse(sessionStorage.getItem('dora:current-view:v1') ?? '{}'); }
+function readSession(): StoredView {
+  // Просмотр возвращается только по «Назад» (ушли в пункт перечня и вернулись).
+  // При обычном открытии сайта запись удаляется: см. src/view.ts.
+  try { return readStoredView(sessionStorage, navigationType()) ?? {}; }
   catch { return {}; }
 }
 const savedView = readSession();
@@ -125,6 +128,8 @@ export default function App() {
   const [historyEnabled, setHistoryEnabled] = useState(() => storage.getItem(HISTORY_ENABLED_KEY) === 'yes');
   const [history, setHistory] = useState<Result[]>(readLocalHistory);
   const [storageWarning, setStorageWarning] = useState('');
+  // Одноразовая строка о том, что прошлая обработка не восстановлена.
+  const [notice, setNotice] = useState('');
   const input = useRef<HTMLInputElement>(null);
   const abort = useRef<AbortController | null>(null);
   const locked = useRef(false);
@@ -137,7 +142,7 @@ export default function App() {
 
   useEffect(() => {
     try { sessionStorage.setItem('dora:current-view:v1', JSON.stringify({ name, result, filename, fileInfo, progress, results })); }
-    catch { setStorageWarning('Не удалось сохранить текущие результаты для возврата. Скачайте CSV перед переходом по ссылке.'); }
+    catch { setStorageWarning('Не удалось сохранить текущие результаты для возврата по «Назад». Скачайте CSV перед переходом по ссылке.'); }
   }, [name, result, filename, fileInfo, progress, results]);
 
   function saveHistory(items: Result[]) {
@@ -185,22 +190,38 @@ export default function App() {
     }
   }
   useEffect(() => {
-    const existing = storage.getItem(ACTIVE_JOB_KEY);
-    if (existing) {
-      try {
-        const v = JSON.parse(existing) as { id: string; total: number };
-        if (v.id && Number.isInteger(v.total) && v.total > 0 && v.total <= 100) void follow(v.id, v.total);
-        else storage.removeItem(ACTIVE_JOB_KEY);
-      } catch { storage.removeItem(ACTIVE_JOB_KEY); }
-    }
+    void resumeActiveJob();
     return () => { abort.current?.abort(); locked.current = false; };
   }, []);
+
+  /**
+   * Возобновляет только *идущую* обработку.
+   *
+   * Задание лежит в localStorage, чтобы пережить закрытие вкладки, но показывать
+   * результаты задания, которое завершилось в прошлой сессии, нельзя: страница
+   * открывается пустой, а о потере результатов честно сообщает строка ниже.
+   */
+  async function resumeActiveJob() {
+    const marker = parseJobMarker(storage.getItem(ACTIVE_JOB_KEY));
+    if (!marker) { storage.removeItem(ACTIVE_JOB_KEY); return; }
+    let job: Job;
+    try { job = await api.getBatch(marker.id); }
+    catch { return; }  // Сервер недоступен — не пугаем и не теряем задание.
+    if (!isRunningJob(job.status)) {
+      storage.removeItem(ACTIVE_JOB_KEY);
+      const name = marker.filename ? `«${marker.filename}»` : 'файла';
+      setNotice(`Обработка ${name} завершилась, пока страница была закрыта. Результаты не восстановлены — загрузите файл снова, если они нужны.`);
+      return;
+    }
+    if (marker.filename) setFilename(marker.filename);
+    await follow(marker.id, job.total || marker.total);
+  }
 
   async function single() {
     if (locked.current) return;
     const value = name.trim();
     if (!value) { setError('Введите название товара.'); return; }
-    locked.current = true; setBusy('single'); setError(''); setResult(null); setResults([]); setProgress(null);
+    locked.current = true; setBusy('single'); setError(''); setNotice(''); setResult(null); setResults([]); setProgress(null);
     try { const found = await api.classify(value); setResult(found); saveHistory([found]); }
     catch (e) { setError(message(e)); }
     finally { locked.current = false; setBusy(null); }
@@ -212,11 +233,11 @@ export default function App() {
       setError('Поддерживаются Excel (.xlsx), CSV, PDF, DOCX, JSON и текстовые файлы.'); return;
     }
     if (file.size > 9_500_000) { setError('Файл должен быть меньше 9,5 МБ (ограничение на загрузку).'); return; }
-    locked.current = true; setBusy('file'); setError(''); setFileInfo(null); setFilename(''); setResults([]); setProgress(null); setResult(null);
+    locked.current = true; setBusy('file'); setError(''); setNotice(''); setFileInfo(null); setFilename(''); setResults([]); setProgress(null); setResult(null);
     try {
       const accepted = await api.uploadFile(file);
       setFilename(file.name); setFileInfo(accepted);
-      if (!storage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ id: accepted.job_id, total: accepted.total }))) {
+      if (!storage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ id: accepted.job_id, total: accepted.total, filename: file.name }))) {
         setStorageWarning('Браузер не сохранил задание. Дождитесь завершения обработки, не закрывая страницу.');
       }
       locked.current = false;
@@ -268,6 +289,7 @@ export default function App() {
         </section>
       </div>
       {error && <div className="error" role="alert">{error}</div>}
+      {notice && <p className="hint" role="status">{notice}</p>}
       {storageWarning && <p className="error" role="status">{storageWarning}</p>}
       <div aria-live="polite" aria-busy={!!busy}>
         {progress && <section className="card progress" aria-label="Прогресс обработки">
