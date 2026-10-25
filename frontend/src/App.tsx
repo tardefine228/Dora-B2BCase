@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, followBatch, type Result, type UploadAccepted, type Verdict } from './api';
 import { exportResults, exportResultsCsv } from './files';
 import { STATUS_HELP, STATUS_LABEL, codeLabel, duplicateAppendixHint, notFoundHint, verifierNote } from './status';
+import { numberResults, orderResults, type SortMode } from './rows';
 import { storage } from './storage';
 
 const HISTORY_KEY = 'dora:local-history:v1';
@@ -118,7 +119,7 @@ export default function App() {
   const [fileInfo, setFileInfo] = useState<UploadAccepted | null>(savedView.fileInfo ?? null);
   const [progress, setProgress] = useState<{ processed: number; total: number; state: 'running' | 'done' | 'failed' } | null>(savedView.progress ?? null);
   const [results, setResults] = useState<Result[]>(savedView.results ?? []);
-  const [sort, setSort] = useState<'original' | 'name' | 'confidence'>('original');
+  const [sort, setSort] = useState<SortMode>('original');
   const [drag, setDrag] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [historyEnabled, setHistoryEnabled] = useState(() => storage.getItem(HISTORY_ENABLED_KEY) === 'yes');
@@ -223,13 +224,9 @@ export default function App() {
     } catch (e) { setError(message(e)); }
     finally { locked.current = false; setBusy(null); if (input.current) input.current.value = ''; }
   }
-  // Номер товара — его позиция в загруженном файле. Он не пересчитывается при
-  // сортировке: специалист сверяет строку ответа с исходной выгрузкой, и «19»
-  // должно означать девятнадцатую строку файла, а не девятнадцатую на экране.
-  const rows = results.map((result, index) => ({ result, position: index + 1 }));
-  const sorted = [...rows].sort((a, b) => sort === 'name'
-    ? a.result.name.localeCompare(b.result.name, 'ru')
-    : sort === 'confidence' ? (b.result.confidence ?? -1) - (a.result.confidence ?? -1) : 0);
+  // Номер товара — его позиция в загруженном файле, а не место на экране.
+  // `orderResults` переставляет строки, но не номера (см. src/rows.ts).
+  const sorted = orderResults(numberResults(results), sort);
   const ordered = sorted.map(row => row.result);
   const positions = sorted.map(row => row.position);
 
@@ -283,10 +280,10 @@ export default function App() {
         {result && <section className="card result"><ResultCard result={result} onSaved={saveVerdict}/></section>}
         {results.length > 0 && <section className="card result">
           <div className="result-heading"><h2>Результаты списка</h2>
-            <span className="muted">№ — номер товара в файле, он не меняется при сортировке</span>
+            <span className="muted">«№ в файле» — номер строки в загруженном файле; сортировка меняет порядок строк, но не номера</span>
           </div>
           <div className="toolbar"><label htmlFor="sort">Сортировка
-            <select id="sort" value={sort} onChange={e => setSort(e.target.value as typeof sort)}>
+            <select id="sort" value={sort} onChange={e => setSort(e.target.value as SortMode)}>
               <option value="original">Как в файле</option><option value="name">По названию</option><option value="confidence">По уверенности</option>
             </select></label>
             <span className="toolbar-actions">
@@ -298,7 +295,7 @@ export default function App() {
               }}>Скачать CSV</button>
             </span>
           </div>
-          <div className="table-scroll"><table><thead><tr><th scope="col" className="row-num">№</th><th scope="col">Товар</th><th scope="col">Код и статус</th><th scope="col">Уверенность</th><th scope="col">Подробности</th></tr></thead>
+          <div className="table-scroll"><table><thead><tr><th scope="col" className="row-num">№ в файле</th><th scope="col">Товар</th><th scope="col">Код и статус</th><th scope="col">Уверенность</th><th scope="col">Подробности</th></tr></thead>
             <tbody>{sorted.map(({ result: r, position }) => <tr key={position}>
               <td className="row-num">{position}</td>
               <td>{r.name}</td><td>{r.code ?? '—'}{r.code && <span className="cell-status">Категория: {r.title ?? 'название не указано'}</span>}<span className="muted cell-status">{STATUS_LABEL[r.status]}</span></td>
