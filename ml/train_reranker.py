@@ -783,6 +783,18 @@ CALIBRATION_MODIFIERS = (
 # (with margin under the 0.15 acceptance goal) without saturating the scale.
 PLATFORM_ECE_TARGET = 0.12
 CALIBRATION_SLOPE_GRID = tuple(round(1.0 + 0.05 * step, 2) for step in range(0, 61))
+# A shift smaller than this many of its own standard errors is not a finding:
+# the map stays the identity and the display scale keeps the raw confidence
+# (эксп. 36). The platform is saturated — on the wave-7 build the answered rows
+# sit at mean raw 0.969 with accuracy 0.958 — so the fitted intercept is the
+# difference of two numbers near the top of the scale, and its sampling error is
+# ≈0.2 on 688 rows. Four builds of identical code with different seeds produced
+# intercepts −0.34 / +0.16 / +0.28 / +0.37, i.e. |shift| ≤ 1.8 σ (the shipped one
+# is the largest, 1.7 σ), so the *sign* of the correction was decided by the
+# seed, and the labeled-set ECE moved 0.018…0.036 while top-1 stayed at 191/201
+# in all four. Anything inside the band is noise: display the raw scale, which is
+# measured by ``ece_raw``.
+CALIBRATION_SHIFT_SIGMAS = 1.96
 _CALIBRATION_TOKEN_RE = re.compile(r"[a-zа-яё0-9]+", re.IGNORECASE)
 # Must mirror api/app/services/classifier._RETRIEVAL_SHORTLIST.
 RETRIEVAL_SHORTLIST = 25
@@ -945,13 +957,17 @@ def fit_display_calibration(
             continue
         confidences.append(raw_confidence)
         labels.append(1 if expected and code_matches(code, expected) else 0)
-    calibration = fit_bounded_platt_calibration(confidences, labels)
+    evidence: dict = {}
+    calibration = fit_bounded_platt_calibration(confidences, labels, evidence=evidence)
     calibrated = [calibration.calibrate(value) for value in confidences]
     stats = {
         "queries": len(cases),
         "answered": len(confidences),
         "correct": sum(labels),
         "slope": round(calibration.a, 4),
+        "intercept": round(calibration.b, 4),
+        **evidence,
+        "identity_kept": calibration.kind == "identity",
         "ece_raw": round(expected_calibration_error(confidences, labels), 4),
         "ece_calibrated": round(expected_calibration_error(calibrated, labels), 4),
     }
@@ -1021,6 +1037,7 @@ def fit_bounded_platt_calibration(
     *,
     target_ece: float = PLATFORM_ECE_TARGET,
     slope_grid: tuple[float, ...] = CALIBRATION_SLOPE_GRID,
+    evidence: dict | None = None,
 ) -> Calibration:
     """Gentlest Platt map whose ECE on the platform stays within ``target_ece``.
 
@@ -1038,9 +1055,61 @@ def fit_bounded_platt_calibration(
             [calibration.calibrate(probability) for probability in raw_probabilities], labels
         )
         if error <= target_ece:
-            return calibration
+            return _keep_only_significant_shift(calibration, raw_probabilities, evidence)
         fallback = calibration
-    return fallback or fit_platt_calibration(raw_probabilities, labels)
+    chosen = fallback or fit_platt_calibration(raw_probabilities, labels)
+    return _keep_only_significant_shift(chosen, raw_probabilities, evidence)
+
+
+def calibration_shift(
+    calibration: Calibration, raw_probabilities: list[float]
+) -> tuple[float, float]:
+    """``(shift, standard_error)`` of a fitted map on the logit scale.
+
+    The map is ``a * logit(p) + b``, so at a typical raw confidence ``x`` it
+    moves the scale by ``(a - 1) * x + b``. Its sampling error comes from the
+    Fisher information of the logistic fit, ``sum(p * (1 - p))`` over the
+    platform rows — the same quantity that sets how precisely an intercept can
+    be read off a saturated platform.
+    """
+    if calibration.kind != "platt" or not raw_probabilities:
+        return 0.0, 0.0
+    calibrated = [calibration.calibrate(probability) for probability in raw_probabilities]
+    information = sum(value * (1.0 - value) for value in calibrated)
+    typical = sum(logit(probability) for probability in raw_probabilities) / len(raw_probabilities)
+    shift = (calibration.a - 1.0) * typical + calibration.b
+    if information <= 0.0:
+        return shift, float("inf")
+    return shift, 1.0 / information**0.5
+
+
+def _keep_only_significant_shift(
+    calibration: Calibration,
+    raw_probabilities: list[float],
+    evidence: dict | None = None,
+) -> Calibration:
+    """Drop the fitted map when its shift is inside the platform's own noise.
+
+    A two-parameter Platt map fitted on 688 nearly-saturated rows can always
+    lower the *in-sample* ECE a little, which is why the gentlest-slope search
+    alone kept publishing maps whose direction flipped from build to build. If
+    the shift does not clear ``CALIBRATION_SHIFT_SIGMAS`` standard errors the
+    honest answer is the identity: the raw scale is already the better
+    description of production (labeled-set ECE 0.012 against 0.036 for the map).
+    """
+    shift, standard_error = calibration_shift(calibration, raw_probabilities)
+    if evidence is not None:
+        # Keep the *fitted* numbers: the artifact has to carry the evidence the
+        # decision was made on, not the zeros of the identity it fell back to.
+        evidence.update(
+            candidate_slope=round(calibration.a, 4),
+            candidate_intercept=round(calibration.b, 4),
+            shift=round(shift, 4),
+            shift_se=round(standard_error, 4),
+        )
+    if abs(shift) <= CALIBRATION_SHIFT_SIGMAS * standard_error:
+        return Calibration()
+    return calibration
 
 
 def _groups(pairs: list[TrainingPair]) -> dict[str, list[TrainingPair]]:

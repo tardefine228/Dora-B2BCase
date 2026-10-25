@@ -47,7 +47,18 @@ def test_artifact_has_a_monotone_calibration() -> None:
     calibrated = [model.calibration.calibrate(value) for value in grid]
     assert all(later >= earlier for earlier, later in zip(calibrated, calibrated[1:], strict=False))
     # A calibration must not be a no-op forever: it is fitted, not hard-coded.
-    assert any(abs(value - raw) > 1e-6 for value, raw in zip(calibrated, grid, strict=True))
+    # The one allowed identity is the fitted-and-rejected case (эксп. 36): the
+    # build keeps the map only when its shift clears CALIBRATION_SHIFT_SIGMAS
+    # standard errors on the platform, and records the evidence it decided on.
+    if not any(abs(value - raw) > 1e-6 for value, raw in zip(calibrated, grid, strict=True)):
+        from ml.train_reranker import CALIBRATION_SHIFT_SIGMAS
+
+        platform = reranker.meta.get("calibration_platform") or {}
+        assert platform.get("identity_kept") is True, platform
+        assert platform["shift_se"] > 0, platform
+        assert abs(platform["shift"]) <= CALIBRATION_SHIFT_SIGMAS * platform["shift_se"] + 1e-9, (
+            platform
+        )
 
 
 def test_statuses_follow_the_raw_confidence_on_the_labeled_set() -> None:
@@ -91,6 +102,48 @@ def test_reported_confidence_is_the_calibrated_raw_value() -> None:
         response = classifier.classify(query)
         expected = round(reranker.display_confidence(response.confidence_raw or 0.0), 4)
         assert response.confidence == expected, query
+
+
+def test_a_shift_inside_the_platform_noise_keeps_the_identity() -> None:
+    """The display map is fitted, but only when the platform can see the shift.
+
+    The band is width-of-the-noise, not taste: ``calibration_shift`` returns the
+    logit-space movement of the map and its sampling error on the platform. A
+    shift of a few hundredths of a logit on 688 saturated rows is not a finding
+    (эксп. 36 — the sign of that correction flipped between four seeds), while a
+    real miscalibration must still produce a map.
+    """
+    from ml.reranker import Calibration
+    from ml.train_reranker import (
+        CALIBRATION_SHIFT_SIGMAS,
+        _keep_only_significant_shift,
+        calibration_shift,
+        fit_bounded_platt_calibration,
+    )
+
+    rng = random.Random(1875)
+    confidences = [0.96 + 0.03 * rng.random() for _ in range(688)]
+
+    tiny = Calibration("platt", 1.0, 0.05)
+    shift, standard_error = calibration_shift(tiny, confidences)
+    assert abs(shift) <= CALIBRATION_SHIFT_SIGMAS * standard_error
+    kept = _keep_only_significant_shift(tiny, confidences)
+    assert kept.kind == "identity"
+
+    real = Calibration("platt", 1.0, -1.5)
+    shift, standard_error = calibration_shift(real, confidences)
+    assert abs(shift) > CALIBRATION_SHIFT_SIGMAS * standard_error
+    assert _keep_only_significant_shift(real, confidences).kind == "platt"
+
+    # And a platform that is genuinely over-confident still gets its own map.
+    miscalibrated = [
+        (0.9 + 0.02 * rng.random(), 1 if rng.random() < 0.6 else 0) for _ in range(688)
+    ]
+    fitted = fit_bounded_platt_calibration(
+        [value for value, _ in miscalibrated], [label for _, label in miscalibrated]
+    )
+    assert fitted.kind == "platt"
+    assert fitted.calibrate(0.9) < 0.9
 
 
 def test_platt_scaling_is_monotone_and_bounded() -> None:
@@ -154,10 +207,24 @@ def test_calibration_platform_mirrors_the_api_confidence() -> None:
     cases = build_calibration_cases(catalog, random.Random(1875 + 1))
 
     checked = 0
+    rescued = 0
     for query, _expected in cases[:: max(1, len(cases) // 30)]:
         response = classifier.classify(query)
         raw, status, _code = calibration_confidence(reranker, index, query)
-        assert status == response.status, query
+        if status != response.status:
+            # The only allowed divergence is the documented head rescue
+            # (эксп. 34, see test_statuses_follow_the_raw_confidence_on_the_labeled_set):
+            # a below-threshold lead whose product word is written in the
+            # position's own name. «Хирургический лопата» is a surgical *spatula*
+            # (26.60.13.130, «Лопатки хирургические») and the platform does not
+            # model that rule, so the sample may carry a couple of such rows.
+            assert status == "not_found" and response.status == "review", (
+                query,
+                response.status,
+                status,
+            )
+            assert response.code, query
+            rescued += 1
         if status != "not_found":
             # The API zeroes the confidence of silent answers by contract, so
             # only answered rows are comparable number-wise.
@@ -165,6 +232,8 @@ def test_calibration_platform_mirrors_the_api_confidence() -> None:
             assert raw == pytest.approx(response.confidence_raw, abs=5e-5), query
         checked += 1
     assert checked >= 20
+    # The rescue is the documented exception, not drift: keep it rare here too.
+    assert rescued <= 3, rescued
 
 
 def test_calibration_platform_does_not_reuse_labeled_queries() -> None:

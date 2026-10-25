@@ -3,7 +3,7 @@
   "limit": 150,
   "config": {
     "reranker": "reranker.json",
-    "artifact_sha256": "e51809346c20b812b3e38fac9d864f873401d843ea5305d60a5fc7f5fef960f6",
+    "artifact_sha256": "34c9cfffe998d0316e33f9e873dfaa5e292cd139dbbfdb72498bcf6a18214cae",
     "catalog_rows": 1126,
     "labeled_rows": 274
   },
@@ -29,12 +29,12 @@
       "silent_hint_correct": 2
     },
     "bridge": {
-      "rows": 86,
+      "rows": 87,
       "top1": 97.7,
       "top3": 100.0,
       "silence": 0.0,
       "silent_hint": 0.0,
-      "top1_correct": 84,
+      "top1_correct": 85,
       "silent_correct": 0,
       "silent_hint_correct": 0
     },
@@ -50,21 +50,21 @@
     },
     "short+attr": {
       "rows": 119,
-      "top1": 78.2,
+      "top1": 76.5,
       "top3": 98.3,
-      "silence": 5.0,
-      "silent_hint": 5.0,
-      "top1_correct": 93,
-      "silent_correct": 6,
-      "silent_hint_correct": 6
+      "silence": 5.9,
+      "silent_hint": 5.9,
+      "top1_correct": 91,
+      "silent_correct": 7,
+      "silent_hint_correct": 7
     },
     "bridge+attr": {
-      "rows": 86,
-      "top1": 96.5,
+      "rows": 87,
+      "top1": 96.6,
       "top3": 100.0,
       "silence": 0.0,
       "silent_hint": 0.0,
-      "top1_correct": 83,
+      "top1_correct": 84,
       "silent_correct": 0,
       "silent_hint_correct": 0
     }
