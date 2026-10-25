@@ -62,7 +62,7 @@
 | Кирпич силикатный | (not_found) | (not_found) | not_found | 0.000 | MISS |
 | Стол офисный | 31.01.1 | 31.01.1 | ok | 0.962 | ok |
 | Кровать металлическая | 31.09.11 | 31.09.11 | ok | 0.977 | ok |
-| Смарт-часы | (not_found) | 26.12.3 | review | 0.672 | MISS |
+| Смарт-часы | (not_found) | 26.12.3 | review | 0.671 | MISS |
 | Мебель для офиса | 31.01.1 | 31.01.11 | ok | 0.834 | top-3 |
 | Набор ручных инструментов | 25.73.60 | (not_found) | not_found | 0.000 | top-3 |
 | Скрипка концертная | 32.20.12.110 | 32.20.12.111 | ok | 0.927 | MISS |
@@ -80,7 +80,7 @@
 | Ковролин | (not_found) | (not_found) | not_found | 0.000 | MISS |
 | Пеноблок | (not_found) | (not_found) | not_found | 0.000 | MISS |
 | Гипсокартон | (not_found) | (not_found) | not_found | 0.000 | MISS |
-| Тележка гидравлическая | (not_found) | 28.22.14.159 | review | 0.638 | MISS |
+| Тележка гидравлическая | (not_found) | 28.22.14.159 | review | 0.637 | MISS |
 | Сушилка для обуви | (not_found) | (not_found) | not_found | 0.000 | MISS |
 | Отпариватель для одежды | (not_found) | (not_found) | not_found | 0.000 | MISS |
 | Самокат детский | (not_found) | (not_found) | not_found | 0.000 | MISS |
@@ -190,7 +190,7 @@
 | Кирпич силикатный | (not_found) | (not_found) | not_found | 0.000 | − | − |
 | Стол офисный | 31.01.1 | 31.01.1 | ok | 0.962 | + | + |
 | Кровать металлическая | 31.09.11 | 31.09.11 | ok | 0.977 | + | + |
-| Смарт-часы | (not_found) | 26.12.3 | review | 0.672 | − | − |
+| Смарт-часы | (not_found) | 26.12.3 | review | 0.671 | − | − |
 | Товар тестовый абвг | (not_found) | (not_found) | not_found | 0.000 | + | + |
 | qwerty zxcvbn asdf | (not_found) | (not_found) | not_found | 0.000 | + | + |
 | Светильники электрические настольные | 27.40.22 | 27.40.22 | ok | 0.995 | + | + |
@@ -323,7 +323,7 @@
 | Пеноблок | (not_found) | (not_found) | not_found | 0.000 | − | − |
 | Гипсокартон | (not_found) | (not_found) | not_found | 0.000 | − | − |
 | Часы наручные механические | (not_found) | (not_found) | not_found | 0.000 | + | + |
-| Тележка гидравлическая | (not_found) | 28.22.14.159 | review | 0.638 | − | − |
+| Тележка гидравлическая | (not_found) | 28.22.14.159 | review | 0.637 | − | − |
 | Садовая тачка | (not_found) | (not_found) | not_found | 0.000 | + | + |
 | Сушилка для обуви | (not_found) | (not_found) | not_found | 0.000 | − | − |
 | Отпариватель для одежды | (not_found) | (not_found) | not_found | 0.000 | − | − |

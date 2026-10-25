@@ -1,11 +1,11 @@
 {
   "artifact": "reranker.tfidf.json",
-  "artifact_sha256": "b98b146289e814ff15d632e3d958601040a2d2e050a98b9bad58cbe1cc24156b",
+  "artifact_sha256": "5a0a6c1df9310b940808a2c6e746741db7d26d633158ef3b6fe20d30e3634910",
   "embedder_tag": "tfidf",
   "catalog_rows": 984,
   "baseline": {
     "artifact": "reranker.json",
-    "sha256": "563da4a2e9a06f8cf892d5180d29ceb3893f90a93a56b0ed7b4dc20fe1697723",
+    "sha256": "0863430621afe96eba09ac7181429e84842e081849601e9049735abea07f3c0f",
     "trained_in_run": true,
     "path": null,
     "meta": {
@@ -50,7 +50,7 @@
     "new": [
       0.0311,
       0.0155,
-      0.0358,
+      0.0359,
       0.0238
     ]
   },

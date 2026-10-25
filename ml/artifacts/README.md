@@ -10,10 +10,10 @@
 | Файл | sha256 | Что это | Чем произведён |
 | --- | --- | --- | --- |
 | `reranker.json` | `34c9cfffe998d0316e33f9e873dfaa5e292cd139dbbfdb72498bcf6a18214cae` | лексический реранкер (веса `dense_*` = 0): работает, когда векторных признаков нет | `python scripts/build_model.py --models-dir models` |
-| `reranker.json` | `34c9cfff…` | лексический реранкер (откат, `SEMANTIC_RERANKER=lexical`) | `python scripts/build_model.py --models-dir models` |
-| `reranker.tfidf.json` | `TBD` | реранкер с векторными признаками под эмбеддер `tfidf`; **именно он скорит в каталоговом режиме при `VECTOR_SEARCH=true`** | `python scripts/build_model.py --dense --gate --gate-seeds 1875,1876,1877,1878 --models-dir models` |
-| `dense-gate.json` | `TBD` | отчёт допуска для `reranker.tfidf.json`: метрики по строкам, sha256 кандидата и базы | тот же прогон `--dense --gate` |
-| `tfidf_embedder.json` | `TBD` | tfidf-эмбеддер: 512 измерений, 3–4-граммы, названия текущего каталога | `scripts/build_model.py` (шаг подгонки эмбеддера) |
+| `reranker.json` | `34c9cfffe998d0316e33f9e873dfaa5e292cd139dbbfdb72498bcf6a18214cae` | лексический реранкер (откат, `SEMANTIC_RERANKER=lexical`) | `python scripts/build_model.py --models-dir models` |
+| `reranker.tfidf.json` | `5a0a6c1df9310b940808a2c6e746741db7d26d633158ef3b6fe20d30e3634910` | реранкер с векторными признаками под эмбеддер `tfidf`; **именно он скорит в каталоговом режиме при `VECTOR_SEARCH=true`** | `python scripts/build_model.py --dense --gate --gate-seeds 1875,1876,1877,1878 --models-dir models` |
+| `dense-gate.json` | `711021914eeae5092970a0628d68b992331129b97757731fefd3f4e84587c133` | отчёт допуска для `reranker.tfidf.json`: метрики по строкам, sha256 кандидата и базы | тот же прогон `--dense --gate` |
+| `tfidf_embedder.json` | `f1dfb7ff97c891104cbbc722ce2ff5ebe49a2b63a39f48d0912972a42f0202a3` | tfidf-эмбеддер: 512 измерений, 3–4-граммы, названия текущего каталога | `scripts/build_model.py` (шаг подгонки эмбеддера) |
 
 ## Происхождение и воспроизводимость
 
