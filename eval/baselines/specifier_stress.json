@@ -1,0 +1,72 @@
+{
+  "seed": 1875,
+  "limit": 150,
+  "config": {
+    "reranker": "reranker.json",
+    "artifact_sha256": "34c9cfffe998d0316e33f9e873dfaa5e292cd139dbbfdb72498bcf6a18214cae",
+    "catalog_rows": 1126,
+    "labeled_rows": 274
+  },
+  "shapes": {
+    "name": {
+      "rows": 149,
+      "top1": 97.3,
+      "top3": 100.0,
+      "silence": 0.0,
+      "silent_hint": 0.0,
+      "top1_correct": 145,
+      "silent_correct": 0,
+      "silent_hint_correct": 0
+    },
+    "short": {
+      "rows": 119,
+      "top1": 83.2,
+      "top3": 98.3,
+      "silence": 1.7,
+      "silent_hint": 1.7,
+      "top1_correct": 99,
+      "silent_correct": 2,
+      "silent_hint_correct": 2
+    },
+    "bridge": {
+      "rows": 87,
+      "top1": 97.7,
+      "top3": 100.0,
+      "silence": 0.0,
+      "silent_hint": 0.0,
+      "top1_correct": 85,
+      "silent_correct": 0,
+      "silent_hint_correct": 0
+    },
+    "name+attr": {
+      "rows": 149,
+      "top1": 96.0,
+      "top3": 100.0,
+      "silence": 0.0,
+      "silent_hint": 0.0,
+      "top1_correct": 143,
+      "silent_correct": 0,
+      "silent_hint_correct": 0
+    },
+    "short+attr": {
+      "rows": 119,
+      "top1": 76.5,
+      "top3": 98.3,
+      "silence": 5.9,
+      "silent_hint": 5.9,
+      "top1_correct": 91,
+      "silent_correct": 7,
+      "silent_hint_correct": 7
+    },
+    "bridge+attr": {
+      "rows": 87,
+      "top1": 96.6,
+      "top3": 100.0,
+      "silence": 0.0,
+      "silent_hint": 0.0,
+      "top1_correct": 84,
+      "silent_correct": 0,
+      "silent_hint_correct": 0
+    }
+  }
+}

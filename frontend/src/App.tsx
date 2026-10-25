@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, followBatch, type Result, type UploadAccepted, type Verdict } from './api';
 import { exportResults, exportResultsCsv } from './files';
 import { STATUS_HELP, STATUS_LABEL, codeLabel, duplicateAppendixHint, notFoundHint, verifierNote } from './status';
+import { orderResults, type SortMode } from './rows';
 import { storage } from './storage';
 
 const HISTORY_KEY = 'dora:local-history:v1';
@@ -118,7 +119,7 @@ export default function App() {
   const [fileInfo, setFileInfo] = useState<UploadAccepted | null>(savedView.fileInfo ?? null);
   const [progress, setProgress] = useState<{ processed: number; total: number; state: 'running' | 'done' | 'failed' } | null>(savedView.progress ?? null);
   const [results, setResults] = useState<Result[]>(savedView.results ?? []);
-  const [sort, setSort] = useState<'original' | 'name' | 'confidence'>('original');
+  const [sort, setSort] = useState<SortMode>('original');
   const [drag, setDrag] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [historyEnabled, setHistoryEnabled] = useState(() => storage.getItem(HISTORY_ENABLED_KEY) === 'yes');
@@ -223,9 +224,9 @@ export default function App() {
     } catch (e) { setError(message(e)); }
     finally { locked.current = false; setBusy(null); if (input.current) input.current.value = ''; }
   }
-  const sorted = [...results].sort((a, b) => sort === 'name'
-    ? a.name.localeCompare(b.name, 'ru')
-    : sort === 'confidence' ? (b.confidence ?? -1) - (a.confidence ?? -1) : 0);
+  // Порядок строк: файл, название или уверенность (см. src/rows.ts). Номер в
+  // первой колонке — просто счётчик строк этого порядка, 1…N.
+  const sorted = orderResults(results, sort);
 
   return <>
     <header><div className="brand"><span className="brand-icon"><Icon/></span>Классификатор товаров</div></header>
@@ -276,9 +277,10 @@ export default function App() {
         </section>}
         {result && <section className="card result"><ResultCard result={result} onSaved={saveVerdict}/></section>}
         {results.length > 0 && <section className="card result">
-          <div className="result-heading"><h2>Результаты списка</h2></div>
+          <div className="result-heading"><h2>Результаты списка</h2>
+          </div>
           <div className="toolbar"><label htmlFor="sort">Сортировка
-            <select id="sort" value={sort} onChange={e => setSort(e.target.value as typeof sort)}>
+            <select id="sort" value={sort} onChange={e => setSort(e.target.value as SortMode)}>
               <option value="original">Как в файле</option><option value="name">По названию</option><option value="confidence">По уверенности</option>
             </select></label>
             <span className="toolbar-actions">
@@ -290,8 +292,9 @@ export default function App() {
               }}>Скачать CSV</button>
             </span>
           </div>
-          <div className="table-scroll"><table><thead><tr><th scope="col">Товар</th><th scope="col">Код и статус</th><th scope="col">Уверенность</th><th scope="col">Подробности</th></tr></thead>
-            <tbody>{sorted.map(r => <tr key={results.indexOf(r)}>
+          <div className="table-scroll"><table><thead><tr><th scope="col" className="row-num">№</th><th scope="col">Товар</th><th scope="col">Код и статус</th><th scope="col">Уверенность</th><th scope="col">Подробности</th></tr></thead>
+            <tbody>{sorted.map((r, index) => <tr key={index}>
+              <td className="row-num">{index + 1}</td>
               <td>{r.name}</td><td>{r.code ?? '—'}{r.code && <span className="cell-status">Категория: {r.title ?? 'название не указано'}</span>}<span className="muted cell-status">{STATUS_LABEL[r.status]}</span></td>
               <td>{percent(r.confidence)}</td><td><SourceLink url={r.url}/>
                 <details className="details"><summary>Проверить результат</summary><ResultCard result={r} compact onSaved={saveVerdict}/></details></td>

@@ -174,12 +174,14 @@ def test_table_states_the_verdict_and_the_numbers():
     (
         # После аудита разметки (docs/labeling-doctrine.md): 201 строка с кодом
         # вместо 166, поэтому числа и ECE другие — это другое измерение, не регрессия.
-        # эксп. 34 (волна 5 лексикона, правило слабой подсказки и порог ok 0.80):
-        # лексика 191/201, top-3 198/201, ECE 0.037 — уверенность просела, потому что
-        # review теперь показывается на строках, которые раньше молчали, а Platt-карта
-        # подобрана на площадке, которая с новым лексиконом отвечает чаще.
+        # эксп. 35 (волна 6 лексикона: приборы, сетевое оборудование, рукава,
+        # системный блок, фильтр): лексика 191/201, top-3 198/201, ECE 0.019.
+        # эксп. 36 (волна 7: ИБП, датчик температуры, термостат): top-1 и top-3
+        # те же, «ok» точнее — 183/190 против 175/181. ECE 0.0192 → 0.0124 не
+        # потому, что модель стала лучше, а потому, что показная шкала больше не
+        # перекалибровывается на шум площадки (identity, см. CALIBRATION_SHIFT_SIGMAS).
         # База — это замер отгруженной конфигурации, поэтому обновляется вместе с ней.
-        ("lexical.json", "reranker.json", (191, 201), 0.037),
+        ("lexical.json", "reranker.json", (191, 201), 0.0124),
         ("dense-tfidf.json", "reranker.tfidf.json", (192, 201), 0.0286),
     ),
 )
@@ -229,5 +231,13 @@ def test_baselines_can_be_compared_with_each_other_row_by_row():
     verdict = evaluate_regression(lexical, dense)
     assert verdict.headline_gains["top1_expected"] == 1
     assert verdict.headline_gains["top3_expected"] == 1
-    assert verdict.keep is True
-    assert not verdict.reasons
+    # Every row metric is equal or better …
+    assert [row.verdict for row in verdict.rows if row.verdict not in {"equal", "better"}] == []
+    # … and the only fatal line is the ECE, which after эксп. 36 does not compare
+    # like with like: `dense-tfidf.json` was measured 2026-10-24, when the display
+    # scale was a fitted Platt map, while the lexical file now ships the identity
+    # map (the platform's shift is inside its own noise). Retraining the vector
+    # artifact under the current rule is the open item — see docs/next-steps.md —
+    # and until then this comparison reads the row metrics, not the ECE.
+    assert verdict.keep is False
+    assert len(verdict.reasons) == 1 and "ECE" in verdict.reasons[0]
