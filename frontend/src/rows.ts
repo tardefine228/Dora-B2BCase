@@ -1,28 +1,23 @@
 import type { Result } from './api';
 
 export type SortMode = 'original' | 'name' | 'confidence';
-// Товар вместе с его номером в файле. Номер — свойство строки, а не позиции на
-// экране, поэтому он переживает любую сортировку.
-export type NumberedResult = { result: Result; position: number };
-
-/** Нумерует ответы по порядку файла: 1 — первая извлечённая строка. */
-export function numberResults(results: Result[]): NumberedResult[] {
-  return results.map((result, index) => ({ result, position: index + 1 }));
-}
 
 /**
- * Сортирует строки, не трогая номера.
+ * Порядок строк таблицы результатов.
  *
- * Товар остаётся со своим файловым номером при любом режиме: специалист сверяет
- * ответ с исходной выгрузкой, и «19» должно означать девятнадцатую строку файла.
- * Равные значения разрешаются по номеру, поэтому порядок детерминирован.
+ * Возвращает новый массив: «Как в файле» — серверный порядок, «По названию» и
+ * «По уверенности» — отсортированный. Равные значения разрешаются исходным
+ * порядком, поэтому результат детерминирован, а входной массив не мутируется.
+ * Нумерацию строк считает таблица — это просто её счётчик 1…N.
  */
-export function orderResults(rows: NumberedResult[], sort: SortMode): NumberedResult[] {
-  const byFile = (a: NumberedResult, b: NumberedResult) => a.position - b.position;
+export function orderResults(results: Result[], sort: SortMode): Result[] {
   const compare = sort === 'name'
-    ? (a: NumberedResult, b: NumberedResult) => a.result.name.localeCompare(b.result.name, 'ru')
+    ? (a: Result, b: Result) => a.name.localeCompare(b.name, 'ru')
     : sort === 'confidence'
-      ? (a: NumberedResult, b: NumberedResult) => (b.result.confidence ?? -1) - (a.result.confidence ?? -1)
+      ? (a: Result, b: Result) => (b.confidence ?? -1) - (a.confidence ?? -1)
       : () => 0;
-  return [...rows].sort((a, b) => compare(a, b) || byFile(a, b));
+  return results
+    .map((result, index) => ({ result, index }))
+    .sort((a, b) => compare(a.result, b.result) || a.index - b.index)
+    .map(row => row.result);
 }
