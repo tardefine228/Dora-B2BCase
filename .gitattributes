@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Raw UI exports are evidence: keep their original bytes (they use CRLF) so the
+# sha256 recorded in query_review.json / traffic_drift.json stays verifiable.
+eval/raw-exports/** -text
