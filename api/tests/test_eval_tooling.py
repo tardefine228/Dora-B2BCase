@@ -86,3 +86,54 @@ def test_sweep_thresholds_ignore_silent_rows_and_handle_an_empty_set():
 def test_sweep_thresholds_do_not_repeat_values():
     thresholds = sweep_thresholds([0.5] * 20, own=0.5, points=6)
     assert thresholds == [0.5]
+
+
+# --- ECE and its resampling noise (ML-долг) -----------------------------------
+#
+# The debt question was "is the vector artifact's ECE really worse, or is the set
+# too small to tell?". These tests pin the arithmetic the answer is built on.
+
+from eval.calibration_noise import bootstrap, ece  # noqa: E402
+
+
+def test_ece_is_zero_when_confidence_matches_accuracy():
+    pairs = [(0.9, True)] * 9 + [(0.9, False)] * 1
+    assert abs(ece(pairs)) < 1e-9
+
+
+def test_ece_grows_with_overconfidence():
+    wrong = [(0.9, False)] * 10
+    assert abs(ece(wrong) - 0.9) < 1e-9
+
+
+def test_bootstrap_of_identical_configurations_centres_on_zero():
+    pairs = [(0.9, True)] * 18 + [(0.6, False)] * 2
+    stats = bootstrap(pairs, list(pairs), samples=200, seed=7)
+    assert stats["base"] == stats["candidate"]
+    low, high = stats["difference_interval"]
+    assert low <= 0.0 <= high
+    # "Better" is strict, so identical configurations never win a resample.
+    assert stats["candidate_better_share"] == 0.0
+
+
+def test_bootstrap_separates_a_clearly_worse_configuration():
+    base = [(0.9, True)] * 180 + [(0.9, False)] * 20
+    candidate = [(0.9, False)] * 180 + [(0.9, True)] * 20
+    stats = bootstrap(base, candidate, samples=200, seed=7)
+    low, high = stats["difference_interval"]
+    assert low > 0.0, "кандидат хуже на 0.8 ECE — интервал не может включать ноль"
+    assert stats["candidate_better_share"] == 0.0
+
+
+def test_bootstrap_is_deterministic_and_refuses_unpaired_rows():
+    base = [(0.9, True)] * 10 + [(0.5, False)] * 5
+    candidate = [(0.8, True)] * 10 + [(0.7, False)] * 5
+    first = bootstrap(base, candidate, samples=100, seed=3)
+    second = bootstrap(base, candidate, samples=100, seed=3)
+    assert first == second
+    try:
+        bootstrap(base, candidate[:-1], samples=10)
+    except ValueError as error:
+        assert "разных наборах" in str(error)
+    else:  # pragma: no cover - the call must raise
+        raise AssertionError("bootstrap должен требовать парные строки")

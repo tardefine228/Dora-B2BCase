@@ -1,13 +1,36 @@
 {
   "artifact": "reranker.tfidf.json",
-  "artifact_sha256": "3b0830b31f0d7c8ad94fff46cb10afc7789c890c3f1f70c1144d89150c234089",
+  "artifact_sha256": "b98b146289e814ff15d632e3d958601040a2d2e050a98b9bad58cbe1cc24156b",
   "embedder_tag": "tfidf",
   "catalog_rows": 984,
   "baseline": {
     "artifact": "reranker.json",
-    "sha256": "9395a262178d0f3f78c5b240123601a3eab78eb19e384a9f8e261711a0d73e78",
+    "sha256": "563da4a2e9a06f8cf892d5180d29ceb3893f90a93a56b0ed7b4dc20fe1697723",
     "trained_in_run": true,
-    "path": null
+    "path": null,
+    "meta": {
+      "seed": 1875,
+      "train_pairs": 32351,
+      "train_queries": 2845,
+      "validation_queries": 948,
+      "split_strategy": "normalized_query_groups",
+      "confidence_candidates": "serving_retrieval_no_forced_positive",
+      "pair_thresholds": {
+        "ok": 0.269,
+        "review": 0.219
+      },
+      "confidence_thresholds": {
+        "ok": 0.8,
+        "review": 0.686
+      },
+      "confidence_calibration": {
+        "type": "identity",
+        "a": 1.0,
+        "b": 0.0
+      },
+      "corpus_rows": 1126,
+      "embedder": null
+    }
   },
   "labeled_rows": 233,
   "seeds": [
@@ -19,47 +42,47 @@
   "decision_basis": "pooled",
   "ece_per_run": {
     "base": [
-      0.0131,
-      0.0402,
-      0.028,
-      0.045
+      0.0124,
+      0.0376,
+      0.0301,
+      0.0176
     ],
     "new": [
-      0.027,
-      0.0431,
-      0.0267,
-      0.0603
+      0.0311,
+      0.0155,
+      0.0358,
+      0.0238
     ]
   },
   "ece_basis": "pooled_reliability",
   "ece_mean_per_run": {
-    "base": 0.0316,
-    "new": 0.0393
+    "base": 0.0244,
+    "new": 0.0266
   },
   "keep": true,
   "runs": 4,
   "reasons": [],
   "ece": {
-    "base": 0.0316,
-    "new": 0.0392
+    "base": 0.0242,
+    "new": 0.0232
   },
   "rows": [
     {
       "metric": "correct_silence",
       "label": "верный not_found",
       "base": {
-        "correct": 119,
+        "correct": 123,
         "total": 128,
-        "rate": 93.0
+        "rate": 96.1
       },
       "new": {
         "correct": 123,
         "total": 128,
         "rate": 96.1
       },
-      "delta_correct": 4,
-      "delta_wrong": -4,
-      "verdict": "better"
+      "delta_correct": 0,
+      "delta_wrong": 0,
+      "verdict": "equal"
     },
     {
       "metric": "exact_top1",
@@ -82,69 +105,69 @@
       "metric": "top1_expected",
       "label": "top-1 (с кодом)",
       "base": {
-        "correct": 759,
+        "correct": 764,
         "total": 804,
-        "rate": 94.4
+        "rate": 95.0
       },
       "new": {
-        "correct": 766,
+        "correct": 772,
         "total": 804,
-        "rate": 95.3
+        "rate": 96.0
       },
-      "delta_correct": 7,
-      "delta_wrong": -7,
+      "delta_correct": 8,
+      "delta_wrong": -8,
       "verdict": "better"
     },
     {
       "metric": "top3_expected",
       "label": "top-3 (с кодом)",
       "base": {
-        "correct": 781,
+        "correct": 792,
         "total": 804,
-        "rate": 97.1
+        "rate": 98.5
       },
       "new": {
-        "correct": 795,
+        "correct": 796,
         "total": 804,
-        "rate": 98.9
+        "rate": 99.0
       },
-      "delta_correct": 14,
-      "delta_wrong": -14,
+      "delta_correct": 4,
+      "delta_wrong": -4,
       "verdict": "better"
     },
     {
       "metric": "top1_all",
       "label": "top-1 по всем",
       "base": {
-        "correct": 878,
+        "correct": 887,
         "total": 932,
-        "rate": 94.2
+        "rate": 95.2
       },
       "new": {
-        "correct": 889,
+        "correct": 895,
         "total": 932,
-        "rate": 95.4
+        "rate": 96.0
       },
-      "delta_correct": 11,
-      "delta_wrong": -11,
+      "delta_correct": 8,
+      "delta_wrong": -8,
       "verdict": "better"
     },
     {
       "metric": "ok_precision",
       "label": "точность статуса ok",
       "base": {
-        "correct": 714,
-        "total": 740,
-        "rate": 96.5
+        "correct": 704,
+        "total": 729,
+        "rate": 96.6
       },
       "new": {
-        "correct": 707,
-        "total": 728,
-        "rate": 97.1
+        "correct": 701,
+        "total": 726,
+        "rate": 96.6
       },
-      "delta_correct": -7,
-      "delta_wrong": -5,
-      "verdict": "better"
+      "delta_correct": -3,
+      "delta_wrong": 0,
+      "verdict": "equal"
     }
   ]
 }
