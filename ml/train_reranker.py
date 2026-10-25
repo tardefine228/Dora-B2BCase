@@ -682,7 +682,14 @@ REVIEW_CONFIDENCE_FLOOR = 0.13
 # two wrong answers through on the labeled set; 0.77 keeps one of them out of
 # ``ok`` and demotes nine correct answers to ``review``. A floor, not a
 # precision guarantee: the calibrated value is kept when it is higher.
-OK_CONFIDENCE_FLOOR = 0.77
+#
+# Re-measured after the fifth bridge wave (эксп. 34), which changed the training
+# pairs: at 0.77 the labeled set had six wrong confident answers out of 180
+# against four out of 178 in the recorded baseline. 0.80 restores exactly the
+# baseline precision — four wrong of 170 — while the rows it demotes stay
+# visible as ``review``, not as silence: the number of empty answers is
+# unchanged by this floor (они решаются порогом ``review``, а не ``ok``).
+OK_CONFIDENCE_FLOOR = 0.80
 
 
 def calibrate_thresholds(

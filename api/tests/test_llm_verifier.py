@@ -171,13 +171,16 @@ def _classifier(reply: str | Exception) -> tuple[CatalogClassifier, list[dict]]:
 
 
 def test_silence_on_a_listed_goods_is_rescued_as_a_candidate():
+    # «Шлагбаум» перечня не содержит, и головное слово не якорится ни в одной
+    # позиции, поэтому правило слабых подсказок (эксп. 34) молчит: до third
+    # stage строка доходит пустой — с подсказками, но без кода.
     baseline = CatalogClassifier(_catalog_path(), dense=None)
-    assert baseline.classify("Внешний жёсткий диск 2 ТБ").status == "not_found"
+    assert baseline.classify("Шлагбаум автоматический").status == "not_found"
 
-    classifier, _ = _classifier('{"choice": "26.20.2"}')
+    classifier, _ = _classifier('{"choice": "27.12.22"}')
 
-    answer = classifier.classify("Внешний жёсткий диск 2 ТБ")
-    assert answer.code == "26.20.2"
+    answer = classifier.classify("Шлагбаум автоматический")
+    assert answer.code == "27.12.22"
     # A verified code is a candidate for a human, never a confident answer.
     assert answer.status == "review"
     assert answer.verifier == "llm-top3"
@@ -204,7 +207,7 @@ def test_verifier_none_keeps_the_model_silent_but_records_the_check():
 
 def test_invented_code_never_reaches_the_response():
     classifier, _ = _classifier('{"choice": "99.99.99"}')
-    answer = classifier.classify("Внешний жёсткий диск 2 ТБ")
+    answer = classifier.classify("Зеркало настенное офисное")
     assert answer.status == "not_found" and answer.code is None
     assert answer.verifier is None
 

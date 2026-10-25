@@ -57,13 +57,28 @@ def test_statuses_follow_the_raw_confidence_on_the_labeled_set() -> None:
         pytest.skip("models/reranker.json не собран (python scripts/build_model.py)")
 
     checked = 0
+    rescued = 0
     for query in _labeled_queries():
         response = classifier.classify(query)
         assert response.confidence_raw is not None
         expected_status = reranker.confidence_model.status_for(response.confidence_raw)
-        assert response.status == expected_status, (query, response.status, expected_status)
+        if response.status != expected_status:
+            # The one documented exception (эксп. 34): a below-threshold lead
+            # whose product word is written in the position's own name is shown
+            # as `review` instead of «нет в перечне». Nothing else may differ.
+            assert expected_status == "not_found" and response.status == "review", (
+                query,
+                response.status,
+                expected_status,
+            )
+            assert response.code, query
+            rescued += 1
         checked += 1
     assert checked >= 89
+    # The exception stays narrow: a handful of rows, not a second decision rule.
+    # 9 of the 201 labeled rows (эксп. 34): one documented exception per row whose
+    # head word is written in the position's own name — 4.5 %, not a second rule.
+    assert rescued <= 10, rescued
 
 
 def test_reported_confidence_is_the_calibrated_raw_value() -> None:

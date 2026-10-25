@@ -9,15 +9,15 @@
     "reranker": "reranker.json",
     "scoring": "lexical-reranker",
     "semantic_reranker": "auto",
-    "review_threshold": 0.596,
+    "review_threshold": 0.642,
     "labeled_rows": 274,
     "expected_rows": 201,
     "not_found_rows": 32,
     "contested_rows": 41,
     "artifact_sha256": {
-      "reranker.json": "9395a262178d0f3f78c5b240123601a3eab78eb19e384a9f8e261711a0d73e78"
+      "reranker.json": "a50fd4aa468bd2f5c8c659e1619daa20d82d199e510f14b2631c98df8d25525c"
     },
-    "measured_at": "2026-10-24T14:54:25Z"
+    "measured_at": "2026-10-24T18:57:27Z"
   },
   "metrics": {
     "correct_silence": {
@@ -29,21 +29,21 @@
       "total": 112
     },
     "top1_expected": {
-      "correct": 190,
+      "correct": 191,
       "total": 201
     },
     "top3_expected": {
-      "correct": 196,
+      "correct": 198,
       "total": 201
     },
     "top1_all": {
-      "correct": 221,
+      "correct": 222,
       "total": 233
     },
     "ok_precision": {
-      "correct": 174,
-      "total": 178
+      "correct": 177,
+      "total": 182
     }
   },
-  "ece": 0.0185
+  "ece": 0.037
 }
