@@ -142,22 +142,14 @@ test('CSV neutralizes formulas and preserves delimiter and quote escaping', asyn
   assert.ok(csv.includes(';0.9;-0.1;'));
 });
 
-test('CSV carries the row number of the uploaded file as the last column', async t => {
+test('CSV numbers the rows 1…N as the last column', async t => {
   const capture = captureDownload(t);
-  // Позиции из файла: после сортировки по уверенности порядок другой, а номера
-  // должны остаться файловыми — по ним специалист сверяет строку с выгрузкой.
   exportResultsCsv([
     { name: 'Второй', code: null, title: null, status: 'not_found', confidence: 0, confidenceRaw: 0, clauseRef: null, url: null },
     { name: 'Первый', code: '26.20.11', title: null, status: 'ok', confidence: 0.9, confidenceRaw: 0.8, clauseRef: null, url: null },
-  ], [7, 3]);
-  const csv = await capture().text();
-  const lines = csv.trim().split('\r\n');
-  assert.ok(lines[0].endsWith(';row'), lines[0]);
-  assert.ok(lines[1].endsWith(';7'), lines[1]);
-  assert.ok(lines[2].endsWith(';3'), lines[2]);
-  // Без позиций нумерация идёт по порядку выгрузки.
-  exportResultsCsv([
-    { name: 'Один', code: null, title: null, status: 'not_found', confidence: 0, confidenceRaw: 0, clauseRef: null, url: null },
   ]);
-  assert.ok((await capture().text()).trim().endsWith(';1'));
+  const lines = (await capture().text()).trim().split('\r\n');
+  assert.ok(lines[0].endsWith(';row'), lines[0]);
+  assert.ok(lines[1].endsWith(';1'), lines[1]);
+  assert.ok(lines[2].endsWith(';2'), lines[2]);
 });

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, followBatch, type Result, type UploadAccepted, type Verdict } from './api';
 import { exportResults, exportResultsCsv } from './files';
 import { STATUS_HELP, STATUS_LABEL, codeLabel, duplicateAppendixHint, notFoundHint, verifierNote } from './status';
-import { numberResults, orderResults, type SortMode } from './rows';
+import { orderResults, type SortMode } from './rows';
 import { storage } from './storage';
 
 const HISTORY_KEY = 'dora:local-history:v1';
@@ -224,11 +224,9 @@ export default function App() {
     } catch (e) { setError(message(e)); }
     finally { locked.current = false; setBusy(null); if (input.current) input.current.value = ''; }
   }
-  // Номер товара — его позиция в загруженном файле, а не место на экране.
-  // `orderResults` переставляет строки, но не номера (см. src/rows.ts).
-  const sorted = orderResults(numberResults(results), sort);
-  const ordered = sorted.map(row => row.result);
-  const positions = sorted.map(row => row.position);
+  // Порядок строк: файл, название или уверенность (см. src/rows.ts). Номер в
+  // первой колонке — просто счётчик строк этого порядка, 1…N.
+  const sorted = orderResults(results, sort);
 
   return <>
     <header><div className="brand"><span className="brand-icon"><Icon/></span>Классификатор товаров</div></header>
@@ -280,7 +278,6 @@ export default function App() {
         {result && <section className="card result"><ResultCard result={result} onSaved={saveVerdict}/></section>}
         {results.length > 0 && <section className="card result">
           <div className="result-heading"><h2>Результаты списка</h2>
-            <span className="muted">«№ в файле» — номер строки в загруженном файле; сортировка меняет порядок строк, но не номера</span>
           </div>
           <div className="toolbar"><label htmlFor="sort">Сортировка
             <select id="sort" value={sort} onChange={e => setSort(e.target.value as SortMode)}>
@@ -288,16 +285,16 @@ export default function App() {
             </select></label>
             <span className="toolbar-actions">
               <button type="button" className="outline" disabled={exporting} onClick={async () => { setExporting(true);
-                try { await exportResults(ordered, positions); } catch (e) { setError(message(e)); } finally { setExporting(false); }
+                try { await exportResults(sorted); } catch (e) { setError(message(e)); } finally { setExporting(false); }
               }}>{exporting ? 'Сохраняем…' : 'Скачать Excel'}</button>
               <button type="button" className="outline" disabled={exporting} onClick={() => {
-                try { exportResultsCsv(ordered, positions); } catch (e) { setError(message(e)); }
+                try { exportResultsCsv(sorted); } catch (e) { setError(message(e)); }
               }}>Скачать CSV</button>
             </span>
           </div>
-          <div className="table-scroll"><table><thead><tr><th scope="col" className="row-num">№ в файле</th><th scope="col">Товар</th><th scope="col">Код и статус</th><th scope="col">Уверенность</th><th scope="col">Подробности</th></tr></thead>
-            <tbody>{sorted.map(({ result: r, position }) => <tr key={position}>
-              <td className="row-num">{position}</td>
+          <div className="table-scroll"><table><thead><tr><th scope="col" className="row-num">№</th><th scope="col">Товар</th><th scope="col">Код и статус</th><th scope="col">Уверенность</th><th scope="col">Подробности</th></tr></thead>
+            <tbody>{sorted.map((r, index) => <tr key={index}>
+              <td className="row-num">{index + 1}</td>
               <td>{r.name}</td><td>{r.code ?? '—'}{r.code && <span className="cell-status">Категория: {r.title ?? 'название не указано'}</span>}<span className="muted cell-status">{STATUS_LABEL[r.status]}</span></td>
               <td>{percent(r.confidence)}</td><td><SourceLink url={r.url}/>
                 <details className="details"><summary>Проверить результат</summary><ResultCard result={r} compact onSaved={saveVerdict}/></details></td>
