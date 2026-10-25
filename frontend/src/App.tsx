@@ -300,7 +300,7 @@ export default function App() {
             </span>
           </div>
           <div className="table-scroll"><table><thead><tr><th scope="col" className="row-num">№</th><th scope="col">Товар</th><th scope="col">Код и статус</th><th scope="col">Уверенность</th><th scope="col">Подробности</th></tr></thead>
-            <tbody>{sorted.map((r, index) => <tr key={index}>
+            <tbody>{sorted.map((r, index) => <tr key={results.indexOf(r)}>
               <td className="row-num">{index + 1}</td>
               <td>{r.name}</td><td>{r.code ?? '—'}{r.code && <span className="cell-status">Категория: {r.title ?? 'название не указано'}</span>}<span className="muted cell-status">{STATUS_LABEL[r.status]}</span></td>
               <td>{percent(r.confidence)}</td><td><SourceLink url={r.url}/>

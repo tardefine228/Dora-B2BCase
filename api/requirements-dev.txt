@@ -11,3 +11,6 @@ qdrant-client>=1.14,<1.15
 numpy>=1.26,<3
 # docker-compose sanity tests:
 PyYAML>=6,<7
+# Migrations are rendered to SQL and parsed back in api/tests/test_migrations.py,
+# so a broken DDL fails CI even though CI has no PostgreSQL.
+sqlglot>=23,<30

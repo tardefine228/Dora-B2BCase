@@ -51,6 +51,11 @@ OKPD2_PATTERN = r"^\d{2}(\.\d{1,2}){0,3}$"
 
 CODE_ROLES_REVIEW = {"Не указан", "Исключение"}
 
+# Catalog snapshots for rollback: one directory per upload, newest kept.
+VERSIONS_DIRNAME = "versions"
+META_FILENAME = "meta.json"
+DEFAULT_VERSIONS_KEPT = 10
+
 
 def resolve_data_dir() -> Path:
     """Resolve DATA_DIR the same way the classifier resolves the catalog path."""
@@ -254,11 +259,24 @@ def normalize_rows(parsed: ParsedCatalog) -> list[dict]:
     return normalized
 
 
-def write_catalog(rows: list[dict], data_dir: Path) -> CatalogInfo:
-    """Atomically replace data.csv and data.json, return the resulting facts."""
+def write_catalog(
+    rows: list[dict],
+    data_dir: Path,
+    *,
+    snapshot: bool = True,
+    keep: int = DEFAULT_VERSIONS_KEPT,
+) -> CatalogInfo:
+    """Atomically replace data.csv and data.json, return the resulting facts.
+
+    With ``snapshot`` (the default) the catalog being replaced is copied aside
+    first, so a bad upload can be undone with ``POST /admin/catalog/rollback``
+    without a backup from outside the container.
+    """
     data_dir.mkdir(parents=True, exist_ok=True)
     csv_path = data_dir / "data.csv"
     json_path = data_dir / "data.json"
+    if snapshot:
+        snapshot_catalog(data_dir, keep=keep)
 
     csv_buffer = io.StringIO()
     writer = csv.DictWriter(csv_buffer, fieldnames=CSV_COLUMNS, delimiter=CSV_DELIMITER)
@@ -319,3 +337,183 @@ def catalog_facts(data_dir: Path) -> CatalogInfo:
         modified_at=datetime.fromtimestamp(latest_mtime, tz=UTC).isoformat(timespec="seconds"),
         source_files=[path.name for path in existing],
     )
+
+
+# --- Catalog versions: undo an upload without leaving the container ---------
+#
+# The rollout of a new decree edition is the riskiest routine operation: a wrong
+# file silently changes every answer, and until now the only way back was a copy
+# of data.csv kept somewhere outside the image. Each upload therefore snapshots
+# the catalog it replaces, and `rollback` restores one.
+
+@dataclass(frozen=True)
+class CatalogVersion:
+    """One stored snapshot of the catalog."""
+
+    version_id: str
+    rows: int
+    created_at: str
+    sha256: str = ""
+    files: list[str] = field(default_factory=list)
+
+
+def versions_dir(data_dir: Path) -> Path:
+    return data_dir / VERSIONS_DIRNAME
+
+
+def _version_sort_key(path: Path) -> str:
+    # Version ids start with a microsecond timestamp: lexical order is chronological.
+    return path.name
+
+
+def snapshot_catalog(
+    data_dir: Path, *, keep: int = DEFAULT_VERSIONS_KEPT
+) -> CatalogVersion | None:
+    """Copy the current catalog aside (no-op when there is nothing to copy)."""
+    csv_path = data_dir / "data.csv"
+    json_path = data_dir / "data.json"
+    if not csv_path.is_file():
+        return None
+    content = csv_path.read_bytes()
+    digest = hashlib.sha256(content).hexdigest()
+    created = datetime.now(UTC)
+    version_id = f"{created.strftime('%Y%m%dT%H%M%S%f')}-{digest[:12]}"
+    target = versions_dir(data_dir) / version_id
+    target.mkdir(parents=True, exist_ok=True)
+
+    files = ["data.csv"]
+    _atomic_write(target / "data.csv", content)
+    if json_path.is_file():
+        _atomic_write(target / "data.json", json_path.read_bytes())
+        files.append("data.json")
+
+    rows = _csv_row_count(content)
+    meta = {
+        "version_id": version_id,
+        "rows": rows,
+        "sha256": digest,
+        "created_at": created.isoformat(timespec="seconds"),
+        "files": files,
+    }
+    _atomic_write(
+        target / META_FILENAME,
+        json.dumps(meta, ensure_ascii=False, indent=1).encode("utf-8"),
+    )
+    _prune_versions(data_dir, keep)
+    logger.info("Снимок каталога сохранён: %s (%d строк)", version_id, rows)
+    return CatalogVersion(
+        version_id=version_id,
+        rows=rows,
+        created_at=meta["created_at"],
+        sha256=digest,
+        files=files,
+    )
+
+
+def _csv_row_count(content: bytes) -> int:
+    reader = csv.reader(io.StringIO(content.decode("utf-8-sig")), delimiter=CSV_DELIMITER)
+    next(reader, None)  # header
+    return sum(1 for _ in reader)
+
+
+def _prune_versions(data_dir: Path, keep: int) -> None:
+    """Keep the newest ``keep`` snapshots; the rest are deleted."""
+    import shutil
+
+    directories = sorted(
+        (path for path in versions_dir(data_dir).glob("*") if path.is_dir()),
+        key=_version_sort_key,
+        reverse=True,
+    )
+    for stale in directories[max(keep, 1) :]:
+        shutil.rmtree(stale, ignore_errors=True)
+
+
+def list_versions(data_dir: Path) -> list[CatalogVersion]:
+    """Stored snapshots, newest first."""
+    versions: list[CatalogVersion] = []
+    root = versions_dir(data_dir)
+    if not root.is_dir():
+        return versions
+    for path in sorted(root.iterdir(), key=_version_sort_key, reverse=True):
+        if not path.is_dir():
+            continue
+        meta: dict = {}
+        meta_path = path / META_FILENAME
+        if meta_path.is_file():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except ValueError:  # pragma: no cover - a corrupt meta is not fatal
+                meta = {}
+        csv_path = path / "data.csv"
+        stored_rows = int(meta.get("rows") or 0)
+        if not stored_rows and csv_path.is_file():
+            stored_rows = _csv_row_count(csv_path.read_bytes())
+        versions.append(
+            CatalogVersion(
+                version_id=path.name,
+                rows=stored_rows,
+                created_at=str(meta.get("created_at") or ""),
+                sha256=str(meta.get("sha256") or ""),
+                files=[name for name in ("data.csv", "data.json") if (path / name).is_file()],
+            )
+        )
+    return versions
+
+
+def restore_version(
+    data_dir: Path,
+    version_id: str | None = None,
+    *,
+    keep: int = DEFAULT_VERSIONS_KEPT,
+) -> tuple[CatalogInfo, CatalogVersion]:
+    """Restore a snapshot (the newest by default) and describe the result.
+
+    The state being replaced is snapshotted first, so a rollback is itself
+    undoable: a second rollback returns to what was just rolled back from.
+    Raises ``FileNotFoundError`` when there is nothing to restore and
+    ``ValueError`` for an unknown or incomplete version.
+    """
+    versions = list_versions(data_dir)
+    if not versions:
+        raise FileNotFoundError("Снимков каталога нет: откатывать нечего")
+    if version_id is None:
+        snapshot = versions[0]
+    else:
+        found = [item for item in versions if item.version_id == version_id]
+        if not found:
+            raise ValueError(f"Снимок {version_id!r} не найден")
+        snapshot = found[0]
+
+    source = versions_dir(data_dir) / snapshot.version_id
+    csv_source = source / "data.csv"
+    if not csv_source.is_file():
+        raise ValueError(f"Снимок {snapshot.version_id!r} повреждён: нет data.csv")
+
+    snapshot_catalog(data_dir, keep=keep)  # so the rollback can be undone
+    _atomic_write(data_dir / "data.csv", csv_source.read_bytes())
+    json_source = source / "data.json"
+    if json_source.is_file():
+        _atomic_write(data_dir / "data.json", json_source.read_bytes())
+    else:
+        # Rebuild the ML view from the CSV so the two files cannot drift apart.
+        rows = list(
+            csv.DictReader(
+                io.StringIO(csv_source.read_text(encoding="utf-8-sig")),
+                delimiter=CSV_DELIMITER,
+            )
+        )
+        _atomic_write(
+            data_dir / "data.json",
+            json.dumps(rows, ensure_ascii=False, indent=1).encode("utf-8"),
+        )
+    logger.warning("Каталог откачен к снимку %s", snapshot.version_id)
+    return catalog_facts(data_dir), snapshot
+
+
+def export_catalog_csv(data_dir: Path) -> bytes:
+    """Current catalog exactly as installed, for backup before an upload."""
+    csv_path = data_dir / "data.csv"
+    if not csv_path.is_file():
+        raise FileNotFoundError("Каталог не установлен: data.csv отсутствует")
+    return csv_path.read_bytes()

@@ -21,10 +21,11 @@ WORKDIR /app
 
 # Embeddings for vector search. true (default): a multilingual transformer is installed
 # and downloaded during the build and a reranker is trained for it. If anything in that
-# step fails (no internet for Hugging Face, ...) the build still succeeds and the service
-# falls back to the offline spaCy vectors; /health/ready reports the embedder in use.
+# step fails, the build fails. ALLOW_DEGRADE=true explicitly permits a fallback;
+# /health/ready reports the actual embedder in use.
 # README documents INSTALL_TRANSFORMER=false for a ~2 minute build without it.
 ARG INSTALL_TRANSFORMER=true
+ARG ALLOW_DEGRADE=false
 ARG EMBEDDER_MODEL=intfloat/multilingual-e5-small
 COPY api/requirements.txt /tmp/requirements.txt
 COPY api/requirements-ml.txt /tmp/requirements-ml.txt
@@ -59,12 +60,16 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         || { echo "WARNING: model download failed - huggingface.co or the *.hf.co CDN blocked mid-download"; exit 1; }; \
         mkdir -p /opt/models \
         && cp -a /root/.cache/huggingface/embedder /opt/models/embedder \
-      ) || echo "WARNING: transformer step failed - falling back to spaCy vectors"; \
+      ) || { if [ "$ALLOW_DEGRADE" = "true" ]; then echo "WARNING: transformer step failed; degraded build explicitly allowed"; else echo "ERROR: transformer step failed (ALLOW_DEGRADE=false)"; exit 1; fi; }; \
     fi
 
 # Application code, copied after the downloads: a code edit re-runs at most the
 # offline training step below, never the toolchain/model layer above.
 COPY --chown=app:app api/app ./app
+# Alembic config and migrations: the store runs `upgrade head` at startup, so the
+# image must carry them (paths resolve relative to /app/alembic.ini).
+COPY --chown=app:app api/alembic.ini ./alembic.ini
+COPY --chown=app:app api/migrations ./migrations
 COPY --chown=app:app ml ./ml
 # Built UI (index.html + assets/); served by app.main at /ui/.
 COPY --chown=app:app --from=ui-build /ui/dist ./frontend
@@ -73,13 +78,12 @@ COPY scripts ./scripts
 # Labeled set + scorer: the transformer step keeps vector features only if they help.
 # Everything `build_model.py --dense --gate` imports at run time: run_eval scores the
 # gate, dense_gate pools the reliability table, quality_gate records the verdict.
-# A missing module here fails the step instantly and is swallowed by `|| echo`, so
-# the image would ship with the lexical reranker only (see the test that pins this).
+# A missing module fails the build unless degraded operation was explicitly allowed.
 COPY eval/run_eval.py eval/labeled_examples.csv eval/dense_gate.py eval/quality_gate.py ./eval/
 RUN if [ "$INSTALL_TRANSFORMER" = "true" ]; then \
       ( DATA_DIR=/app/data EMBEDDER_BACKEND=sentence-transformers MODEL_NAME=/opt/models/embedder \
          MODEL_LOCAL_ONLY=true python scripts/build_model.py --dense --gate --models-dir /app/ml/artifacts \
-      ) || echo "WARNING: transformer step failed - falling back to spaCy vectors"; \
+      ) || { if [ "$ALLOW_DEGRADE" = "true" ]; then echo "WARNING: transformer step failed; degraded build explicitly allowed"; else echo "ERROR: transformer step failed (ALLOW_DEGRADE=false)"; exit 1; fi; }; \
     fi
 RUN chown -R app:app /app/ml /opt/models 2>/dev/null || true
 

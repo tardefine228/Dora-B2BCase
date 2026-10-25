@@ -33,37 +33,13 @@ from app.schemas import ClassifyResponse
 
 logger = logging.getLogger("dora.jobs.postgres")
 
-_SCHEMA = (
-    """
-    CREATE TABLE IF NOT EXISTS jobs (
-        job_id TEXT PRIMARY KEY,
-        kind TEXT NOT NULL,
-        status TEXT NOT NULL,
-        items JSONB NOT NULL DEFAULT '[]'::jsonb,
-        completed INTEGER NOT NULL DEFAULT 0,
-        results JSONB NOT NULL DEFAULT '[]'::jsonb,
-        total INTEGER,
-        indexed INTEGER NOT NULL DEFAULT 0,
-        error TEXT,
-        created_at DOUBLE PRECISION NOT NULL,
-        updated_at DOUBLE PRECISION NOT NULL
-    )
-    """,
-    "CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, updated_at)",
-    """
-    CREATE TABLE IF NOT EXISTS classification_log (
-        id BIGSERIAL PRIMARY KEY,
-        ts TIMESTAMPTZ NOT NULL DEFAULT now(),
-        source TEXT NOT NULL,
-        query TEXT NOT NULL,
-        code TEXT,
-        status TEXT NOT NULL,
-        confidence REAL,
-        latency_ms REAL
-    )
-    """,
-    "CREATE INDEX IF NOT EXISTS idx_classification_log_ts ON classification_log(ts)",
-)
+# The schema lives in api/migrations (Alembic), not here. Reason: a column change
+# used to be a one-way door — every release re-issued CREATE TABLE IF NOT EXISTS,
+# an older database silently kept the old shape, and nothing recorded which
+# revision was installed. `upgrade_to_head()` runs below before the first query,
+# so `docker compose up` on an existing volume upgrades in place.
+
+
 
 
 def _connect_pool(database_url: str, *, retries: int = 30, delay: float = 1.0):
@@ -107,11 +83,12 @@ class PostgresJobStore:
         self._ttl_seconds = ttl_seconds
         self._stale_seconds = stale_seconds
         self._pool = _connect_pool(database_url)
-        with self._pool.connection() as conn:
-            # Concurrent API/worker starts must not race on CREATE TABLE.
-            conn.execute("SELECT pg_advisory_xact_lock(1875)")
-            for statement in _SCHEMA:
-                conn.execute(statement)
+        # Migrations are the only schema authority (api/migrations). They are
+        # idempotent, and Alembic takes its own lock, so several API/worker
+        # containers starting at once cannot corrupt the schema.
+        from app.migrations_runner import upgrade_to_head
+
+        upgrade_to_head(database_url)
 
     # --- helpers ----------------------------------------------------------
     @staticmethod

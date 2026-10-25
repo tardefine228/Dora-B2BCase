@@ -1,0 +1,2502 @@
+[
+  {
+    "query_id": "f5b8c3628823aa685d1f",
+    "query": "Ноутбук бизнес-класса с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 2,
+        "predicted_code": "26.20.11",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "4d7c90e2f3cfc1fd4019",
+    "query": "Ноутбук бизнес-класса для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 3,
+        "predicted_code": "26.20.11",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "a21345ea017f19b15091",
+    "query": "Ноутбук бизнес-класса модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 4,
+        "predicted_code": "26.20.11",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "6379eea15c50cbb90767",
+    "query": "Ноутбук бизнес-класса бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 5,
+        "predicted_code": "26.20.11",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "57cda14a9b9ef0a95abe",
+    "query": "Ноутбук игровой с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 6,
+        "predicted_code": "26.20.11",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "8f0aabcf49b7db9a39bb",
+    "query": "Ноутбук игровой для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 7,
+        "predicted_code": "26.20.11",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "9e0ce4f13be5d9aa12ba",
+    "query": "Ноутбук игровой модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 8,
+        "predicted_code": "26.20.11",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "37d31d87676d74b25078",
+    "query": "Ноутбук игровой бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 9,
+        "predicted_code": "26.20.11",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "d2a804630168f5270316",
+    "query": "Монитор компьютерный с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 10,
+        "predicted_code": "26.20.17",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "24713980199e9d4f3ce0",
+    "query": "Монитор компьютерный для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 11,
+        "predicted_code": "26.20.17",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "d341a2b570357c21613e",
+    "query": "Монитор компьютерный модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 12,
+        "predicted_code": "26.20.17",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "ecb19f6976ec73bbd1f7",
+    "query": "Монитор компьютерный бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 13,
+        "predicted_code": "26.20.17",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "cf0e359abd24ddb750b4",
+    "query": "Принтер лазерный с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 14,
+        "predicted_code": "26.20.16",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "6cb154fa78059c8a6df2",
+    "query": "Принтер лазерный для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 15,
+        "predicted_code": "26.20.16",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "b501abb3bc1824ed1f7c",
+    "query": "Принтер лазерный модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 16,
+        "predicted_code": "26.20.16",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "02ca1c7cce9ce2f5a418",
+    "query": "Принтер лазерный бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 17,
+        "predicted_code": "26.20.16",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "27fa014b5edc2da95621",
+    "query": "Многофункциональное печатное устройство с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 18,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "764ec1494605ac170727",
+    "query": "Многофункциональное печатное устройство для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 19,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "ab8562c502fca88a0765",
+    "query": "Многофункциональное печатное устройство модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 20,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "cd96ae564f3e5cf4c273",
+    "query": "Многофункциональное печатное устройство бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 21,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "c0474e01aac12e0baf5b",
+    "query": "Смартфон сенсорный с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 22,
+        "predicted_code": "26.30.22",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "cb5a6350e76ede5736c5",
+    "query": "Смартфон сенсорный для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 23,
+        "predicted_code": "26.30.22",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "fa9f364e23bd524681af",
+    "query": "Смартфон сенсорный модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 24,
+        "predicted_code": "26.30.22",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "ed3fe5b5f1f00e4c0446",
+    "query": "Смартфон сенсорный бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 25,
+        "predicted_code": "26.30.22",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "00eb8b4ffcc431ae8520",
+    "query": "Планшет с сенсорным экраном с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 26,
+        "predicted_code": "26.20.11",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "c0426d6518f10fcad196",
+    "query": "Планшет с сенсорным экраном для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 27,
+        "predicted_code": "26.20.11",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "1913b1eb278e8137d304",
+    "query": "Планшет с сенсорным экраном модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 28,
+        "predicted_code": "26.20.11",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "2fb59af6b0b57078094b",
+    "query": "Планшет с сенсорным экраном бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 29,
+        "predicted_code": "26.20.11",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "0935344fb1695d65bf98",
+    "query": "Сервер стоечный с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 30,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "b8f4adb671c2f619c5a6",
+    "query": "Сервер стоечный для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 31,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "27dcf7ee0461d7d55b51",
+    "query": "Сервер стоечный модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 32,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "964fc502dd25faa4b2df",
+    "query": "Сервер стоечный бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 33,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "dd32b4bcc13523338049",
+    "query": "Коммутатор Ethernet с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 34,
+        "predicted_code": "26.30.11.110",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "771389c1fa963786c0ab",
+    "query": "Коммутатор Ethernet для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 35,
+        "predicted_code": "26.30.11.110",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "042bb1f4e50f4cd4d084",
+    "query": "Коммутатор Ethernet модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 36,
+        "predicted_code": "26.30.11.110",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "3d8efe56f987807fa82a",
+    "query": "Коммутатор Ethernet бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 37,
+        "predicted_code": "26.30.11.110",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "3794c05ac262aa348468",
+    "query": "Источник бесперебойного питания с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 38,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "7b30c5d6c562c5850c20",
+    "query": "Источник бесперебойного питания для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 39,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "abe953baa1e2ba6526ee",
+    "query": "Источник бесперебойного питания модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 40,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "084f7d76edd190492be5",
+    "query": "Источник бесперебойного питания бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 41,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "75d1c1443ebf3bbc1456",
+    "query": "Машина стиральная бытовая с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 42,
+        "predicted_code": "27.51.13",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "50117d9f17769d2aeaf7",
+    "query": "Машина стиральная бытовая для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 43,
+        "predicted_code": "27.51.13",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "7cc3fee1290e2d351263",
+    "query": "Машина стиральная бытовая модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 44,
+        "predicted_code": "27.51.13",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "2d0f46b5c32fd7fdd579",
+    "query": "Машина стиральная бытовая бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 45,
+        "predicted_code": "27.51.13",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "21ccc8721a1c79266ce4",
+    "query": "Холодильник бытовой с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 46,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "8d8d6a4be58df6eb2ed0",
+    "query": "Холодильник бытовой для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 47,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "7a141c574755080d49cf",
+    "query": "Холодильник бытовой модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 48,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "ffb6ad4d35ff9a076ace",
+    "query": "Холодильник бытовой бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 49,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "114ffa856054e2e8cf3f",
+    "query": "Кондиционер настенный с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 50,
+        "predicted_code": "28.25.12.110",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "9120acfd096b77851ec4",
+    "query": "Кондиционер настенный для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 51,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "0487585124a7fd1efcae",
+    "query": "Кондиционер настенный модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 52,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "864dd50341b060109e42",
+    "query": "Кондиционер настенный бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 53,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "08a21bab7a4b087e01ee",
+    "query": "Светильник светодиодный потолочный с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 54,
+        "predicted_code": "27.40.22",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "5b5d7e176a90c191c2fc",
+    "query": "Светильник светодиодный потолочный для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 55,
+        "predicted_code": "27.40.22",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "49c05e39e4061a046fae",
+    "query": "Светильник светодиодный потолочный модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 56,
+        "predicted_code": "27.40.22",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "65fd82219e5edb7dd5d4",
+    "query": "Светильник светодиодный потолочный бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 57,
+        "predicted_code": "27.40.22",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "a808344166880cd68abc",
+    "query": "Кабель силовой медный с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 58,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "3470857a9643ee639031",
+    "query": "Кабель силовой медный для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 59,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "f8a3499d67598e28e063",
+    "query": "Кабель силовой медный модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 60,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "180741088a7be3a3db2b",
+    "query": "Кабель силовой медный бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 61,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "c191cd9c5b1a80f9922c",
+    "query": "Шуруповёрт аккумуляторный с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 62,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "221824f44b86c5fd2092",
+    "query": "Шуруповёрт аккумуляторный для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 63,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "e34c894cd7f2342ccfd9",
+    "query": "Шуруповёрт аккумуляторный модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 64,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "34139db0def87d474ba8",
+    "query": "Шуруповёрт аккумуляторный бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 65,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "42faefd66bf6044fa7b7",
+    "query": "Насос погружной с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 66,
+        "predicted_code": "28.13.14",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "96cd2d427f97b6ad1ca2",
+    "query": "Насос погружной для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 67,
+        "predicted_code": "28.13.14",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "65c0b3767fb20543581f",
+    "query": "Насос погружной модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 68,
+        "predicted_code": "28.13.14",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "8d948d2f21b1b71a2171",
+    "query": "Насос погружной бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 69,
+        "predicted_code": "28.13.14",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "02ae69022a2c6fec3c52",
+    "query": "Огнетушитель порошковый с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 70,
+        "predicted_code": "20.41.32",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "2e69ec66d924f92a8e02",
+    "query": "Огнетушитель порошковый для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 71,
+        "predicted_code": "20.41.32",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "baa95e3f21716ec5ef7c",
+    "query": "Огнетушитель порошковый модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 72,
+        "predicted_code": "20.41.32",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "89b1ebf360d380f151fb",
+    "query": "Огнетушитель порошковый бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 73,
+        "predicted_code": "20.41.32",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "04fa5ce8f44aae389375",
+    "query": "Камера видеонаблюдения сетевая с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 74,
+        "predicted_code": "22.11.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "db7cb6bcd0885d037835",
+    "query": "Камера видеонаблюдения сетевая для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 75,
+        "predicted_code": "22.11.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "471e32a5b18eb35c6c16",
+    "query": "Камера видеонаблюдения сетевая модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 76,
+        "predicted_code": "22.11.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "1949bfc0251301cf8dfa",
+    "query": "Камера видеонаблюдения сетевая бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 77,
+        "predicted_code": "22.11.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "8c6a7406d8318a5172fb",
+    "query": "Весы электронные торговые с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 78,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "b3533c102450f9b897dc",
+    "query": "Весы электронные торговые для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 79,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "977ad593fdcbffab632d",
+    "query": "Весы электронные торговые модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 80,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "9d49469a7954c6e6ccc7",
+    "query": "Весы электронные торговые бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 81,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "1a9e14d5f4073ae7b52c",
+    "query": "Шкаф архивный металлический с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 82,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "7092b22f00bdded2867c",
+    "query": "Шкаф архивный металлический для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 83,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "d8e4d79d5df4e11e7369",
+    "query": "Шкаф архивный металлический модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 84,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "3459b620bc2cfbb9603b",
+    "query": "Шкаф архивный металлический бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 85,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "120ea4d7d98207522d4a",
+    "query": "Стол письменный офисный с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 86,
+        "predicted_code": "31.01.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "52912afc7c3c6e65c35d",
+    "query": "Стол письменный офисный для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 87,
+        "predicted_code": "31.01.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "3b5a2db380951963404c",
+    "query": "Стол письменный офисный модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 88,
+        "predicted_code": "31.01.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "b1f0e4fef9ebbf7c13a4",
+    "query": "Стол письменный офисный бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 89,
+        "predicted_code": "31.01.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "903c5f872282d0e692a2",
+    "query": "Кресло офисное поворотное с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 90,
+        "predicted_code": "31.01.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "47e3137c04989a5dbfdd",
+    "query": "Кресло офисное поворотное для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 91,
+        "predicted_code": "31.01.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "343c6c7f1ab91a641518",
+    "query": "Кресло офисное поворотное модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 92,
+        "predicted_code": "31.01.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "984686bcf8f7ba2a91c9",
+    "query": "Кресло офисное поворотное бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 93,
+        "predicted_code": "31.01.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "a78253f2665b673cea93",
+    "query": "Перчатки рабочие защитные с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 94,
+        "predicted_code": "14.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "daf1bf804f1c16382ff8",
+    "query": "Перчатки рабочие защитные для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 95,
+        "predicted_code": "14.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "4e5c6a69d8e431d563d7",
+    "query": "Перчатки рабочие защитные модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 96,
+        "predicted_code": "14.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "1588e38f569a4a62c5fb",
+    "query": "Перчатки рабочие защитные бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 97,
+        "predicted_code": "14.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "d42b9c9dcb0194ecd143",
+    "query": "Бумага офисная с точными параметрами: новая модель",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 98,
+        "predicted_code": "17.12",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "8429f6878af430e2d0f5",
+    "query": "Бумага офисная для комплексной поставки вместе с монтажом",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 99,
+        "predicted_code": "17.12",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "9e97ffed82500728f929",
+    "query": "Бумага офисная модель и технические характеристики не указаны",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 100,
+        "predicted_code": "17.12",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "8e76745cabe0e0eb2868",
+    "query": "Бумага офисная бывшее в употреблении; комплект включает аксессуары",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results.csv",
+        "source_sha256": "0c582984f4b81108ad869cf9d412c98fe96b8cf345cd21c6ee7144568d6b494f",
+        "row": 101,
+        "predicted_code": "17.12",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "5b9f9cfc068e6e6c34f9",
+    "query": "Смартфон сенсорный",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 2,
+        "predicted_code": "26.30.22",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "d42bec4891ff78d04bf0",
+    "query": "Бумага офисная",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 3,
+        "predicted_code": "17.12",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "cd726740f48ae11ca746",
+    "query": "Насос погружной",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 4,
+        "predicted_code": "28.13.14",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "2d7b399734788bcfce9b",
+    "query": "Коммутатор Ethernet",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 5,
+        "predicted_code": "26.30.11.110",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "f047203f8400842ac2e8",
+    "query": "Монитор компьютерный",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 6,
+        "predicted_code": "26.20.17",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "a02d81058079a8f81a7b",
+    "query": "Планшет с сенсорным экраном",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 7,
+        "predicted_code": "26.20.11",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "e0c55ceaf42090e085b3",
+    "query": "Машина стиральная бытовая",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 8,
+        "predicted_code": "27.51.13",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "13122ae779446ab98477",
+    "query": "Ноутбук бизнес-класса",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 9,
+        "predicted_code": "26.20.11",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "88beab7fe2dd5138b6ab",
+    "query": "Светильник светодиодный потолочный",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 10,
+        "predicted_code": "27.40.22",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "12d2e57b2e96929093a4",
+    "query": "Ноутбук игровой",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 11,
+        "predicted_code": "26.20.11",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "24fd0e295e464c69ed44",
+    "query": "Камера видеонаблюдения сетевая",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 12,
+        "predicted_code": "22.11.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "b5934ccb6aa84127f02d",
+    "query": "Огнетушитель порошковый",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 13,
+        "predicted_code": "20.41.32",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "9c95ff503f723ad979c0",
+    "query": "Кондиционер настенный",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 14,
+        "predicted_code": "28.25.12.110",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "5954f35a9c3d7c0fb3ab",
+    "query": "Принтер лазерный",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 15,
+        "predicted_code": "26.20.16",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "2c21d8174407fa9a3643",
+    "query": "Перчатки рабочие защитные",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 16,
+        "predicted_code": "14.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "b9f20a7207c5eb4cf300",
+    "query": "Стол письменный офисный",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 17,
+        "predicted_code": "31.01.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "01e3bc2a2282f4b84d7c",
+    "query": "Кресло офисное поворотное",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 18,
+        "predicted_code": "31.01.1",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "8f86234859aed375eb7d",
+    "query": "Весы электронные торговые",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 19,
+        "predicted_code": "26.11",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "9cdc276f4cd53953efdd",
+    "query": "Многофункциональное печатное устройство",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 20,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "801e2349992003dfaec0",
+    "query": "Сервер стоечный",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 21,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "381cccd8ac6a50765aa2",
+    "query": "Источник бесперебойного питания",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 22,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "9e853db4bef0f704fa1a",
+    "query": "Холодильник бытовой",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 23,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "e9575616a2df40ff7be6",
+    "query": "Кабель силовой медный",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 24,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "6ea13f8944c953f24b2d",
+    "query": "Шуруповёрт аккумуляторный",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 25,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  },
+  {
+    "query_id": "2726f1501e710f3e7637",
+    "query": "Шкаф архивный металлический",
+    "provenance_kind": "user_supplied_export_unverified_origin",
+    "expected_okpd2": "",
+    "label_kind": "unlabeled",
+    "reviewer": "",
+    "reviewed_at": "",
+    "evidence": "",
+    "observations": [
+      {
+        "source_file": "classification-results (1).csv",
+        "source_sha256": "5e6f1169535f8e764f8d1676562da27cbe2b29295f5483a25b71f03265cd749d",
+        "row": 26,
+        "predicted_code": "",
+        "user_verdict": "",
+        "corrected_code": ""
+      }
+    ]
+  }
+]
