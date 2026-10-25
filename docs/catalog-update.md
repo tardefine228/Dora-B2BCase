@@ -33,6 +33,12 @@
    контрольных запросов `POST /classify` и
    `EMBEDDER_BACKEND=tfidf VECTOR_SEARCH=true PYTHONPATH=api python eval/run_eval.py --sweep`
    (обновляет `eval/eval_report.md` — именно эта конфигурация в нём и записана).
+   После смены каталога перемеряются **оба** записанных замера: размеченный набор
+   (`eval/baselines/lexical.json`) и синтетический стресс-набор
+   (`EMBEDDER_BACKEND=tfidf VECTOR_SEARCH=false PYTHONPATH=api python
+   eval/specifier_stress.py --limit 150 --json eval/baselines/specifier_stress.json`).
+   Второй показывает цену спецификаторов на строках, которых в разметке нет, —
+   именно он ловит регрессии, невидимые на 201 строке.
    Если каталог изменился настолько, что артефакт перестал воспроизводиться,
    CI-шаг «Shipped artifacts match a rebuild» это покажет: пересоберите модель.
 
