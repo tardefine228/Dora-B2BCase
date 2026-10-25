@@ -65,6 +65,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Application code, copied after the downloads: a code edit re-runs at most the
 # offline training step below, never the toolchain/model layer above.
 COPY --chown=app:app api/app ./app
+# Alembic config and migrations: the store runs `upgrade head` at startup, so the
+# image must carry them (paths resolve relative to /app/alembic.ini).
+COPY --chown=app:app api/alembic.ini ./alembic.ini
+COPY --chown=app:app api/migrations ./migrations
 COPY --chown=app:app ml ./ml
 # Built UI (index.html + assets/); served by app.main at /ui/.
 COPY --chown=app:app --from=ui-build /ui/dist ./frontend

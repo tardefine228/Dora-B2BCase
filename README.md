@@ -334,6 +334,11 @@ MODELS_DIR=/mnt/models docker compose up api                           # или 
 том, а API и воркер сами пересобирают классификатор и векторный индекс при следующем запросе
 (проверяется сигнатура файла). `POST /admin/reindex` нужен только режиму `qdrant`.
 
+Ошибочная загрузка **откатывается одной командой**: каждая загрузка сохраняет снимок
+заменяемого каталога, `POST /admin/catalog/rollback` возвращает предыдущую редакцию и сразу
+сбрасывает кэши (перезапуск не нужен), `GET /admin/catalog/export` отдаёт текущий файл для
+внешней копии. Хранится 10 последних снимков (`CATALOG_SNAPSHOT_KEEP`).
+
 ## Мониторинг
 
 `GET /metrics` отдаёт метрики в **текстовом формате Prometheus**
@@ -382,6 +387,10 @@ MODELS_DIR=/mnt/models docker compose up api                           # или 
 | `AUDIT_LOG` | `true` при `postgres` | журнал ответов в таблицу `classification_log` |
 | `JOB_STORE_PATH` | `data/jobs.sqlite` | файл sqlite-хранилища (локальный режим) |
 | `JOB_TTL_HOURS` | `24` | сколько хранить завершённые задачи до очистки |
+| `AUDIT_RETENTION_DAYS` | `90` | срок хранения журнала запросов (`classification_log`, только PostgreSQL); `0` — вечно |
+| `FEEDBACK_RETENTION_DAYS` | `0` | срок хранения вердиктов (`classification_feedback`); `0` — вечно, это обучающие данные |
+| `MAINTENANCE_INTERVAL_HOURS` | `24` | как часто планировщик применяет сроки хранения |
+| `CATALOG_SNAPSHOT_KEEP` | `10` | сколько снимков каталога хранить для `POST /admin/catalog/rollback` |
 | `ADMIN_API_KEY` | — | ключ `X-Admin-API-Key`; без него админ-эндпоинты отключены |
 | `MAX_REQUEST_BODY_BYTES` | `1000000` | ограничение размера тела запроса (413) |
 | `TRUSTED_PROXIES` | — | адреса/CIDR прокси, которым доверяем `X-Forwarded-For`; пусто — заголовок игнорируется |
@@ -399,7 +408,8 @@ MODELS_DIR=/mnt/models docker compose up api                           # или 
 (`dry_run=true` — проверка без установки) принимает CSV/JSON, валидирует
 строки и атомарно заменяет `data.csv` + `data.json`; затем
 `POST /admin/reindex` (или `auto_reindex=true`). Для проверки файла без API:
-`python scripts/validate_catalog.py new_catalog.csv`.
+`python scripts/validate_catalog.py new_catalog.csv`. Перед загрузкой полезно
+сделать `GET /admin/catalog/export`, после неудачной — `POST /admin/catalog/rollback`.
 
 ## Качество и оценка
 
@@ -484,6 +494,10 @@ MODELS_DIR=/mnt/models docker compose up api                           # или 
 | GET | `/source/{record_id}` | фрагмент текста ПП № 1875 — источник для `clause_url` |
 | GET | `/health`, `/health/ready`, `/metrics` | liveness/readiness/метрики (Prometheus text, JSON по `Accept`) |
 | GET/POST | `/admin/catalog` | сведения о каталоге / загрузка нового (ключ `X-Admin-API-Key`) |
+| GET | `/admin/catalog/export`, `/admin/catalog/versions` | текущий файл каталога и снимки для отката |
+| POST | `/admin/catalog/rollback` | вернуть предыдущую редакцию каталога |
+| GET | `/admin/feedback/export` | выгрузка вердиктов для обучения (`csv`/`jsonl`) |
+| POST | `/admin/maintenance/purge` | применить срок хранения журналов (`dry_run` — проверка) |
 | POST | `/admin/reindex` | переиндексация Qdrant (ключ `X-Admin-API-Key`) |
 
 Полный контракт результата — `docs/api-contract.md`; он закреплён

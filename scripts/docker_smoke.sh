@@ -41,6 +41,15 @@ grep -q '"enabled":true' <<<"$ready" || { echo "FAIL: векторный пои�
 grep -q '"job_store":"postgres"' <<<"$ready" || { echo "FAIL: хранилище задач не PostgreSQL"; exit 1; }
 grep -q '"queue_backend":"celery"' <<<"$ready" || { echo "FAIL: очередь не Celery"; exit 1; }
 
+log "3c. Схема БД: миграции применились сами (BE-5)"
+# Руками `alembic upgrade` на целевой машине никто не запускает: ревизию ставит
+# сам API при старте. Пустая строка в ответе = схема не под миграциями.
+revision=$($COMPOSE exec -T api python -c \
+  "from app.core.config import settings; from app.migrations_runner import current_revision; print(current_revision(settings.database_url) or '')" \
+  2>/dev/null | tr -d '\r')
+[[ -n "$revision" ]] || { echo "FAIL: в БД нет ревизии схемы — миграции не применились"; exit 1; }
+echo "schema revision: $revision"
+
 log "4. Ответ API"
 curl -fsS "http://localhost:${API_PORT:-8000}/health" | head -c 300; echo
 curl -fsS -X POST "http://localhost:${API_PORT:-8000}/classify" \

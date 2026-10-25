@@ -59,4 +59,6 @@ eval_report_ci_dense.json
 
 # Generated at runtime
 data/dense_cache/
+# Snapshot of the catalog before each upload, written at run time (POST /admin/catalog).
+data/versions/
 *.sqlite*

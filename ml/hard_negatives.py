@@ -62,6 +62,10 @@ VERDICT_OUT_OF_SCOPE = {
     "not_in_list",
     "вне перечня",
     "вне перечня.",
+    # The API's own spelling (`FeedbackRequest.verdict`): a specialist pressing
+    # "товара нет в перечне" sends `absent`. Without it here the strongest
+    # silence signal in the log would be silently ignored at training time.
+    "absent",
 }
 
 
