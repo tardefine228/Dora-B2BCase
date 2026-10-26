@@ -111,7 +111,7 @@ from app.services.source_lookup import (
 )
 from app.tasks import run_batch_job
 
-configure_logging(settings.log_level)
+configure_logging(settings.log_level, settings.log_format)
 logger = logging.getLogger("dora.api")
 
 # Where the specialist can verify the decree text served from data/source_text.txt:

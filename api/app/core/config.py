@@ -100,6 +100,17 @@ class Settings:
         self.classifier_backend = os.getenv("CLASSIFIER_BACKEND", "catalog").strip().lower()
         self.ml_enabled = _bool("ML_ENABLED", default=False)
 
+        # Runtime counterpart of the Docker build ARG of the same name. False (the
+        # default): a missing/broken trained reranker artifact is a startup failure
+        # (readiness 503), not a silent switch to the uncalibrated heuristic scorer.
+        # True keeps the old forgiving behaviour for local experiments.
+        self.allow_degrade = _bool("ALLOW_DEGRADE", default=False)
+        # text (human-readable, default for local uvicorn) | json (one JSON object
+        # per line, used by the Docker stack and log aggregators).
+        self.log_format = os.getenv("LOG_FORMAT", "text").strip().lower()
+        if self.log_format not in {"text", "json"}:
+            raise ValueError("LOG_FORMAT must be 'text' or 'json'")
+
         self.qdrant_url = os.getenv("QDRANT_URL", "http://qdrant:6333").strip()
         self.qdrant_api_key = os.getenv("QDRANT_API_KEY", "")
         self.qdrant_collection = os.getenv("QDRANT_COLLECTION", "pp1875_items")

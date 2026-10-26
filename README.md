@@ -376,11 +376,32 @@ MODELS_DIR=/mnt/models docker compose up api                           # или 
 не попадают (прогресс задач — через `GET /classify/batch/{job_id}`). Подробный
 контракт метрик — `docs/api-contract.md`, раздел «Наблюдаемость».
 
+Готовый стек наблюдения поднимается опциональным профилем compose:
+
+```bash
+docker compose --profile monitoring up --build
+# Prometheus → http://127.0.0.1:9090, Grafana → http://127.0.0.1:3000
+```
+
+Prometheus скрейпит `/metrics` и оценивает 7 правил алертов (готовность
+классификатора, деградация эмбеддера/Qdrant, доля 5xx, p95, провалы batch,
+насыщение rate limit); Grafana автоматически провижинит datasource и дашборд
+«Dora B2B — сервис и классификация». Логи в Docker пишутся в JSON
+(`LOG_FORMAT=json`): один объект на строку с `request_id`, уровнями и
+трейсбеками в `exc_info`. Полный runbook — `docs/observability.md`.
+
+Рантайм-политика деградации: при `ALLOW_DEGRADE=false` (по умолчанию) отсутствие
+калиброванного артефакта реранкера переводит `/health/ready` в 503 вместо тихой
+замены на эвристический скоринг; бэкап и проверка восстановления PostgreSQL —
+`scripts/pg_backup.sh` / `scripts/pg_restore_check.sh` (`docs/backup-restore.md`).
+
 ## Переменные окружения (основные)
 
 | Переменная | По умолчанию | Что делает |
 | --- | --- | --- |
 | `CLASSIFIER_BACKEND` | `catalog` | `catalog` \| `qdrant` \| `mock` (см. таблицу выше) |
+| `LOG_FORMAT` | `text` (в Docker `json`) | формат логов: `json` (один объект на строку, `request_id`, `exc_info`) или `text` |
+| `ALLOW_DEGRADE` | `false` | один флаг для сборки и рантайма: при `false` сбой ML-шага роняет build, а отсутствие артефакта реранкера даёт `/health/ready` = 503; `true` разрешает резервные режимы для диагностики |
 | `CATALOG_OK_FLOOR` / `CATALOG_REVIEW_FLOOR` | пороги из артефакта | decision floors для `catalog`; пусто — значения обученной модели, иначе `0..1` и `OK > REVIEW`; применяются при старте без переобучения |
 | `VECTOR_SEARCH` | `true` | векторный слой в режиме `catalog` (при ошибке эмбеддера — лексика, видно в `/health/ready`) |
 | `VECTOR_STORE` | `memory` (в Docker `qdrant`) | где хранятся и ищутся векторы; при недоступности Qdrant — память |
