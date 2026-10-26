@@ -196,8 +196,21 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r api/requirements-dev.txt
-          sudo apt-get update -qq
-          sudo apt-get install -y postgresql-client
+
+      # Use the client binaries *inside* the service container: the runner's apt
+      # repository tracks a newer PostgreSQL major than the pinned 16-alpine
+      # service, and a dump taken with mismatched majors fails when restored
+      # (psql exit 3). This mirrors the operator scripts (docker compose exec).
+      - name: Locate the postgres service container
+        id: db
+        run: |
+          CID=$(docker ps --filter "ancestor=postgres:16-alpine" --format '{{.ID}}' | head -1)
+          if [ -z "$CID" ]; then
+            CID=$(docker ps --filter "name=postgres" --format '{{.ID}}' | head -1)
+          fi
+          test -n "$CID"
+          echo "cid=$CID" >> "$GITHUB_OUTPUT"
+          docker exec "$CID" pg_isready -U dora -d dora
 
       - name: Apply migrations to a clean database
         env:
@@ -210,42 +223,40 @@ jobs:
           print('revision:', current_revision(url))"
 
       - name: Seed an audit row
-        env:
-          PGPASSWORD: dora
         run: |
-          psql -h localhost -U dora -d dora -v ON_ERROR_STOP=1 -c \
+          docker exec "${{ steps.db.outputs.cid }}" psql -U dora -d dora -v ON_ERROR_STOP=1 -c \
             "INSERT INTO classification_log (source, query, status) VALUES ('ci', 'проверка бэкапа', 'ok')"
 
       - name: Dump and restore into a scratch database
-        env:
-          PGPASSWORD: dora
         run: |
+          set -euo pipefail
+          CID="${{ steps.db.outputs.cid }}"
           bash -n scripts/pg_backup.sh scripts/pg_restore_check.sh
-          pg_dump -h localhost -U dora -d dora --no-owner --clean --if-exists | gzip > /tmp/dora.sql.gz
-          psql -h localhost -U dora -d postgres -v ON_ERROR_STOP=1 \
+          docker exec "$CID" pg_dump -U dora -d dora --no-owner --clean --if-exists \
+            | gzip > /tmp/dora.sql.gz
+          docker exec "$CID" psql -U dora -d postgres -v ON_ERROR_STOP=1 \
             -c "DROP DATABASE IF EXISTS dora_restore_check" \
             -c "CREATE DATABASE dora_restore_check"
           gunzip -c /tmp/dora.sql.gz | \
-            psql -h localhost -U dora -d dora_restore_check -v ON_ERROR_STOP=1 -q
+            docker exec -i "$CID" psql -U dora -d dora_restore_check -v ON_ERROR_STOP=1 -q
 
       - name: Verify revision and row counts match the source
-        env:
-          PGPASSWORD: dora
         run: |
           set -euo pipefail
-          src_rev=$(psql -h localhost -U dora -d dora -t -Ac 'SELECT version_num FROM alembic_version')
-          dst_rev=$(psql -h localhost -U dora -d dora_restore_check -t -Ac 'SELECT version_num FROM alembic_version')
+          CID="${{ steps.db.outputs.cid }}"
+          src_rev=$(docker exec "$CID" psql -U dora -d dora -t -Ac 'SELECT version_num FROM alembic_version')
+          dst_rev=$(docker exec "$CID" psql -U dora -d dora_restore_check -t -Ac 'SELECT version_num FROM alembic_version')
           test "$src_rev" = "$dst_rev"
           test -n "$dst_rev"
           for table in jobs classification_log classification_feedback; do
-            src=$(psql -h localhost -U dora -d dora -t -Ac "SELECT count(*) FROM $table")
-            dst=$(psql -h localhost -U dora -d dora_restore_check -t -Ac "SELECT count(*) FROM $table")
+            src=$(docker exec "$CID" psql -U dora -d dora -t -Ac "SELECT count(*) FROM $table")
+            dst=$(docker exec "$CID" psql -U dora -d dora_restore_check -t -Ac "SELECT count(*) FROM $table")
             test "$src" = "$dst"
             echo "$table: $dst строк"
           done
-          test "$(psql -h localhost -U dora -d dora_restore_check -t -Ac \
+          test "$(docker exec "$CID" psql -U dora -d dora_restore_check -t -Ac \
             "SELECT count(*) FROM classification_log WHERE query='проверка бэкапа'")" = "1"
-          psql -h localhost -U dora -d postgres -c "DROP DATABASE dora_restore_check"
+          docker exec "$CID" psql -U dora -d postgres -c "DROP DATABASE dora_restore_check"
 
   docker-smoke:
     runs-on: ubuntu-latest
