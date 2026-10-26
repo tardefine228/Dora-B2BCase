@@ -11,8 +11,10 @@ probe = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(probe)
 
 
-def exercise(monkeypatch, *, step=0.1, count=100):
-    queries = [{"query": f"Product {i}"} for i in range(100)]
+def exercise(monkeypatch, *, step=0.1, count=100, labels=20, wrong=0, single_wrong=False):
+    queries = [
+        {"query": f"Product {i}", "expected_code": "1" if i < labels else ""} for i in range(100)
+    ]
     ticks = iter(i * step for i in range(200))
     monkeypatch.setattr(probe.time, "perf_counter", lambda: next(ticks))
 
@@ -39,12 +41,27 @@ def exercise(monkeypatch, *, step=0.1, count=100):
                 {
                     "status": "completed",
                     "results": [
-                        {**row, "confidence": 0.9, "code": "1", "clause_url": "/source/1"}
-                        for row in queries[:count]
+                        {
+                            **row,
+                            "confidence": 0.9,
+                            "code": "2" if i < wrong else "1",
+                            "status": "ok",
+                            "clause_url": "/source/1",
+                        }
+                        for i, row in enumerate(queries[:count])
                     ],
                 }
             )
-        return Response({"code": "1"})
+        query = json.loads(req.data)["name"]
+        return Response(
+            {
+                "query": query,
+                "confidence": 0.9,
+                "code": "2" if single_wrong else "1",
+                "status": "ok",
+                "clause_url": "/source/1",
+            }
+        )
 
     monkeypatch.setattr(probe.urllib.request, "urlopen", urlopen)
     return probe.run("http://test", queries)
@@ -61,4 +78,45 @@ def test_http_success_with_missing_results_fails(monkeypatch):
 def test_slow_single_request_fails(monkeypatch):
     report = exercise(monkeypatch, step=6)
     assert report["batch"]["pass"]
+    assert not report["pass"]
+
+
+def test_fast_but_inaccurate_batch_fails(monkeypatch):
+    report = exercise(monkeypatch, wrong=4)
+    assert report["batch"]["pass"]
+    assert report["accuracy"]["fraction"] == 0.8
+    assert not report["pass"]
+
+
+def test_exact_accuracy_threshold_passes(monkeypatch):
+    assert exercise(monkeypatch, wrong=3)["pass"]
+
+
+def test_no_labels_cannot_claim_acceptance(monkeypatch):
+    assert not exercise(monkeypatch, labels=0)["pass"]
+
+
+def test_less_than_twenty_labels_cannot_claim_acceptance(monkeypatch):
+    assert not exercise(monkeypatch, labels=19)["pass"]
+
+
+def test_existing_dataset_label_column_and_unclear_exclusions():
+    assert probe.expected_code({"expected_okpd2": "26.20.11", "label_kind": "code"}) == "26.20.11"
+    assert probe.expected_code({"expected_okpd2": "26.20.11", "label_kind": "unclear"}) == ""
+
+
+def test_result_contract_rejects_false_confidence_or_missing_clause():
+    answer = {"query": "q", "status": "ok", "code": "1", "clause_url": "/source/1"}
+    assert not probe.valid_result({**answer, "confidence": True}, "q")
+    assert not probe.valid_result({**answer, "confidence": float("nan")}, "q")
+    assert not probe.valid_result({**answer, "confidence": 0.9, "clause_url": None}, "q")
+    assert probe.valid_result(
+        {"query": "q", "status": "not_found", "code": None, "confidence": 0}, "q"
+    )
+
+
+def test_batch_accuracy_cannot_hide_incorrect_single_answers(monkeypatch):
+    report = exercise(monkeypatch, single_wrong=True)
+    assert report["accuracy"]["pass"]
+    assert not report["single_accuracy"]["pass"]
     assert not report["pass"]

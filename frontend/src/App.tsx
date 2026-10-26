@@ -88,11 +88,11 @@ function ResultCard({ result, compact = false, onSaved }: { result: Result; comp
               : <><div className="code">{result.code}</div><p className="title">Категория: {result.title ?? "название не указано"}</p>
                 {result.clauseRef && <p className="muted">{result.clauseRef}</p>}</>}
         </div>
-        <div className="confidence"><strong>{percent(result.confidence)}</strong><p>Уверенность модели</p>
+        <div className="confidence"><strong>{percent(result.confidence)}</strong><p>Уверенность в подборе кода</p>
           {result.confidence !== null && <progress max={1} value={result.confidence} aria-label="Уверенность модели"/>}</div>
       </div>
     </>}
-    <p className="status-help">{missingCode ? 'Без кода нельзя считать результат уверенным.' : hint}</p>
+    <p className="status-help">{missingCode ? 'Без кода нельзя считать результат уверенным.' : hint}{result.status === 'not_found' && ' Процент показывает уверенность в подборе кода, а не вероятность отсутствия товара в постановлении.'}</p>
     {verified && <p className="status-help" role="note">{verified}</p>}
     {twin && <p className="status-help" role="note">{twin}</p>}
     {!compact && <div className="source"><SourceLink url={result.url}/></div>}
@@ -303,7 +303,7 @@ export default function App() {
             <tbody>{sorted.map((r, index) => <tr key={results.indexOf(r)}>
               <td className="row-num">{index + 1}</td>
               <td>{r.name}</td><td>{r.code ?? '—'}{r.code && <span className="cell-status">Категория: {r.title ?? 'название не указано'}</span>}<span className="muted cell-status">{STATUS_LABEL[r.status]}</span></td>
-              <td>{percent(r.confidence)}</td><td><SourceLink url={r.url}/>
+              <td>{percent(r.confidence)}{r.status === 'not_found' && <small className="muted">Код не подобран</small>}</td><td><SourceLink url={r.url}/>
                 <details className="details"><summary>Проверить результат</summary><ResultCard result={r} compact onSaved={saveVerdict}/></details></td>
             </tr>)}</tbody></table></div>
         </section>}

@@ -115,7 +115,7 @@ function toResult(item: ApiClassify): Result {
   return {
     name: item.query, code: notFound ? null : item.code,
     title: notFound ? null : item.title,
-    confidence: notFound || invalidCode ? null : item.confidence,
+    confidence: invalidCode ? null : item.confidence,
     confidenceRaw: notFound ? null : item.confidence_raw ?? null,
     status: invalidCode ? 'review' : item.status,
     clauseRef: notFound || invalidCode ? null : item.clause_ref,

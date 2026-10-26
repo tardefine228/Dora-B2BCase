@@ -8,6 +8,18 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dora_test
+          POSTGRES_PASSWORD: dora_test
+          POSTGRES_DB: dora_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dora_test -d dora_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
 
     steps:
       - name: Checkout code
@@ -30,6 +42,7 @@ jobs:
       - name: Run API tests
         env:
           PYTHONPATH: api
+          TEST_DATABASE_URL: postgresql://dora_test:dora_test@localhost:5432/dora_test
         run: python -m pytest api/tests -q
 
   # Model quality gate: rebuild the reranker from the catalog deterministically, prove

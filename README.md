@@ -18,6 +18,8 @@
 
 **Windows + Docker Desktop: подробная пошаговая инструкция — [`docs/START_WINDOWS_DOCKER.md`](docs/START_WINDOWS_DOCKER.md).**
 
+Последняя локальная приёмка: [результаты и команды повторной проверки — 26.10.2026](docs/submission-check-2026-10-26.md).
+
 ## Запуск через Docker (рекомендуемый)
 
 ```bash
@@ -78,6 +80,32 @@ docker compose up --build
   Разбор готовности, ограничений и порядка шагов — [`docs/bge-m3-readiness.md`](docs/bge-m3-readiness.md).
 
 Проверка стека на целевой машине: `bash scripts/docker_smoke.sh --build`.
+
+Проверка времени и точности на размеченном наборе (после готовности API):
+
+```powershell
+python scripts/check_acceptance.py eval/labeled_examples.csv --output acceptance-report.json
+```
+
+Скрипт использует первые 100 различных названий и 20 размеченных одиночных запросов.
+Успех требует не менее 17 правильных одиночных ответов из 20, точности пакета ≥85%
+по размеченным товарам, времени каждого одиночного запроса <5 с и пакета <120 с.
+Сравнение кодов строгое; строки `unclear`/`absent` не подменяют размеченные товары.
+Отчёт сохраняет ответы, время и фактическую конфигурацию модели. Проверка создаёт
+обычные задачи и записи журнала. Перед измерением без кэша ответов перезапустите
+API и worker и дождитесь `/health/ready`; модели и индекс при этом уже загружены.
+
+Если Python на компьютере не установлен, используйте Python из контейнера:
+
+```powershell
+docker compose exec -T api python scripts/check_acceptance.py eval/labeled_examples.csv --base-url http://127.0.0.1:8000 --output /tmp/acceptance-report.json
+docker compose cp api:/tmp/acceptance-report.json ./acceptance-report.json
+```
+
+Том `catalog_data` сохраняет каталог при пересборке. Чтобы установить изменения
+из `data/data.csv`, используйте [обновление каталога](docs/catalog-update.md);
+удалять том ради обновления не нужно.
+
 
 ## Быстрый старт (локально, без Docker)
 

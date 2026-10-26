@@ -153,3 +153,18 @@ test('CSV numbers the rows 1…N as the last column', async t => {
   assert.ok(lines[1].endsWith(';1'), lines[1]);
   assert.ok(lines[2].endsWith(';2'), lines[2]);
 });
+
+
+test('not-found retains model confidence in UI and CSV without claiming a code', async t => {
+  t.mock.method(globalThis, 'fetch', async () => Response.json({
+    query: 'Неизвестный товар', code: null, title: null, status: 'not_found',
+    confidence: 0, confidence_raw: 0, clause_ref: null, clause_url: null, alternatives: [],
+  }));
+  const answer = await api.classify('Неизвестный товар');
+  assert.equal(answer.confidence, 0);
+  assert.equal(answer.code, null);
+  assert.equal(answer.url, null);
+  const capture = captureDownload(t);
+  exportResultsCsv([answer]);
+  assert.ok((await capture().text()).includes(';not_found;0;'));
+});

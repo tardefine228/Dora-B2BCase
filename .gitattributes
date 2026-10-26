@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Keep artifact hashes and shell scripts identical on Windows and Linux.
+ml/artifacts/*.json text eol=lf
+*.sh text eol=lf

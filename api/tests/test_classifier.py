@@ -109,3 +109,13 @@ def test_office_modifier_alone_is_not_a_furniture_claim() -> None:
     for query in ("Ламинатор офисный", "Сервер офисный", "Кофемашина офисная"):
         result = classifier.classify(query)
         assert result.code != "31.01.1", (query, result.model_dump())
+
+
+def test_catalog_full_nine_digit_code_lookup():
+    classifier = CatalogClassifier(_catalog_path())
+    for code in ("22.29.29.190", "32.50.13.190"):
+        result = classifier.classify(code)
+        assert result.code == code
+        assert result.status == "ok"
+        assert result.confidence == 1.0
+        assert result.clause_url

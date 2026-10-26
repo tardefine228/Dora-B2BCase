@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from app.core.okpd2 import OKPD2_RE
 from app.schemas import CatalogInfo, CatalogIssue
 
 logger = logging.getLogger("dora.catalog_io")
@@ -45,9 +46,8 @@ CSV_COLUMNS = [
 ]
 REQUIRED_COLUMNS = ("name", "okpd2")
 MAX_ROWS = 50_000
-MAX_NAME_LENGTH = 500
+MAX_NAME_LENGTH = 10_000
 APPENDIX_VALUES = {"1", "2", "3", "4"}
-OKPD2_PATTERN = r"^\d{2}(\.\d{1,2}){0,3}$"
 
 CODE_ROLES_REVIEW = {"Не указан", "Исключение"}
 
@@ -141,9 +141,6 @@ def validate_rows(parsed: ParsedCatalog) -> ValidationReport:
 
     seen_record_ids: set[str] = set()
     seen_pairs: set[tuple[str, str]] = set()
-    import re
-
-    okpd2_re = re.compile(OKPD2_PATTERN)
 
     for index, row in enumerate(parsed.rows, start=1):
         row_errors = 0
@@ -192,7 +189,7 @@ def validate_rows(parsed: ParsedCatalog) -> ValidationReport:
                     )
                 )
                 row_errors += 1
-        elif not okpd2_re.match(okpd2):
+        elif not OKPD2_RE.fullmatch(okpd2):
             report.errors.append(
                 CatalogIssue(
                     row=index,

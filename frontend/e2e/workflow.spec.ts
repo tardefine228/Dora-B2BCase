@@ -49,3 +49,17 @@ test('mobile page has no horizontal overflow', async ({ page }) => {
   await page.goto('/ui/');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+
+test('not found displays confidence without suggesting certainty of absence', async ({ page }) => {
+  await page.route('**/classify', r => r.fulfill({ json: {
+    query: 'Неизвестный товар', code: null, title: null, status: 'not_found',
+    confidence: 0, confidence_raw: 0, clause_ref: null, clause_url: null, alternatives: [],
+  } }));
+  await page.goto('/ui/');
+  await page.getByLabel('Название товара', { exact: true }).fill('Неизвестный товар');
+  await page.getByLabel('Название товара', { exact: true }).press('Enter');
+  await expect(page.locator('.confidence strong')).toHaveText('0%');
+  await expect(page.locator('.confidence')).toContainText('Уверенность в подборе кода');
+  await expect(page.locator('.status-help')).toContainText('не вероятность отсутствия');
+});
