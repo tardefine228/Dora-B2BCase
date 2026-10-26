@@ -47,7 +47,11 @@ REQUIRED_COLUMNS = ("name", "okpd2")
 MAX_ROWS = 50_000
 MAX_NAME_LENGTH = 500
 APPENDIX_VALUES = {"1", "2", "3", "4"}
-OKPD2_PATTERN = r"^\d{2}(\.\d{1,2}){0,3}$"
+# Official OKPD2 hierarchy (OK 034-2014), one fixed digit width per level:
+# XX | XX.X | XX.XX | XX.XX.X | XX.XX.XX | XX.XX.XX.XXX. The final category
+# level is always three digits, so a 2-digit tail (22.29.29.19) and a 3-digit
+# group at an intermediate level (22.29.190) are rejected, not just garbage.
+OKPD2_PATTERN = r"^\d{2}(?:\.\d(?:\d(?:\.\d(?:\d(?:\.\d{3})?)?)?)?)?$"
 
 CODE_ROLES_REVIEW = {"Не указан", "Исключение"}
 

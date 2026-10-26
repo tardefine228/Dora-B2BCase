@@ -65,3 +65,4 @@ data/versions/
 
 frontend/test-results/
 frontend/playwright-report/
+/backups/
