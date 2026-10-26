@@ -252,7 +252,7 @@
     "pdf_page_start":33,
     "pdf_page_end":33,
     "source_code_cell":"22.29.29.190 32.50.13.190 и 32.50.50.181 32.50.50.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"1-17-02",
@@ -267,7 +267,7 @@
     "pdf_page_start":33,
     "pdf_page_end":33,
     "source_code_cell":"22.29.29.190 32.50.13.190 и 32.50.50.181 32.50.50.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"1-17-03",
@@ -282,7 +282,7 @@
     "pdf_page_start":33,
     "pdf_page_end":33,
     "source_code_cell":"22.29.29.190 32.50.13.190 и 32.50.50.181 32.50.50.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"1-17-04",
@@ -297,7 +297,7 @@
     "pdf_page_start":33,
     "pdf_page_end":33,
     "source_code_cell":"22.29.29.190 32.50.13.190 и 32.50.50.181 32.50.50.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"1-18-01",
@@ -2652,7 +2652,7 @@
     "pdf_page_start":43,
     "pdf_page_end":43,
     "source_code_cell":"20.13.4",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-16-01",
@@ -2772,7 +2772,7 @@
     "pdf_page_start":43,
     "pdf_page_end":43,
     "source_code_cell":"20.14.2",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-24-01",
@@ -2862,7 +2862,7 @@
     "pdf_page_start":44,
     "pdf_page_end":44,
     "source_code_cell":"20.15.2",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-30-01",
@@ -2922,7 +2922,7 @@
     "pdf_page_start":44,
     "pdf_page_end":44,
     "source_code_cell":"20.15.6",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-34-01",
@@ -3057,7 +3057,7 @@
     "pdf_page_start":45,
     "pdf_page_end":45,
     "source_code_cell":"20.16.53",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-43-01",
@@ -3072,7 +3072,7 @@
     "pdf_page_start":45,
     "pdf_page_end":45,
     "source_code_cell":"20.16.54",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-44-01",
@@ -3462,7 +3462,7 @@
     "pdf_page_start":46,
     "pdf_page_end":46,
     "source_code_cell":"22.19.6",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-70-01",
@@ -3747,7 +3747,7 @@
     "pdf_page_start":48,
     "pdf_page_end":48,
     "source_code_cell":"24.42.25",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-89-01",
@@ -4527,7 +4527,7 @@
     "pdf_page_start":51,
     "pdf_page_end":51,
     "source_code_cell":"31.02.10",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-141-01",
@@ -4782,7 +4782,7 @@
     "pdf_page_start":52,
     "pdf_page_end":52,
     "source_code_cell":"32.20.13.175",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-158-01",
@@ -4977,7 +4977,7 @@
     "pdf_page_start":52,
     "pdf_page_end":52,
     "source_code_cell":"32.30.15.117",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-171-01",
@@ -5037,7 +5037,7 @@
     "pdf_page_start":52,
     "pdf_page_end":52,
     "source_code_cell":"32.50.22.124",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-175-01",
@@ -5097,7 +5097,7 @@
     "pdf_page_start":53,
     "pdf_page_end":53,
     "source_code_cell":"32.50.22.157",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-179-01",
@@ -5187,7 +5187,7 @@
     "pdf_page_start":53,
     "pdf_page_end":53,
     "source_code_cell":"32.99.15.140",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-183-01",
@@ -5292,7 +5292,7 @@
     "pdf_page_start":54,
     "pdf_page_end":54,
     "source_code_cell":"30.92.2",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-190-01",
@@ -5712,7 +5712,7 @@
     "pdf_page_start":56,
     "pdf_page_end":56,
     "source_code_cell":"26.30.50.111",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-218-01",
@@ -6042,7 +6042,7 @@
     "pdf_page_start":57,
     "pdf_page_end":57,
     "source_code_cell":"26.40.33",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-240-01",
@@ -6072,7 +6072,7 @@
     "pdf_page_start":57,
     "pdf_page_end":57,
     "source_code_cell":"26.40.4",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-242-01",
@@ -6222,7 +6222,7 @@
     "pdf_page_start":58,
     "pdf_page_end":58,
     "source_code_cell":"26.51.20.130",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-252-01",
@@ -6237,7 +6237,7 @@
     "pdf_page_start":58,
     "pdf_page_end":58,
     "source_code_cell":"26.51.33.131",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-253-01",
@@ -6252,7 +6252,7 @@
     "pdf_page_start":58,
     "pdf_page_end":58,
     "source_code_cell":"26.51.33.133",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-254-01",
@@ -6267,7 +6267,7 @@
     "pdf_page_start":58,
     "pdf_page_end":58,
     "source_code_cell":"26.51.33.134",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-255-01",
@@ -6357,7 +6357,7 @@
     "pdf_page_start":58,
     "pdf_page_end":58,
     "source_code_cell":"26.51.42",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-261-01",
@@ -6432,7 +6432,7 @@
     "pdf_page_start":59,
     "pdf_page_end":59,
     "source_code_cell":"26.51.51",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-266-01",
@@ -6582,7 +6582,7 @@
     "pdf_page_start":59,
     "pdf_page_end":59,
     "source_code_cell":"26.51.53.160",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-276-01",
@@ -6597,7 +6597,7 @@
     "pdf_page_start":59,
     "pdf_page_end":59,
     "source_code_cell":"26.51.53.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-277-01",
@@ -6657,7 +6657,7 @@
     "pdf_page_start":60,
     "pdf_page_end":60,
     "source_code_cell":"26.51.64.170",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-281-01",
@@ -6867,7 +6867,7 @@
     "pdf_page_start":60,
     "pdf_page_end":60,
     "source_code_cell":"26.51.70.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-295-01",
@@ -7152,7 +7152,7 @@
     "pdf_page_start":61,
     "pdf_page_end":61,
     "source_code_cell":"27.40.39.110 32.50.13.120",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-307-02",
@@ -7167,7 +7167,7 @@
     "pdf_page_start":61,
     "pdf_page_end":61,
     "source_code_cell":"27.40.39.110 32.50.13.120",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-308-01",
@@ -7227,7 +7227,7 @@
     "pdf_page_start":62,
     "pdf_page_end":62,
     "source_code_cell":"26.60.12.123",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-312-01",
@@ -7242,7 +7242,7 @@
     "pdf_page_start":62,
     "pdf_page_end":62,
     "source_code_cell":"26.60.12.129",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-313-01",
@@ -7257,7 +7257,7 @@
     "pdf_page_start":62,
     "pdf_page_end":62,
     "source_code_cell":"26.60.12.131",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-314-01",
@@ -7287,7 +7287,7 @@
     "pdf_page_start":62,
     "pdf_page_end":62,
     "source_code_cell":"26.60.13",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-316-01",
@@ -7317,7 +7317,7 @@
     "pdf_page_start":62,
     "pdf_page_end":62,
     "source_code_cell":"26.60.13.140",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-318-01",
@@ -7362,7 +7362,7 @@
     "pdf_page_start":63,
     "pdf_page_end":63,
     "source_code_cell":"26.60.13.190 32.50.13.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-320-02",
@@ -7377,7 +7377,7 @@
     "pdf_page_start":63,
     "pdf_page_end":63,
     "source_code_cell":"26.60.13.190 32.50.13.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-321-01",
@@ -7557,7 +7557,7 @@
     "pdf_page_start":63,
     "pdf_page_end":63,
     "source_code_cell":"27.40.31",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-333-01",
@@ -7692,7 +7692,7 @@
     "pdf_page_start":64,
     "pdf_page_end":64,
     "source_code_cell":"27.51.24.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-341-01",
@@ -7902,7 +7902,7 @@
     "pdf_page_start":65,
     "pdf_page_end":65,
     "source_code_cell":"29.32.30.163",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-353-01",
@@ -8052,7 +8052,7 @@
     "pdf_page_start":65,
     "pdf_page_end":66,
     "source_code_cell":"32.50.50.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-361-01",
@@ -8073,7 +8073,7 @@
     "record_id":"2-362-01",
     "appendix":2,
     "position":"362",
-    "name":"Изделия санитарно-гигиенические - абсорбирующее белье (подгузники (за исключением размера Х$ (сверхмалые), пеленки)",
+    "name":"Изделия санитарно-гигиенические - абсорбирующее белье (подгузники (за исключением размера XS (сверхмалые), пеленки)",
     "okpd2":"17.22.12.130",
     "code_role":"Включён",
     "min_share_pct":null,
@@ -8082,13 +8082,13 @@
     "pdf_page_start":66,
     "pdf_page_end":66,
     "source_code_cell":"17.22.12.130 32.50.50.149 13.95.10.190 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-362-02",
     "appendix":2,
     "position":"362",
-    "name":"Изделия санитарно-гигиенические - абсорбирующее белье (подгузники (за исключением размера Х$ (сверхмалые), пеленки)",
+    "name":"Изделия санитарно-гигиенические - абсорбирующее белье (подгузники (за исключением размера XS (сверхмалые), пеленки)",
     "okpd2":"32.50.50.149",
     "code_role":"Включён",
     "min_share_pct":null,
@@ -8097,13 +8097,13 @@
     "pdf_page_start":66,
     "pdf_page_end":66,
     "source_code_cell":"17.22.12.130 32.50.50.149 13.95.10.190 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-362-03",
     "appendix":2,
     "position":"362",
-    "name":"Изделия санитарно-гигиенические - абсорбирующее белье (подгузники (за исключением размера Х$ (сверхмалые), пеленки)",
+    "name":"Изделия санитарно-гигиенические - абсорбирующее белье (подгузники (за исключением размера XS (сверхмалые), пеленки)",
     "okpd2":"13.95.10.190",
     "code_role":"Включён",
     "min_share_pct":null,
@@ -8112,13 +8112,13 @@
     "pdf_page_start":66,
     "pdf_page_end":66,
     "source_code_cell":"17.22.12.130 32.50.50.149 13.95.10.190 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-362-04",
     "appendix":2,
     "position":"362",
-    "name":"Изделия санитарно-гигиенические - абсорбирующее белье (подгузники (за исключением размера Х$ (сверхмалые), пеленки)",
+    "name":"Изделия санитарно-гигиенические - абсорбирующее белье (подгузники (за исключением размера XS (сверхмалые), пеленки)",
     "okpd2":"32.50.50",
     "code_role":"Включён",
     "min_share_pct":null,
@@ -8127,7 +8127,7 @@
     "pdf_page_start":66,
     "pdf_page_end":66,
     "source_code_cell":"17.22.12.130 32.50.50.149 13.95.10.190 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-363-01",
@@ -8352,7 +8352,7 @@
     "pdf_page_start":67,
     "pdf_page_end":67,
     "source_code_cell":"21.20.23.110",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-372-01",
@@ -8562,7 +8562,7 @@
     "pdf_page_start":67,
     "pdf_page_end":67,
     "source_code_cell":"20.20.14.000 21.20.10.158 21.20.24.110 21.20.24.150 21.20.24.160 21.20.24.170 21.20.24.169 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-376-02",
@@ -8577,7 +8577,7 @@
     "pdf_page_start":67,
     "pdf_page_end":67,
     "source_code_cell":"20.20.14.000 21.20.10.158 21.20.24.110 21.20.24.150 21.20.24.160 21.20.24.170 21.20.24.169 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-376-03",
@@ -8592,7 +8592,7 @@
     "pdf_page_start":67,
     "pdf_page_end":67,
     "source_code_cell":"20.20.14.000 21.20.10.158 21.20.24.110 21.20.24.150 21.20.24.160 21.20.24.170 21.20.24.169 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-376-04",
@@ -8607,7 +8607,7 @@
     "pdf_page_start":67,
     "pdf_page_end":67,
     "source_code_cell":"20.20.14.000 21.20.10.158 21.20.24.110 21.20.24.150 21.20.24.160 21.20.24.170 21.20.24.169 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-376-05",
@@ -8622,7 +8622,7 @@
     "pdf_page_start":67,
     "pdf_page_end":67,
     "source_code_cell":"20.20.14.000 21.20.10.158 21.20.24.110 21.20.24.150 21.20.24.160 21.20.24.170 21.20.24.169 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-376-06",
@@ -8637,7 +8637,7 @@
     "pdf_page_start":67,
     "pdf_page_end":67,
     "source_code_cell":"20.20.14.000 21.20.10.158 21.20.24.110 21.20.24.150 21.20.24.160 21.20.24.170 21.20.24.169 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-376-07",
@@ -8652,7 +8652,7 @@
     "pdf_page_start":67,
     "pdf_page_end":67,
     "source_code_cell":"20.20.14.000 21.20.10.158 21.20.24.110 21.20.24.150 21.20.24.160 21.20.24.170 21.20.24.169 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-376-08",
@@ -8667,7 +8667,7 @@
     "pdf_page_start":67,
     "pdf_page_end":67,
     "source_code_cell":"20.20.14.000 21.20.10.158 21.20.24.110 21.20.24.150 21.20.24.160 21.20.24.170 21.20.24.169 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-377-01",
@@ -9402,7 +9402,7 @@
     "pdf_page_start":69,
     "pdf_page_end":69,
     "source_code_cell":"32.50.13.190 32.50.22.110 32.50.22.120 32.50.22.190 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-390-02",
@@ -9417,7 +9417,7 @@
     "pdf_page_start":69,
     "pdf_page_end":69,
     "source_code_cell":"32.50.13.190 32.50.22.110 32.50.22.120 32.50.22.190 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-390-03",
@@ -9432,7 +9432,7 @@
     "pdf_page_start":69,
     "pdf_page_end":69,
     "source_code_cell":"32.50.13.190 32.50.22.110 32.50.22.120 32.50.22.190 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-390-04",
@@ -9447,7 +9447,7 @@
     "pdf_page_start":69,
     "pdf_page_end":69,
     "source_code_cell":"32.50.13.190 32.50.22.110 32.50.22.120 32.50.22.190 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-390-05",
@@ -9462,7 +9462,7 @@
     "pdf_page_start":69,
     "pdf_page_end":69,
     "source_code_cell":"32.50.13.190 32.50.22.110 32.50.22.120 32.50.22.190 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-391-01",
@@ -9603,7 +9603,7 @@
     "record_id":"2-394-01",
     "appendix":2,
     "position":"394",
-    "name":"Кресла-стулья с санитарным оснащением; опоры (опоры-ходунки шагающие, опоры- ходунки на колесиках); поручни (перила) для самоподнимания угловые, прямые (линейные) и откидные; ходунки на колесах; ходунки шагающие складные, регулируемые по высоте",
+    "name":"Кресла-стулья с санитарным оснащением; опоры (опоры-ходунки шагающие, опоры-ходунки на колесиках); поручни (перила) для самоподнимания угловые, прямые (линейные) и откидные; ходунки на колесах; ходунки шагающие складные, регулируемые по высоте",
     "okpd2":"32.50.22.129",
     "code_role":"Включён",
     "min_share_pct":null,
@@ -9612,13 +9612,13 @@
     "pdf_page_start":69,
     "pdf_page_end":69,
     "source_code_cell":"32.50.22.129 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-394-02",
     "appendix":2,
     "position":"394",
-    "name":"Кресла-стулья с санитарным оснащением; опоры (опоры-ходунки шагающие, опоры- ходунки на колесиках); поручни (перила) для самоподнимания угловые, прямые (линейные) и откидные; ходунки на колесах; ходунки шагающие складные, регулируемые по высоте",
+    "name":"Кресла-стулья с санитарным оснащением; опоры (опоры-ходунки шагающие, опоры-ходунки на колесиках); поручни (перила) для самоподнимания угловые, прямые (линейные) и откидные; ходунки на колесах; ходунки шагающие складные, регулируемые по высоте",
     "okpd2":"32.50.50",
     "code_role":"Включён",
     "min_share_pct":null,
@@ -9627,7 +9627,7 @@
     "pdf_page_start":69,
     "pdf_page_end":69,
     "source_code_cell":"32.50.22.129 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-395-01",
@@ -9657,7 +9657,7 @@
     "pdf_page_start":69,
     "pdf_page_end":69,
     "source_code_cell":"32.50.22.190 32.50.22.129 32.50.22.121 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-396-02",
@@ -9672,7 +9672,7 @@
     "pdf_page_start":69,
     "pdf_page_end":69,
     "source_code_cell":"32.50.22.190 32.50.22.129 32.50.22.121 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-396-03",
@@ -9687,7 +9687,7 @@
     "pdf_page_start":69,
     "pdf_page_end":69,
     "source_code_cell":"32.50.22.190 32.50.22.129 32.50.22.121 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-396-04",
@@ -9702,7 +9702,7 @@
     "pdf_page_start":69,
     "pdf_page_end":69,
     "source_code_cell":"32.50.22.190 32.50.22.129 32.50.22.121 32.50.50",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-397-01",
@@ -9882,7 +9882,7 @@
     "pdf_page_start":70,
     "pdf_page_end":70,
     "source_code_cell":"32.50.13.110 32.50.13.190 32.50.50 32.50.50.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-401-02",
@@ -9897,7 +9897,7 @@
     "pdf_page_start":70,
     "pdf_page_end":70,
     "source_code_cell":"32.50.13.110 32.50.13.190 32.50.50 32.50.50.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-401-03",
@@ -9912,7 +9912,7 @@
     "pdf_page_start":70,
     "pdf_page_end":70,
     "source_code_cell":"32.50.13.110 32.50.13.190 32.50.50 32.50.50.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-401-04",
@@ -9927,7 +9927,7 @@
     "pdf_page_start":70,
     "pdf_page_end":70,
     "source_code_cell":"32.50.13.110 32.50.13.190 32.50.50 32.50.50.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-402-01",
@@ -10242,7 +10242,7 @@
     "pdf_page_start":71,
     "pdf_page_end":71,
     "source_code_cell":"32.50.13.190 32.50.50 32.50.50.180 32.50.50.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-407-02",
@@ -10257,7 +10257,7 @@
     "pdf_page_start":71,
     "pdf_page_end":71,
     "source_code_cell":"32.50.13.190 32.50.50 32.50.50.180 32.50.50.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-407-03",
@@ -10272,7 +10272,7 @@
     "pdf_page_start":71,
     "pdf_page_end":71,
     "source_code_cell":"32.50.13.190 32.50.50 32.50.50.180 32.50.50.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-407-04",
@@ -10287,7 +10287,7 @@
     "pdf_page_start":71,
     "pdf_page_end":71,
     "source_code_cell":"32.50.13.190 32.50.50 32.50.50.180 32.50.50.190",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-408-01",
@@ -12237,7 +12237,7 @@
     "pdf_page_start":76,
     "pdf_page_end":76,
     "source_code_cell":"10.84.30.130",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-441-01",
@@ -12312,7 +12312,7 @@
     "pdf_page_start":76,
     "pdf_page_end":76,
     "source_code_cell":"10.11.31",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-446-01",
@@ -12342,7 +12342,7 @@
     "pdf_page_start":76,
     "pdf_page_end":76,
     "source_code_cell":"10.12.1",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-448-01",
@@ -12417,7 +12417,7 @@
     "pdf_page_start":76,
     "pdf_page_end":76,
     "source_code_cell":"10.51.30.200",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-453-01",
@@ -12567,7 +12567,7 @@
     "pdf_page_start":77,
     "pdf_page_end":77,
     "source_code_cell":"11.02.11.110",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-462-01",
@@ -12612,7 +12612,7 @@
     "pdf_page_start":77,
     "pdf_page_end":77,
     "source_code_cell":"11.02.12.160",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"2-465-01",
@@ -12627,7 +12627,7 @@
     "pdf_page_start":77,
     "pdf_page_end":77,
     "source_code_cell":"11.03.10.110",
-    "review_required":true
+    "review_required":false
   },
   {
     "record_id":"3-1-01",

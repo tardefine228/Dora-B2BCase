@@ -153,12 +153,12 @@ def test_exception_and_review_flags_are_explicit_but_change_nothing(tmp_path: Pa
 
 
 def test_review_required_flag_on_the_real_catalog() -> None:
-    """129 OCR-doubt rows: a unique one, answered exactly, must carry the flag."""
+    """A row visually verified against the PDF no longer carries an OCR flag."""
     classifier = CatalogClassifier(CATALOG, dense=None)
-    result = classifier.classify("Нитрат натрия")  # record 2-33-01, review_required=True
+    result = classifier.classify("Нитрат натрия")  # verified against PDF page 44 on 2026-10-26
     assert result.code == "20.15.6"
     assert result.status in {"ok", "review"}  # handling unchanged — flag is informational
-    assert result.catalog_review_required is True
+    assert result.catalog_review_required is False
     assert result.code_role == "Включён"
 
 
