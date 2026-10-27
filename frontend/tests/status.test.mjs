@@ -9,8 +9,8 @@ const alternative = (code, title, confidence = 0.5) => ({
 test('status labels separate "нашёл, но не уверен" from "нет в перечне"', () => {
   // Эксп. 30: в полосе review 26 из 29 строк имели верный код, поэтому подпись
   // не должна читаться как «ничего не найдено».
-  assert.equal(STATUS_LABEL.review, 'Нашёл, но не уверен');
-  assert.equal(STATUS_LABEL.not_found, 'Нет в перечне');
+  assert.equal(STATUS_LABEL.review, 'Предварительный результат — проверьте позицию');
+  assert.equal(STATUS_LABEL.not_found, 'Совпадение не найдено');
   assert.notEqual(STATUS_LABEL.review, STATUS_LABEL.not_found);
   assert.ok(STATUS_HELP.review.includes('Код-кандидат'));
   assert.ok(!STATUS_HELP.review.toLowerCase().includes('не найдено'));

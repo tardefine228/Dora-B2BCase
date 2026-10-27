@@ -966,6 +966,7 @@ def _source_page(fragment: SourceFragment) -> str:
     return f"""<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/ui/russia-flag.svg">
 <title>{escape(fragment.name or fragment.record_id)} — ПП № 1875</title>
 <style>
 body{{margin:0;background:#f4f6fc;color:#141c3b;font:16px/1.6 Inter,Arial,sans-serif}}

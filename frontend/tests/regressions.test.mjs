@@ -142,16 +142,18 @@ test('CSV neutralizes formulas and preserves delimiter and quote escaping', asyn
   assert.ok(csv.includes(';0.9;-0.1;'));
 });
 
-test('CSV numbers the rows 1…N as the last column', async t => {
+test('CSV preserves row numbers and includes procurement explanation', async t => {
   const capture = captureDownload(t);
   exportResultsCsv([
     { name: 'Второй', code: null, title: null, status: 'not_found', confidence: 0, confidenceRaw: 0, clauseRef: null, url: null },
     { name: 'Первый', code: '26.20.11', title: null, status: 'ok', confidence: 0.9, confidenceRaw: 0.8, clauseRef: null, url: null },
   ]);
   const lines = (await capture().text()).trim().split('\r\n');
-  assert.ok(lines[0].endsWith(';row'), lines[0]);
-  assert.ok(lines[1].endsWith(';1'), lines[1]);
-  assert.ok(lines[2].endsWith(';2'), lines[2]);
+  assert.equal(lines[0].split(';')[12], 'row');
+  assert.equal(lines[1].split(';')[12], '1');
+  assert.equal(lines[2].split(';')[12], '2');
+  assert.ok(lines[0].endsWith(';procurement_regime;procurement_explanation'));
+  assert.ok(lines[1].includes('Это не подтверждает'));
 });
 
 

@@ -20,7 +20,7 @@ test('single query, keyboard submission, feedback and accessibility', async ({ p
 });
 
 test('file results survive Back and feedback stays with its row after sorting', async ({ page, context }) => {
-  const rows = [result('Стол', '31.01'), result('Бумага', '17.12')];
+  const rows = [result('Стол', '31.01'), result('Бумага', '17.12')].map(row => ({ ...row, clause_ref: 'Приложение 2, позиция 1', code_role: 'Включён', catalog_review_required: false }));
   let uploads = 0;
   await page.route('**/classify/file', r => { uploads++; return r.fulfill({ json: { job_id: 'qa', total: 2, total_found: 2, filename: 'goods.csv', format: 'csv', duplicates: 0, skipped: 0, truncated: false, warnings: [] } }); });
   await page.route('**/classify/batch/qa/events', r => r.fulfill({ contentType: 'text/event-stream', body: 'event: done\ndata: {}\n\n' }));
@@ -30,6 +30,7 @@ test('file results survive Back and feedback stays with its row after sorting', 
   await page.locator('input[type=file]').setInputFiles({ name: 'goods.csv', mimeType: 'text/csv', buffer: Buffer.from('name\nСтол\nБумага') });
   await expect(page.locator('tbody tr')).toHaveCount(2);
   const tableRow = page.locator('tbody tr').filter({ hasText: 'Стол' });
+  await expect(tableRow.locator('.procurement-brief')).toContainText('Ограничение закупки');
   await tableRow.getByText('Проверить результат', { exact: true }).click();
   await tableRow.getByText('Сообщить об ошибке (для экспертов)', { exact: true }).click();
   await tableRow.getByRole('button', { name: 'Код неверный' }).click();
@@ -62,4 +63,38 @@ test('not found displays confidence without suggesting certainty of absence', as
   await expect(page.locator('.confidence strong')).toHaveText('0%');
   await expect(page.locator('.confidence')).toContainText('Уверенность в подборе кода');
   await expect(page.locator('.status-help')).toContainText('не вероятность отсутствия');
+});
+
+
+test('procurement verdict shows both appendices and the supplied flag on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/classify', r => r.fulfill({ json: {
+    ...result('Ноутбук', '26.20.11'), clause_ref: 'Приложение 2, позиция 195; Приложение 3, позиция 37',
+    code_role: 'Включён', catalog_review_required: false,
+  } }));
+  await page.goto('/ui/');
+  await expect(page.getByAltText('Флаг России')).toBeVisible();
+  const favicon = await page.locator('link[rel="icon"]').getAttribute('href');
+  expect(favicon).toBe('/ui/russia-flag.svg');
+  expect((await page.request.get(favicon!)).status()).toBe(200);
+  await page.getByLabel('Название товара', { exact: true }).fill('Ноутбук');
+  await page.getByLabel('Название товара', { exact: true }).press('Enter');
+  const verdict = page.locator('.procurement');
+  await expect(verdict).toContainText('Ограничение закупки');
+  await expect(verdict).toContainText('Минимальная доля');
+  await expect(verdict).toContainText('223-ФЗ');
+  await expect(page.locator('footer')).toContainText('Для закупок по 44-ФЗ и 223-ФЗ');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
+test('exception result never displays the ordinary prohibition verdict', async ({ page }) => {
+  await page.route('**/classify', r => r.fulfill({ json: {
+    ...result('Исключение', '26.20.11'), clause_ref: 'Приложение 1, позиция 1', code_role: 'Исключение', catalog_review_required: false,
+  } }));
+  await page.goto('/ui/');
+  await page.getByLabel('Название товара', { exact: true }).fill('Исключение');
+  await page.getByLabel('Название товара', { exact: true }).press('Enter');
+  await expect(page.locator('.procurement strong')).toHaveText('Условия закупки требуют проверки');
+  await expect(page.locator('.procurement')).toContainText('исключение из позиции');
 });
