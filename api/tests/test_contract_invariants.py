@@ -211,7 +211,9 @@ def test_csv_export_carries_the_catalog_flags() -> None:
     assert header[8] == "code_role"
     assert header[9] == "catalog_review_required"
     assert rows[1][8] == "Включён"
-    assert rows[1][9] == "True"
+    # Row 2-33-01 was verified against PDF page 44 on 2026-10-26, so its flag is
+    # off — the CSV must repeat the catalog fact, not a hardcoded verdict.
+    assert rows[1][9] == "False"
 
 
 # --- semantic backend (stubs, no server) -------------------------------------

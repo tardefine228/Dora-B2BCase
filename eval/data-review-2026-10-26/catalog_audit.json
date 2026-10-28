@@ -976,5 +976,10 @@
       "reviewed_at": "",
       "evidence": ""
     }
-  ]
+  ],
+  "input_sha256": {
+    "data/data.csv": "e4a5c45b635335e49986aae0e160e76abb32cdbd40ef3d85a6d6ccfe4c225229",
+    "data/data.json": "d5cf2f70c81c68be73453a269ba3e242ca2da93be3acc66eee87b0901f17cecc",
+    "data/source_text.txt": "c535b911c256163056861459fd67888dff1f851e836b850317f6577f6ec86639"
+  }
 }
