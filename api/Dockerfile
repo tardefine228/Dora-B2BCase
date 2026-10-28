@@ -13,6 +13,8 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=10 \
     OMP_NUM_THREADS=1 \
     MKL_NUM_THREADS=1 \
     TOKENIZERS_PARALLELISM=false
@@ -55,7 +57,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.2,<3.0" \
         || { echo "WARNING: torch install failed - download.pytorch.org blocked?"; exit 1; }; \
         python -m pip install -r /tmp/requirements-ml.txt \
-        || { echo "WARNING: sentence-transformers install failed - pypi.org blocked?"; exit 1; }; \
+        || { echo "WARNING: ML requirements install failed - pypi.org unreachable or a download was truncated mid-transfer"; exit 1; }; \
         python scripts/download_model.py "$EMBEDDER_MODEL" /root/.cache/huggingface/embedder \
         || { echo "WARNING: model download failed - huggingface.co or the *.hf.co CDN blocked mid-download"; exit 1; }; \
         mkdir -p /opt/models \
