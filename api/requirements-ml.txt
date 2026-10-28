@@ -1,6 +1,13 @@
 # Transformer embeddings (multilingual-e5 / bge-m3). Installed into the image by default
 # (see INSTALL_TRANSFORMER in api/Dockerfile); torch itself comes from the CPU wheel index.
--r requirements.txt
+# Deliberately NO `-r requirements.txt` here: this file is layered ON TOP of an
+# environment that already has api/requirements.txt installed (in the image that
+# is the previous Dockerfile layer; locally install requirements.txt first).
+# Pulling the base file in again made pip re-resolve the whole base stack and
+# re-download the 42 MB ru_core_news_md wheel from github.com on every image
+# build; a truncated download then failed the transformer step with
+# "Wheel 'ru-core-news-md' ... is invalid" even though the base layer had
+# already installed that very wheel successfully minutes earlier.
 sentence-transformers>=3.0,<6.0
 # XLM-R based embedders (BAAI/bge-m3, bge-m3-unsupervised) use a SentencePiece
 # tokenizer; without this package transformers falls back to a slow tokenizer and
