@@ -41,7 +41,8 @@ def generate():
                 assert 2 <= len(name.split()) <= 4, name
             if length == 'long':
                 assert len(name.split()) >= 20, name
-            row = dict(zip(FIELDS, [batch * 100 + index + 1, name, code, appendix, length]))
+            values = [batch * 100 + index + 1, name, code, appendix, length]
+            row = dict(zip(FIELDS, values, strict=True))
             rows.append(row)
             provenance.append({
                 'id': row['id'], 'record_id': matching[0]['record_id'],
@@ -50,7 +51,8 @@ def generate():
                 'pdf_page_end': matching[0]['pdf_page_end'],
                 'catalog_name': matching[0]['name'],
             })
-        assert Counter(r['description_length'] for r in rows) == {'short': 30, 'medium': 40, 'long': 30}
+        lengths = Counter(r['description_length'] for r in rows)
+        assert lengths == {'short': 30, 'medium': 40, 'long': 30}
         assert {r['appendix'] for r in rows} == {'1', '2', '3'}
         with (HERE / f'test_batch_{batch + 1}.csv').open('w', encoding='utf-8', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=FIELDS, lineterminator='\n')
@@ -65,16 +67,28 @@ def generate():
         writer.writerows(provenance)
     manifest = {
         'dataset_kind': 'synthetic_positive_fixtures',
-        'catalog_sha256': hashlib.sha256((ROOT / 'data/data.csv').read_bytes()).hexdigest(),
-        'source_text_sha256': hashlib.sha256((ROOT / 'data/source_text.txt').read_bytes()).hexdigest(),
+        'catalog_sha256': hashlib.sha256(
+            (ROOT / 'data/data.csv').read_bytes()).hexdigest(),
+        'source_text_sha256': hashlib.sha256(
+            (ROOT / 'data/source_text.txt').read_bytes()).hexdigest(),
         'source_report': json.loads((ROOT / 'data/report.json').read_text()),
-        'rows': len(all_rows), 'unique_product_names': len({r['product_name'] for r in all_rows}),
-        'description_length_counts': dict(Counter(r['description_length'] for r in all_rows)),
+        'rows': len(all_rows),
+        'unique_product_names': len({r['product_name'] for r in all_rows}),
+        'description_length_counts': dict(
+            Counter(r['description_length'] for r in all_rows)),
         'appendix_counts': dict(Counter(r['appendix'] for r in all_rows)),
-        'files': {f'test_batch_{i}.csv': hashlib.sha256((HERE / f'test_batch_{i}.csv').read_bytes()).hexdigest() for i in range(1, 6)},
+        'files': {
+            f'test_batch_{i}.csv': hashlib.sha256(
+                (HERE / f'test_batch_{i}.csv').read_bytes()).hexdigest()
+            for i in range(1, 6)
+        },
     }
-    (HERE / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
-    print(json.dumps({k: manifest[k] for k in ['rows', 'unique_product_names', 'description_length_counts', 'appendix_counts']}, ensure_ascii=False, indent=2))
+    (HERE / 'manifest.json').write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
+    summary_keys = ['rows', 'unique_product_names',
+                    'description_length_counts', 'appendix_counts']
+    print(json.dumps({k: manifest[k] for k in summary_keys},
+                     ensure_ascii=False, indent=2))
 
 
 if __name__ == '__main__':

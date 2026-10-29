@@ -27,7 +27,8 @@ class DatasetTests(unittest.TestCase):
             self.assertEqual(Counter(r['description_length'] for r in rows),
                              {'short': 30, 'medium': 40, 'long': 30})
             self.assertEqual({r['appendix'] for r in rows}, {'1', '2', '3'})
-            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), manifest['files'][path.name])
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            self.assertEqual(digest, manifest['files'][path.name])
             for row in rows:
                 self.assertNotIn(None, row)
                 self.assertTrue(all(row.values()))
@@ -48,7 +49,7 @@ class DatasetTests(unittest.TestCase):
             provenance = list(csv.DictReader(f))
         self.assertEqual(len(provenance), 500)
         by_record = {r['record_id']: r for r in catalog}
-        for row, source in zip(all_rows, provenance):
+        for row, source in zip(all_rows, provenance, strict=True):
             self.assertEqual(row['id'], source['id'])
             original = by_record[source['record_id']]
             self.assertEqual((row['true_okpd2'], row['appendix']),
