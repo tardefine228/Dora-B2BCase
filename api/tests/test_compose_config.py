@@ -132,6 +132,25 @@ def test_dockerfile_bakes_the_embedder_with_explicit_fallback() -> None:
     assert "WARNING: torch install failed" in dockerfile
 
 
+def test_corporate_ca_is_wired_from_env_into_the_build(compose) -> None:
+    """TLS interception (antivirus/proxy) must be fixable without forking the Dockerfile."""
+    build_args = (compose["services"]["api"].get("build") or {}).get("args") or {}
+    assert build_args["CORP_CA_PEM_B64"] == "${CORP_CA_PEM_B64:-}"
+
+    dockerfile = (ROOT / "api" / "Dockerfile").read_text(encoding="utf-8")
+    assert 'ARG CORP_CA_PEM_B64=""' in dockerfile
+    # Empty by default: the stock bundle must be used when nothing is passed.
+    assert 'if [ -n "$CORP_CA_PEM_B64" ]' in dockerfile
+    assert "update-ca-certificates" in dockerfile
+    # Both export flavours from certmgr.msc (PEM with headers and raw DER) are accepted.
+    assert "BEGIN CERTIFICATE" in dockerfile
+    # Python HTTP stacks have to read the merged bundle, and the Rust xet downloader
+    # keeps its own root store, so the plain HTTPS path is used instead.
+    for variable in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"):
+        assert f"{variable}=" in dockerfile
+    assert "HF_HUB_DISABLE_XET=1" in dockerfile
+
+
 def test_ml_requirements_do_not_reinstall_the_base_stack() -> None:
     # Regression: requirements-ml.txt used to start with `-r requirements.txt`,
     # so the transformer layer re-resolved the whole base stack and re-downloaded
