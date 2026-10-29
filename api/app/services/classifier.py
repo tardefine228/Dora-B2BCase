@@ -30,13 +30,12 @@ from threading import BoundedSemaphore, RLock
 from typing import Protocol
 
 from app.core.config import settings
+from app.core.okpd2 import OKPD2_RE
 from app.schemas import Alternative, ClassifyResponse
 from app.services.source_lookup import clause_url_for
 
 logger = logging.getLogger("dora.classifier")
 
-# OKPD2 examples: 14.1, 26.20.11, 26.20.11.110
-OKPD2_RE = re.compile(r"^\d{2}(\.\d{1,2}){0,3}$")
 TOKEN_RE = re.compile(r"[a-zа-яё0-9]+", re.IGNORECASE)
 _INFERENCE_SEMAPHORE = BoundedSemaphore(settings.max_concurrent_inferences)
 

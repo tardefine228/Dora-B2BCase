@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, followBatch, type Job, type Result, type UploadAccepted, type Verdict } from './api';
 import { exportResults, exportResultsCsv } from './files';
+import { procurementVerdict, PROCUREMENT_SCOPE, PROCUREMENT_SOURCE } from './procurement';
 import { STATUS_HELP, STATUS_LABEL, codeLabel, duplicateAppendixHint, notFoundHint, verifierNote } from './status';
 import { orderResults, type SortMode } from './rows';
 import { storage } from './storage';
@@ -21,7 +22,7 @@ function Icon({ kind = 'search' }: { kind?: 'search' | 'upload' }) {
   </svg>;
 }
 function SourceLink({ url }: { url: string | null }) {
-  return isSafeUrl(url) ? <a href={url.startsWith("/source/") ? `${url}?view=clean-2` : url}>Открыть пункт постановления →</a>
+  return isSafeUrl(url) ? <a className="source-link" href={url.startsWith("/source/") ? `${url}?view=clean-2` : url}><span>Открыть пункт постановления</span><span className="source-link-arrow" aria-hidden="true">→</span></a>
     : <span className="muted">Ссылка на пункт недоступна</span>;
 }
 function Alternatives({ result }: { result: Result }) {
@@ -69,6 +70,16 @@ function Feedback({ result, onSaved }: { result: Result; onSaved: (r: Result, ve
     {sent && <p className="field-success" role="status">Спасибо! Ваша оценка сохранена на сервере.</p>}
   </div>;
 }
+function resultStatus(result: Result) {
+  return procurementVerdict(result).caution ?? STATUS_LABEL[result.status];
+}
+function Procurement({ result, brief = false }: { result: Result; brief?: boolean }) {
+  const verdict = procurementVerdict(result);
+  return <div className={`procurement procurement-${verdict.tone}${brief ? ' procurement-brief' : ''}`}>
+    <strong>{verdict.title}</strong>
+    <p>{verdict.explanation}</p>
+  </div>;
+}
 function ResultCard({ result, compact = false, onSaved }: { result: Result; compact?: boolean; onSaved: (r: Result, verdict: Verdict, corrected: string | null) => void }) {
   const missingCode = result.status !== 'not_found' && !result.code;
   // «Нет в перечне» и «нашёл, но не уверен» — разные ответы, и подсказка у них
@@ -78,21 +89,22 @@ function ResultCard({ result, compact = false, onSaved }: { result: Result; comp
   const verified = verifierNote(result);
   return <div className={compact ? 'compact-result' : ''}>
     {compact ? <>
-      <div className="nowrap">{result.code ?? '—'}</div><p>{result.title ?? "Название категории не указано"}</p><small>{STATUS_LABEL[result.status]}</small>
+      <div className="nowrap">{result.code ?? '—'}</div><p>{result.title ?? "Название категории не указано"}</p><small>{resultStatus(result)}</small>
     </> : <>
-      <div className="result-heading"><h2>Результат</h2><span className={`badge status-${result.status}`}>{STATUS_LABEL[result.status]}</span></div>
+      <div className="result-heading"><h2>Результат</h2><span className={`badge status-${result.status}`}>{resultStatus(result)}</span></div>
       <div className="result-grid">
         <div><p className="muted">{codeLabel(result.status)}</p>
-          {result.status === 'not_found' ? <p className="title">Товар не найден в перечне</p>
+          {result.status === 'not_found' ? <p className="title">Совпадение не найдено</p>
             : missingCode ? <p className="title">Сервис не вернул код — требуется проверка</p>
               : <><div className="code">{result.code}</div><p className="title">Категория: {result.title ?? "название не указано"}</p>
                 {result.clauseRef && <p className="muted">{result.clauseRef}</p>}</>}
         </div>
-        <div className="confidence"><strong>{percent(result.confidence)}</strong><p>Уверенность модели</p>
+        <div className="confidence"><strong>{percent(result.confidence)}</strong><p>Уверенность в подборе кода</p>
           {result.confidence !== null && <progress max={1} value={result.confidence} aria-label="Уверенность модели"/>}</div>
       </div>
     </>}
-    <p className="status-help">{missingCode ? 'Без кода нельзя считать результат уверенным.' : hint}</p>
+    <Procurement result={result}/>
+    <p className="status-help">{missingCode ? 'Без кода нельзя считать результат уверенным.' : hint}{result.status === 'not_found' && ' Процент показывает уверенность в подборе кода, а не вероятность отсутствия товара в постановлении.'}</p>
     {verified && <p className="status-help" role="note">{verified}</p>}
     {twin && <p className="status-help" role="note">{twin}</p>}
     {!compact && <div className="source"><SourceLink url={result.url}/></div>}
@@ -235,9 +247,9 @@ export default function App() {
   const sorted = orderResults(results, sort);
 
   return <>
-    <header><div className="brand"><span className="brand-icon"><Icon/></span>Классификатор товаров</div></header>
+    <header><div className="brand"><span className="brand-icon"><img src={`${import.meta.env.BASE_URL}russia-flag.svg`} width="32" height="32" alt="Флаг России"/></span>Классификатор товаров</div></header>
     <main>
-      <section className="intro"><h1>Найдите код товара</h1><p>Поиск позиции в перечне ПП № 1875 по названию товара</p></section>
+      <section className="intro"><h1>Найдите код товара</h1><p>Код товара и условия закупки по перечням ПП № 1875</p></section>
       <div className="forms">
         <form className="card single" onSubmit={e => { e.preventDefault(); void single(); }}>
           <h2>Один товар</h2><label htmlFor="product">Название товара</label>
@@ -299,16 +311,17 @@ export default function App() {
               }}>Скачать CSV</button>
             </span>
           </div>
-          <div className="table-scroll"><table><thead><tr><th scope="col" className="row-num">№</th><th scope="col">Товар</th><th scope="col">Код и статус</th><th scope="col">Уверенность</th><th scope="col">Подробности</th></tr></thead>
+          <div className="table-scroll"><table><thead><tr><th scope="col" className="row-num">№</th><th scope="col">Товар</th><th scope="col">Код и статус</th><th scope="col">Условия закупки</th><th scope="col">Уверенность</th><th scope="col">Подробности</th></tr></thead>
             <tbody>{sorted.map((r, index) => <tr key={results.indexOf(r)}>
               <td className="row-num">{index + 1}</td>
-              <td>{r.name}</td><td>{r.code ?? '—'}{r.code && <span className="cell-status">Категория: {r.title ?? 'название не указано'}</span>}<span className="muted cell-status">{STATUS_LABEL[r.status]}</span></td>
-              <td>{percent(r.confidence)}</td><td><SourceLink url={r.url}/>
+              <td>{r.name}</td><td>{r.code ?? '—'}{r.code && <span className="cell-status">Категория: {r.title ?? 'название не указано'}</span>}<span className="muted cell-status">{resultStatus(r)}</span></td>
+              <td className="procurement-cell"><Procurement result={r} brief/></td>
+              <td>{percent(r.confidence)}{r.status === 'not_found' && <small className="muted">Код не подобран</small>}</td><td><SourceLink url={r.url}/>
                 <details className="details"><summary>Проверить результат</summary><ResultCard result={r} compact onSaved={saveVerdict}/></details></td>
             </tr>)}</tbody></table></div>
         </section>}
       </div>
-      <footer>Подбор кода — подсказка, а не юридический вердикт.<br/>Результат требует проверки специалистом.</footer>
+      <footer>{PROCUREMENT_SCOPE}<br/><a href={PROCUREMENT_SOURCE}>Основание: ПП № 1875, пункты 1 и 2</a></footer>
     </main>
   </>;
 }

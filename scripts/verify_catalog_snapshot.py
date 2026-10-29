@@ -7,9 +7,12 @@ from their own parser. That snapshot and ``data/data.csv`` describe the same
 * the snapshot zero-pads ``record_id`` (``1-001-01`` vs ``1-1-01``);
 * share columns are written as integers (``80`` vs ``80.0``);
 * the working catalog carries the QA-only ``review_required`` column;
-* four position-402 names were corrected against the source PDF
-  (``docs/pdf-source-review-2026-10-25.md``), so the raw OCR text in a fresh
-  snapshot is expected to differ there and nowhere else.
+* ten names were corrected against the source PDF in two review rounds — the
+  four position-402 volume bounds (``docs/pdf-source-review-2026-10-25.md``) and
+  the position-362 ``Х$`` → ``XS`` / position-394 ``опоры- ходунки`` →
+  ``опоры-ходунки`` fixes (``eval/data-review-2026-10-26/source-verification.json``),
+  so the raw OCR text in a fresh snapshot is expected to differ there and nowhere
+  else.
 
 This script makes that contract executable: every row must align on the
 normalized id, codes/roles/pages must be identical, numeric shares must hold
@@ -48,8 +51,24 @@ EXACT_COLUMNS = (
 NUMERIC_COLUMNS = ("min_share_pct", "max_foreign_share_pct")
 # Columns the working catalog maintains on top of the raw decree snapshot.
 CATALOG_ONLY_COLUMNS = ("review_required",)
-# Position-402 rows corrected by visual PDF verification (2026-10-25).
-EXPECTED_NAME_CORRECTIONS = ("2-402-1", "2-402-2", "2-402-3", "2-402-4")
+# Rows whose catalog name carries a PDF correction, so the raw OCR snapshot is
+# expected to differ there (and only there):
+# * 2-402-1…4 — volume bounds ``≥ 500 мл ≤ 1000 мл`` (visual review 2026-10-25);
+# * 2-362-1…4 — ``Х$`` → ``XS`` and 2-394-1…2 — ``опоры- ходунки`` →
+#   ``опоры-ходунки`` (line-by-line source verification 2026-10-26,
+#   eval/data-review-2026-10-26/source-verification.json).
+EXPECTED_NAME_CORRECTIONS = (
+    "2-362-1",
+    "2-362-2",
+    "2-362-3",
+    "2-362-4",
+    "2-394-1",
+    "2-394-2",
+    "2-402-1",
+    "2-402-2",
+    "2-402-3",
+    "2-402-4",
+)
 
 
 def read_catalog(path: Path) -> list[dict]:
@@ -176,7 +195,7 @@ def render_markdown(report: dict, snapshot_path: Path) -> str:
         + ("снапшот соответствует каталогу" if report["ok"] else "ОБНАРУЖЕНЫ РАСХОЖДЕНИЯ")
         + "**.",
         "",
-        "## Текстовые отличия (ожидаемые PDF-правки позиции 402)",
+        "## Текстовые отличия (ожидаемые PDF-правки)",
         "",
     ]
     for item in report["name_diffs"]:

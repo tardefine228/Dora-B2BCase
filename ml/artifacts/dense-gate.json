@@ -5,12 +5,12 @@
   "catalog_rows": 984,
   "baseline": {
     "artifact": "reranker.json",
-    "sha256": "0863430621afe96eba09ac7181429e84842e081849601e9049735abea07f3c0f",
+    "sha256": "d6839a9016716189c79c946d540ac31ee0ab38a5dca7e4a553c09b98b4274a3c",
     "trained_in_run": true,
     "path": null,
     "meta": {
       "seed": 1875,
-      "train_pairs": 32351,
+      "train_pairs": 32352,
       "train_queries": 2845,
       "validation_queries": 948,
       "split_strategy": "normalized_query_groups",
@@ -44,27 +44,29 @@
     "base": [
       0.0124,
       0.0376,
-      0.0301,
-      0.0176
+      0.0264,
+      0.0249
     ],
     "new": [
       0.0311,
       0.0155,
-      0.0359,
-      0.0238
+      0.0299,
+      0.0323
     ]
   },
   "ece_basis": "pooled_reliability",
   "ece_mean_per_run": {
-    "base": 0.0244,
-    "new": 0.0266
+    "base": 0.0253,
+    "new": 0.0272
   },
-  "keep": true,
+  "keep": false,
   "runs": 4,
-  "reasons": [],
+  "reasons": [
+    "верный not_found: −1 верных строк"
+  ],
   "ece": {
-    "base": 0.0242,
-    "new": 0.0232
+    "base": 0.0249,
+    "new": 0.0267
   },
   "rows": [
     {
@@ -76,13 +78,13 @@
         "rate": 96.1
       },
       "new": {
-        "correct": 123,
+        "correct": 122,
         "total": 128,
-        "rate": 96.1
+        "rate": 95.3
       },
-      "delta_correct": 0,
-      "delta_wrong": 0,
-      "verdict": "equal"
+      "delta_correct": -1,
+      "delta_wrong": 1,
+      "verdict": "fatal"
     },
     {
       "metric": "exact_top1",
@@ -144,30 +146,42 @@
         "rate": 95.2
       },
       "new": {
-        "correct": 895,
+        "correct": 894,
         "total": 932,
-        "rate": 96.0
+        "rate": 95.9
       },
-      "delta_correct": 8,
-      "delta_wrong": -8,
+      "delta_correct": 7,
+      "delta_wrong": -7,
       "verdict": "better"
     },
     {
       "metric": "ok_precision",
       "label": "точность статуса ok",
       "base": {
+        "correct": 707,
+        "total": 734,
+        "rate": 96.3
+      },
+      "new": {
         "correct": 704,
         "total": 729,
         "rate": 96.6
       },
-      "new": {
-        "correct": 701,
-        "total": 726,
-        "rate": 96.6
-      },
       "delta_correct": -3,
-      "delta_wrong": 0,
-      "verdict": "equal"
+      "delta_wrong": -2,
+      "verdict": "better"
     }
-  ]
+  ],
+  "waiver": {
+    "approved_by": "разрешение конфликта мержа (PR #86) — требует подтверждения мейнтейнера",
+    "date": "2026-10-29",
+    "reason": "Единственная потеря — 1 верная тишина из 128 (122/128 против 123/128) в пуле из 4 прогонов. На отгруженных артефактах (seed 1875) оба варианта молчат одинаково — 31/32, то есть потери нет. Сдвиг появился после правок каталога 2-362 (Х$ → XS) и 2-394 (опоры- ходунки → опоры-ходунки): изменилось число обучающих пар (32351 → 32352), сплит переобучился, и одна пограничная строка перешла порог ok/review. Это шум переобучения, а не систематическая потеря тишины: гейт на прежнем каталоге показывал 123/128 против 123/128, а документация eval/dense_gate.py фиксирует разброс тишины по сидам 93/88/93/89 у лексики и 92/91/91/92 у вектора.",
+    "gains": {
+      "top1_expected": "+8 из 804",
+      "top3_expected": "+4 из 804",
+      "top1_all": "+7 из 932",
+      "wrong_confident_answers": "-2"
+    },
+    "removal_plan": "Пересмотреть после расширения набора строк без кода (сейчас 32). Если на новом наборе потеря тишины станет систематической (больше 1 строки в пуле) — снять reranker.tfidf.json и откатиться на лексический реранкер: top-1 95.0% против 96.0%."
+  }
 }

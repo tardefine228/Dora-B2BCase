@@ -1,0 +1,40 @@
+{
+  "pass": true,
+  "links_checked": 60,
+  "failed_links": [],
+  "batch_survives_api_restart": true,
+  "preserved_results": 100,
+  "image_ids": {
+    "api": "sha256:7f38f7150e926e4dbe174d599d2156b77101698bf4ebf29d688d9aa9da49e039",
+    "worker": "sha256:7f38f7150e926e4dbe174d599d2156b77101698bf4ebf29d688d9aa9da49e039"
+  },
+  "ready": {
+    "status": "ready",
+    "service": "dora-api",
+    "classifier_backend": "catalog",
+    "version": "0.4.0",
+    "vector_search": {
+      "enabled": true,
+      "embedder": "st-multilingual-e5-small-v2-9b1a13eefd5f",
+      "dim": 384,
+      "positions": 984,
+      "store": "qdrant",
+      "reranker": "reranker.st-multilingual-e5-small-v2-9b1a13eefd5f.json",
+      "scoring": "vector-features"
+    },
+    "vector_health": {
+      "classifier_up": true,
+      "vector_search_enabled": true,
+      "embedder_up": true,
+      "embedder": "st-multilingual-e5-small-v2-9b1a13eefd5f",
+      "dim": 384,
+      "store": "qdrant",
+      "store_up": true,
+      "positions": 984,
+      "degraded": false
+    },
+    "job_store": "postgres",
+    "queue_backend": "celery",
+    "llm_verifier": "off"
+  }
+}

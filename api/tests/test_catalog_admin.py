@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+import json
+from pathlib import Path
 
 import pytest
 from app.core.config import settings
@@ -129,3 +131,53 @@ def test_json_upload_is_accepted(admin_client) -> None:
     body = response.json()
     assert body["applied"] is True
     assert body["rows_valid"] == 1
+
+
+@pytest.mark.parametrize("filename", ["data.csv", "data.json"])
+def test_shipped_catalog_can_be_uploaded_and_exported_losslessly(admin_client, filename):
+    client, tmp_path = admin_client
+    from app.services.catalog_io import parse_catalog_bytes
+
+    content = (Path(__file__).resolve().parents[2] / "data" / filename).read_bytes()
+    original = parse_catalog_bytes(filename, content).rows
+    response = client.post(
+        "/admin/catalog",
+        headers=_headers(),
+        files={"file": (filename, content)},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["errors"] == []
+    assert body["applied"]
+    assert body["rows_valid"] == len(original)
+    saved = json.loads((tmp_path / "data.json").read_text(encoding="utf-8"))
+    assert [(r["name"], r["okpd2"]) for r in saved] == [
+        (r["name"].strip(), (r["okpd2"] or "").strip()) for r in original
+    ]
+    assert max(len(r["name"]) for r in saved) > 500
+
+
+@pytest.mark.parametrize("code", ["22", "22.2", "22.29", "22.29.2", "22.29.29", "22.29.29.190"])
+def test_catalog_accepts_okpd2_hierarchy(code):
+    from app.services.catalog_io import ParsedCatalog, validate_rows
+
+    assert validate_rows(ParsedCatalog(rows=[{"name": "Товар", "okpd2": code}])).ok
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "ABC",
+        "2",
+        "22..29",
+        "22.290",
+        "22.29.29.1900",
+        "22.29.29.190.1",
+        "22.29.29.19",
+        "22.29.29.190junk",
+    ],
+)
+def test_catalog_rejects_malformed_codes(code):
+    from app.services.catalog_io import ParsedCatalog, validate_rows
+
+    assert not validate_rows(ParsedCatalog(rows=[{"name": "Товар", "okpd2": code}])).ok

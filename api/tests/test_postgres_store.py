@@ -11,12 +11,18 @@ pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="TEST_DATABASE_URL is n
 
 
 @pytest.fixture
-def store():
+def store(monkeypatch):
+    from app.core.config import settings
     from app.job_store_postgres import PostgresJobStore
+
+    # Feedback and retention use settings, not the store instance's URL.
+    # Point every participant at the same isolated test database.
+    monkeypatch.setattr(settings, "job_store", "postgres")
+    monkeypatch.setattr(settings, "database_url", DATABASE_URL)
 
     instance = PostgresJobStore(DATABASE_URL, max_active_jobs=3, stale_seconds=1)
     with instance._pool.connection() as conn:
-        conn.execute("TRUNCATE jobs, classification_log")
+        conn.execute("TRUNCATE jobs, classification_log, classification_feedback")
     yield instance
     instance.close()
 
@@ -73,8 +79,8 @@ def test_audit_log_is_written(store):
 
 
 # --- schema migrations and retention on a real PostgreSQL -------------------
-# Everything above runs without a database; these two need TEST_DATABASE_URL and
-# are the end-to-end check of what `test_migrations.py` verifies statically.
+# All tests here require TEST_DATABASE_URL; these two also exercise migrations
+# and are the end-to-end check of what `test_migrations.py` verifies statically.
 
 
 def test_store_brings_the_schema_to_the_declared_head(store) -> None:
@@ -99,6 +105,8 @@ def test_retention_purges_old_rows_and_keeps_fresh_ones(store) -> None:
     from app.services.feedback_store import save_feedback
 
     save_feedback("Старый вердикт", "01.1", "correct", None, "старое")
+    save_feedback("Свежий вердикт", "01.1", "correct", None, "свежее")
+    store.log_classifications("single", [_answer("свежий запрос")])
     with store._pool.connection() as conn:
         conn.execute(
             "UPDATE classification_feedback SET created_at = now() - interval '400 days' "
@@ -136,5 +144,11 @@ def test_retention_purges_old_rows_and_keeps_fresh_ones(store) -> None:
             assert conn.execute(
                 "SELECT count(*) FROM classification_feedback WHERE query = 'Старый вердикт'"
             ).fetchone()[0] == 0
+            assert conn.execute(
+                "SELECT count(*) FROM classification_log WHERE query = 'свежий запрос'"
+            ).fetchone()[0] == 1
+            assert conn.execute(
+                "SELECT count(*) FROM classification_feedback WHERE query = 'Свежий вердикт'"
+            ).fetchone()[0] == 1
     finally:
         settings.audit_retention_days, settings.feedback_retention_days = original

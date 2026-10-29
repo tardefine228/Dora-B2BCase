@@ -8,7 +8,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить тип электромеханического прибора и охват остаточной позиции 27.51.21.119.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [
+        {
+          "code": "26.40",
+          "title": "Техника бытовая электронная",
+          "confidence": 0.0593,
+          "clause_ref": "Приложение 3, позиция 63",
+          "clause_url": "/source/3-63-01"
+        },
+        {
+          "code": "27.51.13",
+          "title": "Машины стиральные бытовые и машины для сушки одежды",
+          "confidence": 0.0487,
+          "clause_ref": "Приложение 3, позиция 106",
+          "clause_url": "/source/3-106-01"
+        },
+        {
+          "code": "25.99.12.112",
+          "title": "Изделия столовые, кухонные и бытовые и их детали из нержавеющей стали",
+          "confidence": 0.0452,
+          "clause_ref": "Приложение 2, позиция 105",
+          "clause_url": "/source/2-105-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Холодильник бытовой",
@@ -19,7 +52,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Отделить бытовой холодильник от медицинского и торгового холодильного оборудования.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [
+        {
+          "code": "28.25.13.116",
+          "title": "Медицинские морозильники, холодильники комбинированные лабораторные, холодильники фармацевтические, соответствующие кодам 122990, 143910, 145090, 215850, 261620, 321680 вида медицинского изделия в соответствии с номенклатурной классификацией",
+          "confidence": 0.0712,
+          "clause_ref": "Приложение 2, позиция 350",
+          "clause_url": "/source/2-350-02"
+        },
+        {
+          "code": "32.50.50",
+          "title": "Медицинские морозильники, холодильники комбинированные лабораторные, холодильники фармацевтические, соответствующие кодам 122990, 143910, 145090, 215850, 261620, 321680 вида медицинского изделия в соответствии с номенклатурной классификацией",
+          "confidence": 0.0712,
+          "clause_ref": "Приложение 2, позиция 350",
+          "clause_url": "/source/2-350-03"
+        },
+        {
+          "code": "26.40",
+          "title": "Техника бытовая электронная",
+          "confidence": 0.0443,
+          "clause_ref": "Приложение 3, позиция 63",
+          "clause_url": "/source/3-63-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Кирпич силикатный",
@@ -30,7 +96,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Подтвердить материал и конкретный код строительного изделия.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Смарт-часы",
@@ -41,7 +118,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить основные функции: часы, устройство связи или вычислительное устройство.",
+    "machine_suggestion": {
+      "code": "26.12.3",
+      "title": "Карты со встроенными интегральными схемами (смарт-карты)",
+      "status": "review",
+      "confidence": 0.7267,
+      "clause_url": "/source/1-26-01",
+      "alternatives": [
+        {
+          "code": "31.03.1",
+          "title": "Матрасы",
+          "confidence": 0.0115,
+          "clause_ref": "Приложение 1, позиция 137; Приложение 3, позиция 234",
+          "clause_url": "/source/1-137-01"
+        },
+        {
+          "code": "26.30.22",
+          "title": "Аппараты телефонные для сотовых сетей связи (ПРТС), включая смартфоны",
+          "confidence": 0.0113,
+          "clause_ref": "Приложение 2, позиция 212",
+          "clause_url": "/source/2-212-01"
+        },
+        {
+          "code": "32.20.12.114",
+          "title": "Контрабасы",
+          "confidence": 0.011,
+          "clause_ref": "Приложение 3, позиция 244",
+          "clause_url": "/source/3-244-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Робот-пылесос",
@@ -52,7 +162,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Проверить охват остаточной позиции электромеханических бытовых приборов.",
+    "machine_suggestion": {
+      "code": "28.99.39.200",
+      "title": "Промышленные роботы и робототехнические устройства",
+      "status": "review",
+      "confidence": 0.7754,
+      "clause_url": "/source/1-91-01",
+      "alternatives": [
+        {
+          "code": "32.20.11.130",
+          "title": "Рояли",
+          "confidence": 0.0112,
+          "clause_ref": "Приложение 2, позиция 144; Приложение 3, позиция 240",
+          "clause_url": "/source/2-144-01"
+        },
+        {
+          "code": "32.20.13.176",
+          "title": "Гобои",
+          "confidence": 0.011,
+          "clause_ref": "Приложение 2, позиция 158; Приложение 3, позиция 262",
+          "clause_url": "/source/2-158-01"
+        },
+        {
+          "code": "30.20.4",
+          "title": "Части железнодорожных локомотивов или трамвайных моторных вагонов или прочего подвижного состава; путевое оборудование и устройства и их части; механическое оборудование для управления движением",
+          "confidence": 0.0109,
+          "clause_ref": "Приложение 1, позиция 132",
+          "clause_url": "/source/1-132-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Игровая приставка",
@@ -63,7 +206,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Различить игровую консоль, компьютер и игрушку.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Источник бесперебойного питания",
@@ -74,7 +228,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить тип преобразователя и самостоятельность изделия; не приравнивать автоматически к части компьютера.",
+    "machine_suggestion": {
+      "code": "26.20.4",
+      "title": "Блоки, части и принадлежности вычислительных машин, за исключением устройств числового программного управления, соответствующих коду 26.20.40.150 по Общероссийскому классификатору продукции по видам экономической деятельности ОК 034-2014 (КПЕС 2008)",
+      "status": "review",
+      "confidence": 0.6936,
+      "clause_url": "/source/2-205-01",
+      "alternatives": [
+        {
+          "code": "26.60.11.130",
+          "title": "Микроисточники с йодом-125",
+          "confidence": 0.0514,
+          "clause_ref": "Приложение 2, позиция 363",
+          "clause_url": "/source/2-363-01"
+        },
+        {
+          "code": "26.20.40",
+          "title": "Блоки, части и принадлежности вычислительных машин",
+          "confidence": 0.0329,
+          "clause_ref": "Приложение 3, позиция 47",
+          "clause_url": "/source/3-47-01"
+        },
+        {
+          "code": "17.23.13.192",
+          "title": "Альбомы и папки с бумагой (включая блоки)",
+          "confidence": 0.0265,
+          "clause_ref": "Приложение 2, позиция 4",
+          "clause_url": "/source/2-4-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Домофон",
@@ -85,7 +272,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить аудио/видео функции, связь и контроль доступа.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Бахилы одноразовые",
@@ -96,7 +294,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить материал и медицинское назначение.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [
+        {
+          "code": "32.50.50.190",
+          "title": "Наконечники полимерные нестерильные (стерильные) одноразовые к дозаторам пипеточным, соответствующие кодам 292810, 352690 вида медицинского изделия в соответствии с номенклатурной классификацией",
+          "confidence": 0.0415,
+          "clause_ref": "Приложение 2, позиция 398",
+          "clause_url": "/source/2-398-01"
+        },
+        {
+          "code": "22.29.29.130",
+          "title": "Боры зубные твердосплавные; головки стоматологические алмазные, в том числе фасонные; емкости для взятия, хранения и транспортировки биологических проб для выполнения клинических лабораторных исследований, а именно пробирки для взятия капиллярной крови, емкости для мочи, кала и мокроты; зеркала гинекологические полимерные по Куско; зонды урогенитальные; иглодержатели микрохирургические; инструменты вспомогательные; инструменты зондирующие, бужирующие; инструменты многоповерхностного воздействия; инструменты оттесняющие; инструменты режущие и ударные с острой (режущей) кромкой; каналонаполнители; микромоторы пневматические для наконечников стоматологических; модули медицинские климатизированные (чистое помещение); наборы гинекологические смотровые одноразовые стерильные; наконечники для микромоторов; наконечники стоматологические турбинные; ножницы микрохирургические; пинцеты микрохирургические; пульпоэкстракторы; фрезы зуботехнические; иглы корневые",
+          "confidence": 0.0336,
+          "clause_ref": "Приложение 2, позиция 388",
+          "clause_url": "/source/2-388-01"
+        },
+        {
+          "code": "22.29.29.190",
+          "title": "Боры зубные твердосплавные; головки стоматологические алмазные, в том числе фасонные; емкости для взятия, хранения и транспортировки биологических проб для выполнения клинических лабораторных исследований, а именно пробирки для взятия капиллярной крови, емкости для мочи, кала и мокроты; зеркала гинекологические полимерные по Куско; зонды урогенитальные; иглодержатели микрохирургические; инструменты вспомогательные; инструменты зондирующие, бужирующие; инструменты многоповерхностного воздействия; инструменты оттесняющие; инструменты режущие и ударные с острой (режущей) кромкой; каналонаполнители; микромоторы пневматические для наконечников стоматологических; модули медицинские климатизированные (чистое помещение); наборы гинекологические смотровые одноразовые стерильные; наконечники для микромоторов; наконечники стоматологические турбинные; ножницы микрохирургические; пинцеты микрохирургические; пульпоэкстракторы; фрезы зуботехнические; иглы корневые",
+          "confidence": 0.0336,
+          "clause_ref": "Приложение 2, позиция 388",
+          "clause_url": "/source/2-388-02"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Пробирка лабораторная",
@@ -107,7 +338,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить материал, вакуумность, назначение ИВД и вид медицинского изделия.",
+    "machine_suggestion": {
+      "code": "22.29.29.130",
+      "title": "Боры зубные твердосплавные; головки стоматологические алмазные, в том числе фасонные; емкости для взятия, хранения и транспортировки биологических проб для выполнения клинических лабораторных исследований, а именно пробирки для взятия капиллярной крови, емкости для мочи, кала и мокроты; зеркала гинекологические полимерные по Куско; зонды урогенитальные; иглодержатели микрохирургические; инструменты вспомогательные; инструменты зондирующие, бужирующие; инструменты многоповерхностного воздействия; инструменты оттесняющие; инструменты режущие и ударные с острой (режущей) кромкой; каналонаполнители; микромоторы пневматические для наконечников стоматологических; модули медицинские климатизированные (чистое помещение); наборы гинекологические смотровые одноразовые стерильные; наконечники для микромоторов; наконечники стоматологические турбинные; ножницы микрохирургические; пинцеты микрохирургические; пульпоэкстракторы; фрезы зуботехнические; иглы корневые",
+      "status": "review",
+      "confidence": 0.7224,
+      "clause_url": "/source/2-388-01",
+      "alternatives": [
+        {
+          "code": "22.29.29.190",
+          "title": "Боры зубные твердосплавные; головки стоматологические алмазные, в том числе фасонные; емкости для взятия, хранения и транспортировки биологических проб для выполнения клинических лабораторных исследований, а именно пробирки для взятия капиллярной крови, емкости для мочи, кала и мокроты; зеркала гинекологические полимерные по Куско; зонды урогенитальные; иглодержатели микрохирургические; инструменты вспомогательные; инструменты зондирующие, бужирующие; инструменты многоповерхностного воздействия; инструменты оттесняющие; инструменты режущие и ударные с острой (режущей) кромкой; каналонаполнители; микромоторы пневматические для наконечников стоматологических; модули медицинские климатизированные (чистое помещение); наборы гинекологические смотровые одноразовые стерильные; наконечники для микромоторов; наконечники стоматологические турбинные; ножницы микрохирургические; пинцеты микрохирургические; пульпоэкстракторы; фрезы зуботехнические; иглы корневые",
+          "confidence": 0.1757,
+          "clause_ref": "Приложение 2, позиция 388",
+          "clause_url": "/source/2-388-02"
+        },
+        {
+          "code": "32.50.11.110",
+          "title": "Боры зубные твердосплавные; головки стоматологические алмазные, в том числе фасонные; емкости для взятия, хранения и транспортировки биологических проб для выполнения клинических лабораторных исследований, а именно пробирки для взятия капиллярной крови, емкости для мочи, кала и мокроты; зеркала гинекологические полимерные по Куско; зонды урогенитальные; иглодержатели микрохирургические; инструменты вспомогательные; инструменты зондирующие, бужирующие; инструменты многоповерхностного воздействия; инструменты оттесняющие; инструменты режущие и ударные с острой (режущей) кромкой; каналонаполнители; микромоторы пневматические для наконечников стоматологических; модули медицинские климатизированные (чистое помещение); наборы гинекологические смотровые одноразовые стерильные; наконечники для микромоторов; наконечники стоматологические турбинные; ножницы микрохирургические; пинцеты микрохирургические; пульпоэкстракторы; фрезы зуботехнические; иглы корневые",
+          "confidence": 0.1757,
+          "clause_ref": "Приложение 2, позиция 388",
+          "clause_url": "/source/2-388-03"
+        },
+        {
+          "code": "32.50.11.190",
+          "title": "Боры зубные твердосплавные; головки стоматологические алмазные, в том числе фасонные; емкости для взятия, хранения и транспортировки биологических проб для выполнения клинических лабораторных исследований, а именно пробирки для взятия капиллярной крови, емкости для мочи, кала и мокроты; зеркала гинекологические полимерные по Куско; зонды урогенитальные; иглодержатели микрохирургические; инструменты вспомогательные; инструменты зондирующие, бужирующие; инструменты многоповерхностного воздействия; инструменты оттесняющие; инструменты режущие и ударные с острой (режущей) кромкой; каналонаполнители; микромоторы пневматические для наконечников стоматологических; модули медицинские климатизированные (чистое помещение); наборы гинекологические смотровые одноразовые стерильные; наконечники для микромоторов; наконечники стоматологические турбинные; ножницы микрохирургические; пинцеты микрохирургические; пульпоэкстракторы; фрезы зуботехнические; иглы корневые",
+          "confidence": 0.1757,
+          "clause_ref": "Приложение 2, позиция 388",
+          "clause_url": "/source/2-388-04"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Сетевой фильтр",
@@ -118,7 +382,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Различить удлинитель с защитой, фильтр помех и самостоятельное электрическое оборудование.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [
+        {
+          "code": "26.12.20",
+          "title": "Платы звуковые, видеоплаты, сетевые и аналогичные платы для машин автоматической обработки информации",
+          "confidence": 0.0738,
+          "clause_ref": "Приложение 3, позиция 36",
+          "clause_url": "/source/3-36-01"
+        },
+        {
+          "code": "26.12",
+          "title": "Платы печатные смонтированные, за исключением плат звуковых, видеоплат, сетевых и аналогичных плат для машин автоматической обработки информации, относящихся к коду 26.12.20 по Общероссийскому классификатору продукции по видам экономической деятельности ОК 034-2014 (КПЕС 2008)",
+          "confidence": 0.0643,
+          "clause_ref": "Приложение 3, позиция 35",
+          "clause_url": "/source/3-35-01"
+        },
+        {
+          "code": "32.50.13.190",
+          "title": "Фильтр дыхательный (тепловлагообменник/бактериальный фильтр), соответствующий коду 324650 вида медицинского изделия в соответствии с номенклатурной классификацией",
+          "confidence": 0.0398,
+          "clause_ref": "Приложение 2, позиция 418",
+          "clause_url": "/source/2-418-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Кулер для воды",
@@ -129,7 +426,26 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить наличие охлаждения, нагрева и очистки.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [
+        {
+          "code": "25.21.12",
+          "title": "Котлы водогрейные центрального отопления для производства горячей воды или пара низкого давления",
+          "confidence": 0.0494,
+          "clause_ref": "Приложение 2, позиция 96; Приложение 3, позиция 21",
+          "clause_url": "/source/2-96-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Линолеум",
@@ -140,7 +456,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить материал и основу покрытия.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Ковролин",
@@ -151,7 +478,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить материал и способ изготовления текстильного покрытия.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Пеноблок",
@@ -162,7 +500,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить состав и назначение строительного блока.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Гипсокартон",
@@ -173,7 +522,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить состав плиты и наличие специальных свойств.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Тележка гидравлическая",
@@ -184,7 +544,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Различить ручную тележку и самоходный вилочный погрузчик.",
+    "machine_suggestion": {
+      "code": "28.22.14.159",
+      "title": "Машины самоходные и тележки, оснащенные подъемным краном, прочие, не включенные в другие группировки",
+      "status": "review",
+      "confidence": 0.7067,
+      "clause_url": "/source/1-45-01",
+      "alternatives": [
+        {
+          "code": "32.50.22.150",
+          "title": "Обувь ортопедическая детская",
+          "confidence": 0.0132,
+          "clause_ref": "Приложение 2, позиция 395",
+          "clause_url": "/source/2-395-01"
+        },
+        {
+          "code": "31.01.11",
+          "title": "Мебель металлическая для офисов",
+          "confidence": 0.0127,
+          "clause_ref": "Приложение 3, позиция 231",
+          "clause_url": "/source/3-231-01"
+        },
+        {
+          "code": "26.40.43",
+          "title": "Усилители электрические звуковых частот; установки электрических усилителей звука",
+          "confidence": 0.0119,
+          "clause_ref": "Приложение 3, позиция 70",
+          "clause_url": "/source/3-70-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Сушилка для обуви",
@@ -195,7 +588,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить электрический нагрев и охват остаточной позиции бытовых приборов.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [
+        {
+          "code": "32.50.22.150",
+          "title": "Обувь ортопедическая детская",
+          "confidence": 0.0687,
+          "clause_ref": "Приложение 2, позиция 395",
+          "clause_url": "/source/2-395-01"
+        },
+        {
+          "code": "15.20.13",
+          "title": "Обувь с верхом из кожи, кроме спортивной обуви, обуви с защитным металлическим подноском и различной специальной обуви",
+          "confidence": 0.062,
+          "clause_ref": "Приложение 3, позиция 12",
+          "clause_url": "/source/3-12-01"
+        },
+        {
+          "code": "32.30.11.120",
+          "title": "Снаряжение лыжное, кроме обуви",
+          "confidence": 0.0589,
+          "clause_ref": "Приложение 2, позиция 165; Приложение 3, позиция 266",
+          "clause_url": "/source/2-165-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Отпариватель для одежды",
@@ -206,7 +632,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Различить утюг, парогенератор и иной нагревательный прибор.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [
+        {
+          "code": "32.99.11.140",
+          "title": "Одежда защитная огнестойкая",
+          "confidence": 0.0666,
+          "clause_ref": "Приложение 1, позиция 143; Приложение 3, позиция 276",
+          "clause_url": "/source/1-143-01"
+        },
+        {
+          "code": "14.19.32.130",
+          "title": "Одежда из текстильных материалов с пропиткой или покрытием",
+          "confidence": 0.0559,
+          "clause_ref": "Приложение 3, позиция 9",
+          "clause_url": "/source/3-9-01"
+        },
+        {
+          "code": "27.51.13",
+          "title": "Машины стиральные бытовые и машины для сушки одежды",
+          "confidence": 0.053,
+          "clause_ref": "Приложение 3, позиция 106",
+          "clause_url": "/source/3-106-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Самокат детский",
@@ -217,7 +676,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Различить игрушку, спортивный инвентарь и транспортное средство.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [
+        {
+          "code": "30.92.40",
+          "title": "Коляски детские и их части",
+          "confidence": 0.0795,
+          "clause_ref": "Приложение 2, позиция 138",
+          "clause_url": "/source/2-138-01"
+        },
+        {
+          "code": "32.50.22.150",
+          "title": "Обувь ортопедическая детская",
+          "confidence": 0.0567,
+          "clause_ref": "Приложение 2, позиция 395",
+          "clause_url": "/source/2-395-01"
+        },
+        {
+          "code": "10.11.32",
+          "title": "Свинина замороженная, в том числе для детского питания",
+          "confidence": 0.0505,
+          "clause_ref": "Приложение 2, позиция 446",
+          "clause_url": "/source/2-446-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Шезлонг садовый",
@@ -228,7 +720,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить материал и тип мебели; офисная мебель не подходит по умолчанию.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Гамак",
@@ -239,7 +742,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить материал и тип изделия.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Рюкзак городской",
@@ -250,7 +764,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить материал и код галантерейного изделия.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Наушники беспроводные",
@@ -261,7 +786,26 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Проверить аудиооборудование; не приравнивать автоматически к компьютерному устройству ввода/вывода.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [
+        {
+          "code": "26.30.23",
+          "title": "Аппараты телефонные прочие, устройства и аппаратура для передачи и приема речи, изображений или других данных, включая оборудование коммуникационное для работы в проводных или беспроводных сетях связи (например, локальных и глобальных сетях)",
+          "confidence": 0.0461,
+          "clause_ref": "Приложение 2, позиция 213; Приложение 3, позиция 58",
+          "clause_url": "/source/2-213-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Wi-Fi роутер",
@@ -272,7 +816,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить маршрутизацию/коммутацию и тип сети.",
+    "machine_suggestion": {
+      "code": "26.30.11.110",
+      "title": "Средства связи, выполняющие функцию систем коммутации",
+      "status": "ok",
+      "confidence": 0.9716,
+      "clause_url": "/source/2-206-01",
+      "alternatives": [
+        {
+          "code": "27.12.2",
+          "title": "Устройства коммутации или защиты электрических цепей на напряжение не более | кВ",
+          "confidence": 0.1168,
+          "clause_ref": "Приложение 3, позиция 95",
+          "clause_url": "/source/3-95-01"
+        },
+        {
+          "code": "27.12.1",
+          "title": "Устройства для коммутации или защиты электрических цепей на напряжение более 1 кВ",
+          "confidence": 0.1161,
+          "clause_ref": "Приложение 3, позиция 94",
+          "clause_url": "/source/3-94-01"
+        },
+        {
+          "code": "27.12.10.190",
+          "title": "Устройства для коммутации или защиты электрических цепей на напряжение более | кВ прочие, не включенные в другие группировки",
+          "confidence": 0.114,
+          "clause_ref": "Приложение 2, позиция 110",
+          "clause_url": "/source/2-110-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Одеяло шерстяное",
@@ -283,7 +860,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Различить готовое постельное изделие и ткань.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Шторы блэкаут",
@@ -294,7 +882,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Различить готовые шторы и ткань, уточнить материал.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Ковер шерстяной",
@@ -305,7 +904,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить способ изготовления ковра.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Плитка керамическая",
@@ -316,7 +926,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить назначение и вид керамического изделия.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Налобный фонарь",
@@ -327,7 +948,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Различить переносной фонарь и стационарный светильник.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Замок врезной",
@@ -338,7 +970,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить механический/электромеханический тип и назначение.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Унитаз керамический",
@@ -349,7 +992,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Проверить конкретную позицию санитарной керамики.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Шариковая ручка",
@@ -360,7 +1014,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Проверить канцелярское изделие по точному коду, не общий инструмент.",
+    "machine_suggestion": {
+      "code": "28.15.10",
+      "title": "Подшипники шариковые или роликовые",
+      "status": "review",
+      "confidence": 0.6712,
+      "clause_url": "/source/1-35-01",
+      "alternatives": [
+        {
+          "code": "13.20.44.120",
+          "title": "Маски марлевые медицинские стерильные и нестерильные; отрезы марлевые медицинские стерильные и нестерильные; пакеты перевязочные медицинские стерильные; тампоны, сетоны, турунды, шарики марлевые стерильные и нестерильные",
+          "confidence": 0.052,
+          "clause_ref": "Приложение 2, позиция 375",
+          "clause_url": "/source/2-375-01"
+        },
+        {
+          "code": "21.20.24.131",
+          "title": "Маски марлевые медицинские стерильные и нестерильные; отрезы марлевые медицинские стерильные и нестерильные; пакеты перевязочные медицинские стерильные; тампоны, сетоны, турунды, шарики марлевые стерильные и нестерильные",
+          "confidence": 0.052,
+          "clause_ref": "Приложение 2, позиция 375",
+          "clause_url": "/source/2-375-02"
+        },
+        {
+          "code": "21.20.24.140",
+          "title": "Маски марлевые медицинские стерильные и нестерильные; отрезы марлевые медицинские стерильные и нестерильные; пакеты перевязочные медицинские стерильные; тампоны, сетоны, турунды, шарики марлевые стерильные и нестерильные",
+          "confidence": 0.052,
+          "clause_ref": "Приложение 2, позиция 375",
+          "clause_url": "/source/2-375-03"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Рамка для фото",
@@ -371,7 +1058,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить материал рамки.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Календарь настенный",
@@ -382,7 +1080,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Проверить печатную продукцию по точному виду.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Пылесос ручной",
@@ -393,7 +1102,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить принцип работы и охват остаточной позиции бытовых приборов.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [
+        {
+          "code": "28.24.1",
+          "title": "Инструменты ручные электрические; инструменты ручные прочие с механизированным приводом",
+          "confidence": 0.0312,
+          "clause_ref": "Приложение 1, позиция 53; Приложение 3, позиция 148",
+          "clause_url": "/source/1-53-01"
+        },
+        {
+          "code": "28.24.2",
+          "title": "Части ручных инструментов с механизированным приводом",
+          "confidence": 0.0312,
+          "clause_ref": "Приложение 1, позиция 54",
+          "clause_url": "/source/1-54-01"
+        },
+        {
+          "code": "25.73.40",
+          "title": "Инструменты рабочие сменные для станков или для ручного инструмента (с механическим приводом или без него)",
+          "confidence": 0.0266,
+          "clause_ref": "Приложение 1, позиция 23; Приложение 3, позиция 27",
+          "clause_url": "/source/1-23-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Степлер канцелярский",
@@ -404,7 +1146,26 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Различить ручное канцелярское приспособление и офисную машину.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [
+        {
+          "code": "17.23.13.199",
+          "title": "Принадлежности канцелярские прочие из бумаги или картона, не включенные в другие группировки",
+          "confidence": 0.0622,
+          "clause_ref": "Приложение 2, позиция 8",
+          "clause_url": "/source/2-8-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Вентилятор напольный",
@@ -415,7 +1176,18 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить мощность и бытовое назначение.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Увлажнитель воздуха",
@@ -426,7 +1198,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить принцип действия и наличие функции очистки.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [
+        {
+          "code": "28.25.14.110",
+          "title": "Оборудование и установки для фильтрования или очистки воздуха",
+          "confidence": 0.0508,
+          "clause_ref": "Приложение 3, позиция 154",
+          "clause_url": "/source/3-154-01"
+        },
+        {
+          "code": "42.99.12.110",
+          "title": "Площадки спортивные для спортивных игр на открытом воздухе",
+          "confidence": 0.0482,
+          "clause_ref": "Приложение 2, позиция 188; Приложение 3, позиция 277",
+          "clause_url": "/source/2-188-01"
+        },
+        {
+          "code": "32.50.50.190",
+          "title": "Облучатели-рециркуляторы воздуха, рециркуляторы бактерицидные, соответствующие кодам 131980, 132020, 132060, 132070, 152690, 152700, 160030, 270540, 292620, 375930 вида медицинского изделия в соответствии с номенклатурной классификацией",
+          "confidence": 0.0359,
+          "clause_ref": "Приложение 2, позиция 360",
+          "clause_url": "/source/2-360-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Фитнес-браслет",
@@ -437,7 +1242,40 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Уточнить основные функции и медицинский статус.",
+    "machine_suggestion": {
+      "code": "32.30.14.120",
+      "title": "Оборудование для занятий физкультурой, гимнастикой и атлетикой, занятий в спортзалах, фитнес-центрах",
+      "status": "review",
+      "confidence": 0.7131,
+      "clause_url": "/source/2-169-01",
+      "alternatives": [
+        {
+          "code": "20.14.5",
+          "title": "Соединения сераорганические и прочие соединения элементоорганические; соединения гетероциклические, не включенные в другие группировки",
+          "confidence": 0.0111,
+          "clause_ref": "Приложение 2, позиция 26",
+          "clause_url": "/source/2-26-01"
+        },
+        {
+          "code": "27.11.1",
+          "title": "Электродвигатели мощностью не более 37,5 Вт; электродвигатели постоянного тока прочие; генераторы постоянного тока",
+          "confidence": 0.0109,
+          "clause_ref": "Приложение 2, позиция 106; Приложение 3, позиция 91",
+          "clause_url": "/source/2-106-01"
+        },
+        {
+          "code": "20.13.2",
+          "title": "Элементы химические, не включенные в другие группировки; неорганические кислоты и соединения",
+          "confidence": 0.0108,
+          "clause_ref": "Приложение 2, позиция 13",
+          "clause_url": "/source/2-13-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   },
   {
     "query": "Бритва электрическая",
@@ -448,6 +1286,39 @@
     "label_kind": "unclear",
     "reviewer": "",
     "reviewed_at": "",
-    "evidence": ""
+    "evidence": "",
+    "review_status": "needs_domain_decision",
+    "required_evidence": "Проверить конкретный вид бытового электромеханического прибора.",
+    "machine_suggestion": {
+      "code": null,
+      "title": null,
+      "status": "not_found",
+      "confidence": 0.0,
+      "clause_url": null,
+      "alternatives": [
+        {
+          "code": "27.51.23.130",
+          "title": "Утюги электрические",
+          "confidence": 0.084,
+          "clause_ref": "Приложение 2, позиция 338",
+          "clause_url": "/source/2-338-01"
+        },
+        {
+          "code": "27.90.40.190",
+          "title": "Оборудование электрическое прочее, не включенное в другие группировки",
+          "confidence": 0.0803,
+          "clause_ref": "Приложение 2, позиция 346",
+          "clause_url": "/source/2-346-01"
+        },
+        {
+          "code": "27.11.4",
+          "title": "Трансформаторы электрические",
+          "confidence": 0.0795,
+          "clause_ref": "Приложение 2, позиция 109; Приложение 3, позиция 90",
+          "clause_url": "/source/2-109-01"
+        }
+      ],
+      "is_ground_truth": false
+    }
   }
 ]

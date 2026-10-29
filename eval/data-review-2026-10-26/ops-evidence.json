@@ -1,0 +1,1304 @@
+{
+  "checked_at": "2026-10-26T21:41:43+0700",
+  "compose_config": {
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "services": {
+    "exit_code": 0,
+    "stdout": "{\"Command\":\"\\\"uvicorn app.main:ap…\\\"\",\"CreatedAt\":\"2026-10-26 01:04:59 +0700 +07\",\"Engine\":\"\",\"ExitCode\":0,\"Health\":\"healthy\",\"ID\":\"a2035b593e1b\",\"Image\":\"dora-app\",\"Labels\":\"com.docker.compose.project.working_dir=D:\\\\b2b project\\\\Dora-B2BCase,com.docker.compose.service=api,com.docker.compose.version=5.5.1,com.docker.compose.config-hash=616d7ac6888bee63d3d53061c4018ab81d7360273ec7ca0c126526d2d4cd4eac,com.docker.compose.container-number=1,com.docker.compose.image=sha256:f7d8a1942a8781771cac4a901332058f8229bdf238eef340e27b344311163095,com.docker.compose.replace=api-1,desktop.docker.io/ports.scheme=v2,desktop.docker.io/ports/8000/tcp=0.0.0.0:8000,com.docker.compose.depends_on=redis:service_healthy:false,qdrant:service_started:false,postgres:service_healthy:false,com.docker.compose.oneoff=False,com.docker.compose.project=dora-b2bcase,com.docker.compose.project.config_files=D:\\\\b2b project\\\\Dora-B2BCase\\\\docker-compose.yml\",\"LocalVolumes\":\"1\",\"Mounts\":\"dora-b2bcase_c…\",\"Name\":\"dora-b2bcase-api-1\",\"Names\":\"dora-b2bcase-api-1\",\"Networks\":\"dora-b2bcase_default\",\"Ports\":\"0.0.0.0:8000-\\u003e8000/tcp\",\"Project\":\"dora-b2bcase\",\"Publishers\":[{\"URL\":\"0.0.0.0\",\"TargetPort\":8000,\"PublishedPort\":8000,\"Protocol\":\"tcp\"}],\"RunningFor\":\"21 hours ago\",\"Service\":\"api\",\"Size\":\"0B\",\"State\":\"running\",\"Status\":\"Up 7 minutes (healthy)\"}\n{\"Command\":\"\\\"docker-entrypoint.s…\\\"\",\"CreatedAt\":\"2026-10-23 17:48:01 +0700 +07\",\"Engine\":\"\",\"ExitCode\":0,\"Health\":\"healthy\",\"ID\":\"067bbf703c43\",\"Image\":\"postgres:16-alpine\",\"Labels\":\"com.docker.compose.config-hash=070f475af5cdaaab7c14979c75f526d0dd7568035077e6e4116148b497083fbf,com.docker.compose.container-number=1,com.docker.compose.project.config_files=C:\\\\Users\\\\hooom\\\\OneDrive\\\\Desktop\\\\fff\\\\Dora-B2BCase\\\\docker-compose.yml,com.docker.compose.project.working_dir=C:\\\\Users\\\\hooom\\\\OneDrive\\\\Desktop\\\\fff\\\\Dora-B2BCase,com.docker.compose.version=5.5.1,desktop.docker.io/ports.scheme=v2,com.docker.compose.depends_on=,com.docker.compose.image=sha256:cbf42f0edc946c0bc1b8eeed62403734e1f25dc67a3491455d07a92fdb558b28,com.docker.compose.oneoff=False,com.docker.compose.project=dora-b2bcase,com.docker.compose.service=postgres\",\"LocalVolumes\":\"1\",\"Mounts\":\"dora-b2bcase_p…\",\"Name\":\"dora-b2bcase-postgres-1\",\"Names\":\"dora-b2bcase-postgres-1\",\"Networks\":\"dora-b2bcase_default\",\"Ports\":\"5432/tcp\",\"Project\":\"dora-b2bcase\",\"Publishers\":[{\"URL\":\"\",\"TargetPort\":5432,\"PublishedPort\":0,\"Protocol\":\"tcp\"}],\"RunningFor\":\"3 days ago\",\"Service\":\"postgres\",\"Size\":\"0B\",\"State\":\"running\",\"Status\":\"Up 7 minutes (healthy)\"}\n{\"Command\":\"\\\"./entrypoint.sh\\\"\",\"CreatedAt\":\"2026-10-23 17:48:01 +0700 +07\",\"Engine\":\"\",\"ExitCode\":0,\"Health\":\"\",\"ID\":\"5ee97c03ecd9\",\"Image\":\"qdrant/qdrant:v1.14.1\",\"Labels\":\"com.docker.compose.config-hash=6f21872af39596dbba7184c3a2ebc34749e7ae28db0bf2a09ee61077c0a44e84,com.docker.compose.depends_on=,com.docker.compose.service=qdrant,desktop.docker.io/ports.scheme=v2,org.opencontainers.image.vendor=Qdrant,com.docker.compose.project.config_files=C:\\\\Users\\\\hooom\\\\OneDrive\\\\Desktop\\\\fff\\\\Dora-B2BCase\\\\docker-compose.yml,com.docker.compose.project.working_dir=C:\\\\Users\\\\hooom\\\\OneDrive\\\\Desktop\\\\fff\\\\Dora-B2BCase,com.docker.compose.version=5.5.1,desktop.docker.io/ports/6333/tcp=127.0.0.1:6333,org.opencontainers.image.url=https://qdrant.com/,com.docker.compose.image=sha256:d758b8a5c91fcbec82e7fc09a37f2027c4ca8cdc6194769b44d9ea06db1ad108,org.opencontainers.image.description=Official Qdrant image,org.opencontainers.image.title=Qdrant,com.docker.compose.container-number=1,com.docker.compose.oneoff=False,com.docker.compose.project=dora-b2bcase,org.opencontainers.image.documentation=https://qdrant.com/docs,org.opencontainers.image.source=https://github.com/qdrant/qdrant,org.opencontainers.image.version=v1.14.1\",\"LocalVolumes\":\"1\",\"Mounts\":\"dora-b2bcase_q…\",\"Name\":\"dora-b2bcase-qdrant-1\",\"Names\":\"dora-b2bcase-qdrant-1\",\"Networks\":\"dora-b2bcase_default\",\"Ports\":\"127.0.0.1:6333-\\u003e6333/tcp\",\"Project\":\"dora-b2bcase\",\"Publishers\":[{\"URL\":\"127.0.0.1\",\"TargetPort\":6333,\"PublishedPort\":6333,\"Protocol\":\"tcp\"}],\"RunningFor\":\"3 days ago\",\"Service\":\"qdrant\",\"Size\":\"0B\",\"State\":\"running\",\"Status\":\"Up 7 minutes\"}\n{\"Command\":\"\\\"docker-entrypoint.s…\\\"\",\"CreatedAt\":\"2026-10-23 17:48:01 +0700 +07\",\"Engine\":\"\",\"ExitCode\":0,\"Health\":\"healthy\",\"ID\":\"9c846237e6eb\",\"Image\":\"redis:7-alpine\",\"Labels\":\"com.docker.compose.oneoff=False,com.docker.compose.project=dora-b2bcase,com.docker.compose.service=redis,desktop.docker.io/ports.scheme=v2,com.docker.compose.config-hash=bc01c3edb800b259f3cd1b0417d535e54125f03e075d4bf57536880ba39fd0b8,com.docker.compose.image=sha256:8be847644e195abc4c10c8d9936cfa45332eccc6b714fa7b186ff43f1f4d5579,com.docker.compose.project.config_files=C:\\\\Users\\\\hooom\\\\OneDrive\\\\Desktop\\\\fff\\\\Dora-B2BCase\\\\docker-compose.yml,com.docker.compose.project.working_dir=C:\\\\Users\\\\hooom\\\\OneDrive\\\\Desktop\\\\fff\\\\Dora-B2BCase,com.docker.compose.version=5.5.1,com.docker.compose.container-number=1,com.docker.compose.depends_on=\",\"LocalVolumes\":\"1\",\"Mounts\":\"01b95fd46c2a46…\",\"Name\":\"dora-b2bcase-redis-1\",\"Names\":\"dora-b2bcase-redis-1\",\"Networks\":\"dora-b2bcase_default\",\"Ports\":\"6379/tcp\",\"Project\":\"dora-b2bcase\",\"Publishers\":[{\"URL\":\"\",\"TargetPort\":6379,\"PublishedPort\":0,\"Protocol\":\"tcp\"}],\"RunningFor\":\"3 days ago\",\"Service\":\"redis\",\"Size\":\"0B\",\"State\":\"running\",\"Status\":\"Up 7 minutes (healthy)\"}\n{\"Command\":\"\\\"celery -A app.worke…\\\"\",\"CreatedAt\":\"2026-10-26 01:05:01 +0700 +07\",\"Engine\":\"\",\"ExitCode\":0,\"Health\":\"\",\"ID\":\"b29a0cf300a4\",\"Image\":\"dora-app\",\"Labels\":\"com.docker.compose.depends_on=redis:service_healthy:false,api:service_started:false,postgres:service_healthy:false,com.docker.compose.oneoff=False,com.docker.compose.project.working_dir=D:\\\\b2b project\\\\Dora-B2BCase,com.docker.compose.service=worker,com.docker.compose.version=5.5.1,desktop.docker.io/ports.scheme=v2,com.docker.compose.config-hash=705355af2d0f3fb872e9b81d400a85dbfdb8666e14f06561e9d62073f6ae711c,com.docker.compose.container-number=1,com.docker.compose.image=sha256:f7d8a1942a8781771cac4a901332058f8229bdf238eef340e27b344311163095,com.docker.compose.project=dora-b2bcase,com.docker.compose.project.config_files=D:\\\\b2b project\\\\Dora-B2BCase\\\\docker-compose.yml,com.docker.compose.replace=worker-1\",\"LocalVolumes\":\"1\",\"Mounts\":\"dora-b2bcase_c…\",\"Name\":\"dora-b2bcase-worker-1\",\"Names\":\"dora-b2bcase-worker-1\",\"Networks\":\"dora-b2bcase_default\",\"Ports\":\"8000/tcp\",\"Project\":\"dora-b2bcase\",\"Publishers\":[{\"URL\":\"\",\"TargetPort\":8000,\"PublishedPort\":0,\"Protocol\":\"tcp\"}],\"RunningFor\":\"21 hours ago\",\"Service\":\"worker\",\"Size\":\"0B\",\"State\":\"running\",\"Status\":\"Up 7 minutes\"}\n",
+    "stderr": ""
+  },
+  "images": {
+    "exit_code": 0,
+    "stdout": "CONTAINER                 REPOSITORY          TAG                 PLATFORM            IMAGE ID            SIZE                CREATED\ndora-b2bcase-api-1        dora-app            latest              linux/amd64         7f38f7150e92        1.18GB              21 hours ago\ndora-b2bcase-postgres-1   postgres            16-alpine           linux/amd64         f46107955874        116MB               4 days ago\ndora-b2bcase-qdrant-1     qdrant/qdrant       v1.14.1             linux/amd64         419d72603f53        78MB                17 months ago\ndora-b2bcase-redis-1      redis               7-alpine            linux/amd64         57e4255cc971        16.3MB              4 days ago\ndora-b2bcase-worker-1     dora-app            latest              linux/amd64         7f38f7150e92        1.18GB              21 hours ago\n",
+    "stderr": ""
+  },
+  "resources": {
+    "exit_code": 0,
+    "stdout": "dora-b2bcase-worker-1 970MiB / 2GiB 0.36%\ndora-b2bcase-api-1 952.9MiB / 2GiB 0.20%\ndora-b2bcase-postgres-1 40.43MiB / 256MiB 2.57%\ndora-b2bcase-redis-1 7.992MiB / 128MiB 0.92%\ndora-b2bcase-qdrant-1 68.75MiB / 768MiB 0.03%\n",
+    "stderr": ""
+  },
+  "health": {
+    "status": "ok",
+    "service": "dora-api",
+    "classifier_backend": "catalog",
+    "version": "0.4.0"
+  },
+  "ready": {
+    "status": "ready",
+    "service": "dora-api",
+    "classifier_backend": "catalog",
+    "version": "0.4.0",
+    "vector_search": {
+      "enabled": true,
+      "embedder": "st-multilingual-e5-small-v2-9b1a13eefd5f",
+      "dim": 384,
+      "positions": 984,
+      "store": "qdrant",
+      "reranker": "reranker.st-multilingual-e5-small-v2-9b1a13eefd5f.json",
+      "scoring": "vector-features"
+    },
+    "vector_health": {
+      "classifier_up": true,
+      "vector_search_enabled": true,
+      "embedder_up": true,
+      "embedder": "st-multilingual-e5-small-v2-9b1a13eefd5f",
+      "dim": 384,
+      "store": "qdrant",
+      "store_up": true,
+      "positions": 984,
+      "degraded": false
+    },
+    "job_store": "postgres",
+    "queue_backend": "celery",
+    "llm_verifier": "off"
+  },
+  "catalog": {
+    "rows": 1126,
+    "columns": [
+      "record_id",
+      "appendix",
+      "position",
+      "name",
+      "okpd2",
+      "code_role",
+      "min_share_pct",
+      "max_foreign_share_pct",
+      "confirming_document",
+      "pdf_page_start",
+      "pdf_page_end",
+      "source_code_cell",
+      "review_required"
+    ],
+    "sha256": "7fbdd4c90d2259042715399168c527f57df4c70d816e55f0664699bdc58e825e",
+    "modified_at": "2026-10-25T18:05:18+00:00",
+    "source_files": [
+      "data.csv",
+      "data.json"
+    ]
+  },
+  "versions": {
+    "versions": [
+      {
+        "version_id": "20261025T180518498880-040def4d00ff",
+        "rows": 1126,
+        "created_at": "2026-10-25T18:05:18+00:00",
+        "sha256": "040def4d00ff59802410c7339f586f5e98bb3ec56ddf0ff006d4bdc7d857b961",
+        "files": [
+          "data.csv",
+          "data.json"
+        ]
+      }
+    ],
+    "keep": 10,
+    "current": {
+      "rows": 1126,
+      "columns": [
+        "record_id",
+        "appendix",
+        "position",
+        "name",
+        "okpd2",
+        "code_role",
+        "min_share_pct",
+        "max_foreign_share_pct",
+        "confirming_document",
+        "pdf_page_start",
+        "pdf_page_end",
+        "source_code_cell",
+        "review_required"
+      ],
+      "sha256": "7fbdd4c90d2259042715399168c527f57df4c70d816e55f0664699bdc58e825e",
+      "modified_at": "2026-10-25T18:05:18+00:00",
+      "source_files": [
+        "data.csv",
+        "data.json"
+      ]
+    }
+  },
+  "retention_dry_run": {
+    "dry_run": true,
+    "audit_deleted": 0,
+    "feedback_deleted": 0,
+    "audit_retention_days": 90,
+    "feedback_retention_days": 0,
+    "skipped": null
+  },
+  "backup_sha256": "190ff0dcff0ae86847f8bfbc7bf7ea90b9034c71771e3e6e3514930ddb2650a6",
+  "feedback_export": {
+    "readable": true,
+    "lines": 2,
+    "header": "query;proposed_code;verdict;correct_code;comment;created_at"
+  },
+  "classification": {
+    "query": "Электрочайники",
+    "code": "27.51.24.110",
+    "title": "Электрочайники",
+    "confidence": 0.995,
+    "confidence_raw": 0.995,
+    "status": "ok",
+    "clause_ref": "Приложение 2, позиция 339",
+    "clause_url": "/source/2-339-01",
+    "code_role": "Включён",
+    "catalog_review_required": false,
+    "verifier": null,
+    "verifier_note": null,
+    "alternatives": [
+      {
+        "code": "27.32",
+        "title": "Провода и кабели электронные и электрические прочие",
+        "confidence": 0.0131,
+        "clause_ref": "Приложение 2, позиция 113; Приложение 3, позиция 103",
+        "clause_url": "/source/2-113-01"
+      },
+      {
+        "code": "27.51.25.120",
+        "title": "Кипятильники погружные электрические",
+        "confidence": 0.0124,
+        "clause_ref": "Приложение 2, позиция 341",
+        "clause_url": "/source/2-341-01"
+      },
+      {
+        "code": "26.11",
+        "title": "Компоненты электронные",
+        "confidence": 0.0123,
+        "clause_ref": "Приложение 3, позиция 30",
+        "clause_url": "/source/3-30-01"
+      }
+    ],
+    "latency_ms": 228.137,
+    "contract_version": "1.0"
+  },
+  "classification_seconds": 0.24461170000722632,
+  "database_schema": {
+    "exit_code": 0,
+    "stdout": "      version_num      \n-----------------------\n 0002_feedback_comment\n(1 row)\n\n column_name \n-------------\n comment\n(1 row)\n\n",
+    "stderr": ""
+  },
+  "collections_before": {
+    "result": {
+      "collections": [
+        {
+          "name": "pp1875_items_dense_st_multilingual_e5_small_v2_9b1a13eefd5f_e63967ac51454ad9"
+        }
+      ]
+    },
+    "status": "ok",
+    "time": 4.544e-06
+  },
+  "collection_details_before": {
+    "pp1875_items_dense_st_multilingual_e5_small_v2_9b1a13eefd5f_e63967ac51454ad9": {
+      "status": "green",
+      "optimizer_status": "ok",
+      "indexed_vectors_count": 0,
+      "points_count": 984,
+      "segments_count": 2,
+      "config": {
+        "params": {
+          "vectors": {
+            "size": 384,
+            "distance": "Cosine"
+          },
+          "shard_number": 1,
+          "replication_factor": 1,
+          "write_consistency_factor": 1,
+          "on_disk_payload": true
+        },
+        "hnsw_config": {
+          "m": 16,
+          "ef_construct": 100,
+          "full_scan_threshold": 10000,
+          "max_indexing_threads": 0,
+          "on_disk": false
+        },
+        "optimizer_config": {
+          "deleted_threshold": 0.2,
+          "vacuum_min_vector_number": 1000,
+          "default_segment_number": 0,
+          "max_segment_size": null,
+          "memmap_threshold": null,
+          "indexing_threshold": 20000,
+          "flush_interval_sec": 5,
+          "max_optimization_threads": null
+        },
+        "wal_config": {
+          "wal_capacity_mb": 32,
+          "wal_segments_ahead": 0
+        },
+        "quantization_config": null,
+        "strict_mode_config": {
+          "enabled": false
+        }
+      },
+      "payload_schema": {}
+    }
+  },
+  "catalog_before_update": {
+    "rows": 1126,
+    "columns": [
+      "record_id",
+      "appendix",
+      "position",
+      "name",
+      "okpd2",
+      "code_role",
+      "min_share_pct",
+      "max_foreign_share_pct",
+      "confirming_document",
+      "pdf_page_start",
+      "pdf_page_end",
+      "source_code_cell",
+      "review_required"
+    ],
+    "sha256": "7fbdd4c90d2259042715399168c527f57df4c70d816e55f0664699bdc58e825e",
+    "modified_at": "2026-10-25T18:05:18+00:00",
+    "source_files": [
+      "data.csv",
+      "data.json"
+    ]
+  },
+  "update_after_pdf": {
+    "dry_run": false,
+    "applied": true,
+    "rows_total": 1126,
+    "rows_valid": 1126,
+    "errors": [],
+    "warnings": [
+      {
+        "row": 843,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 855,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 862,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 863,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 865,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 866,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 867,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 868,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 869,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 870,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 879,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 882,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 883,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 884,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 885,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 886,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 887,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 888,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 891,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 892,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 893,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 894,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 896,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 898,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 900,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 907,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 918,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 921,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 922,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 923,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 925,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 926,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 927,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 928,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 932,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 933,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 934,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 935,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 938,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 945,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 951,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 954,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 955,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 956,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 973,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 974,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 975,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 976,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 977,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 978,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 979,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 980,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 981,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 982,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 983,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 984,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 986,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 987,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 988,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 990,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 991,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 992,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 994,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 995,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 998,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 999,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1002,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1003,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1004,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1005,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1006,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1007,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1008,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1009,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1010,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1013,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1018,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1019,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1021,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1023,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1024,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1025,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1026,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1029,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1032,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1033,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1034,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1035,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1038,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1039,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1040,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1041,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1042,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1043,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1044,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1045,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1046,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1047,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1048,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1049,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1050,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1052,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1053,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1054,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1055,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1056,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1057,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1058,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1059,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1061,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1062,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1064,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1065,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1075,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1076,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1077,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1078,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1079,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1081,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1082,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1087,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1088,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1089,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1090,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1091,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1092,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1093,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1101,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1102,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1103,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1104,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1105,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1106,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1107,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1108,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1109,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1110,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1111,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1112,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1115,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1119,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1120,
+        "field": "name",
+        "message": "Повторяющаяся пара (ОКПД2, наименование)",
+        "severity": "warning"
+      },
+      {
+        "row": 1121,
+        "field": "okpd2",
+        "message": "Код ОКПД2 пуст (code_role=Не указан) — позиция помечена для ручной проверки",
+        "severity": "warning"
+      },
+      {
+        "row": 1122,
+        "field": "okpd2",
+        "message": "Код ОКПД2 пуст (code_role=Не указан) — позиция помечена для ручной проверки",
+        "severity": "warning"
+      },
+      {
+        "row": 1123,
+        "field": "okpd2",
+        "message": "Код ОКПД2 пуст (code_role=Не указан) — позиция помечена для ручной проверки",
+        "severity": "warning"
+      },
+      {
+        "row": 1124,
+        "field": "okpd2",
+        "message": "Код ОКПД2 пуст (code_role=Не указан) — позиция помечена для ручной проверки",
+        "severity": "warning"
+      },
+      {
+        "row": 1125,
+        "field": "okpd2",
+        "message": "Код ОКПД2 пуст (code_role=Не указан) — позиция помечена для ручной проверки",
+        "severity": "warning"
+      },
+      {
+        "row": 1126,
+        "field": "okpd2",
+        "message": "Код ОКПД2 пуст (code_role=Не указан) — позиция помечена для ручной проверки",
+        "severity": "warning"
+      }
+    ],
+    "catalog": {
+      "rows": 1126,
+      "columns": [
+        "record_id",
+        "appendix",
+        "position",
+        "name",
+        "okpd2",
+        "code_role",
+        "min_share_pct",
+        "max_foreign_share_pct",
+        "confirming_document",
+        "pdf_page_start",
+        "pdf_page_end",
+        "source_code_cell",
+        "review_required"
+      ],
+      "sha256": "af145c60e7688e32ad275d5b58dec7ac26d33fd9f1427faf61eb50c7a3d810b4",
+      "modified_at": "2026-10-26T14:43:50+00:00",
+      "source_files": [
+        "data.csv",
+        "data.json"
+      ]
+    },
+    "reindex_required": false
+  },
+  "final_catalog": {
+    "rows": 1126,
+    "columns": [
+      "record_id",
+      "appendix",
+      "position",
+      "name",
+      "okpd2",
+      "code_role",
+      "min_share_pct",
+      "max_foreign_share_pct",
+      "confirming_document",
+      "pdf_page_start",
+      "pdf_page_end",
+      "source_code_cell",
+      "review_required"
+    ],
+    "sha256": "af145c60e7688e32ad275d5b58dec7ac26d33fd9f1427faf61eb50c7a3d810b4",
+    "modified_at": "2026-10-26T14:45:14+00:00",
+    "source_files": [
+      "data.csv",
+      "data.json"
+    ]
+  },
+  "rollback_test": {
+    "pass": true,
+    "restored_version": "20261026T144350554941-190ff0dcff0a",
+    "sha256": "7fbdd4c90d2259042715399168c527f57df4c70d816e55f0664699bdc58e825e"
+  },
+  "qdrant_restart_exit": 0,
+  "qdrant_persistence": {
+    "pass": true,
+    "before": {
+      "pp1875_items_dense_st_multilingual_e5_small_v2_9b1a13eefd5f_6a6b93f791c3c1f1": 984
+    },
+    "after": {
+      "pp1875_items_dense_st_multilingual_e5_small_v2_9b1a13eefd5f_6a6b93f791c3c1f1": 984
+    }
+  },
+  "api_restart_exit": 0,
+  "ready_after_restart": {
+    "status": "ready",
+    "service": "dora-api",
+    "classifier_backend": "catalog",
+    "version": "0.4.0",
+    "vector_search": {
+      "enabled": true,
+      "embedder": "st-multilingual-e5-small-v2-9b1a13eefd5f",
+      "dim": 384,
+      "positions": 984,
+      "store": "qdrant",
+      "reranker": "reranker.st-multilingual-e5-small-v2-9b1a13eefd5f.json",
+      "scoring": "vector-features"
+    },
+    "vector_health": {
+      "classifier_up": true,
+      "vector_search_enabled": true,
+      "embedder_up": true,
+      "embedder": "st-multilingual-e5-small-v2-9b1a13eefd5f",
+      "dim": 384,
+      "store": "qdrant",
+      "store_up": true,
+      "positions": 984,
+      "degraded": false
+    },
+    "job_store": "postgres",
+    "queue_backend": "celery",
+    "llm_verifier": "off"
+  },
+  "catalog_after_restart": {
+    "rows": 1126,
+    "columns": [
+      "record_id",
+      "appendix",
+      "position",
+      "name",
+      "okpd2",
+      "code_role",
+      "min_share_pct",
+      "max_foreign_share_pct",
+      "confirming_document",
+      "pdf_page_start",
+      "pdf_page_end",
+      "source_code_cell",
+      "review_required"
+    ],
+    "sha256": "af145c60e7688e32ad275d5b58dec7ac26d33fd9f1427faf61eb50c7a3d810b4",
+    "modified_at": "2026-10-26T14:45:14+00:00",
+    "source_files": [
+      "data.csv",
+      "data.json"
+    ]
+  },
+  "catalog_survives_restart": true,
+  "qdrant_client_version": "1.14.3",
+  "qdrant_server_version": "1.14.1",
+  "reindex_endpoint": {
+    "applicable": false,
+    "reason": "ML_ENABLED=false; catalog backend builds and refreshes its dense Qdrant collection automatically. /admin/reindex is for the separate experimental backend."
+  },
+  "regression_tests": {
+    "passed": 41,
+    "failed": 0,
+    "files": [
+      "test_pdf_source_corrections.py",
+      "test_contract_invariants.py",
+      "test_catalog_admin.py"
+    ]
+  },
+  "known_transient_error": "Connection refused during intentional Qdrant restart; after restart /health/ready reports store_up=true and degraded=false.",
+  "feedback_integration_tests": {
+    "passed": 12,
+    "failed": 0,
+    "database": "isolated temporary SQLite",
+    "warnings": "2 Python 3.12 datetime adapter deprecations"
+  },
+  "xs_source_view": {
+    "contains_corrected_size": true,
+    "contains_ocr_error": false
+  }
+}

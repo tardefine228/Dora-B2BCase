@@ -1,0 +1,164 @@
+{
+  "artifact": "reranker.st-multilingual-e5-small-v2-9b1a13eefd5f.json",
+  "artifact_sha256": "7f41d251681eb7c27912e518efc0e8513cc339563791e458997883378b2ba951",
+  "embedder_tag": "st-multilingual-e5-small-v2-9b1a13eefd5f",
+  "catalog_rows": 984,
+  "baseline": {
+    "artifact": "reranker.json",
+    "sha256": "0863430621afe96eba09ac7181429e84842e081849601e9049735abea07f3c0f",
+    "trained_in_run": true,
+    "path": null,
+    "meta": {
+      "seed": 1875,
+      "train_pairs": 32351,
+      "train_queries": 2845,
+      "validation_queries": 948,
+      "split_strategy": "normalized_query_groups",
+      "confidence_candidates": "serving_retrieval_no_forced_positive",
+      "pair_thresholds": {
+        "ok": 0.269,
+        "review": 0.219
+      },
+      "confidence_thresholds": {
+        "ok": 0.8,
+        "review": 0.686
+      },
+      "confidence_calibration": {
+        "type": "identity",
+        "a": 1.0,
+        "b": 0.0
+      },
+      "corpus_rows": 1126,
+      "embedder": null
+    }
+  },
+  "labeled_rows": 233,
+  "seeds": [
+    1875
+  ],
+  "decision_basis": "single_run",
+  "ece_per_run": {
+    "base": [
+      0.0124
+    ],
+    "new": [
+      0.0198
+    ]
+  },
+  "ece_basis": "single_run",
+  "ece_mean_per_run": {
+    "base": 0.0124,
+    "new": 0.0198
+  },
+  "keep": true,
+  "runs": 1,
+  "reasons": [],
+  "ece": {
+    "base": 0.0124,
+    "new": 0.0198
+  },
+  "rows": [
+    {
+      "metric": "correct_silence",
+      "label": "верный not_found",
+      "base": {
+        "correct": 31,
+        "total": 32,
+        "rate": 96.9
+      },
+      "new": {
+        "correct": 31,
+        "total": 32,
+        "rate": 96.9
+      },
+      "delta_correct": 0,
+      "delta_wrong": 0,
+      "verdict": "equal"
+    },
+    {
+      "metric": "exact_top1",
+      "label": "точные названия, top-1",
+      "base": {
+        "correct": 112,
+        "total": 112,
+        "rate": 100.0
+      },
+      "new": {
+        "correct": 112,
+        "total": 112,
+        "rate": 100.0
+      },
+      "delta_correct": 0,
+      "delta_wrong": 0,
+      "verdict": "equal"
+    },
+    {
+      "metric": "top1_expected",
+      "label": "top-1 (с кодом)",
+      "base": {
+        "correct": 191,
+        "total": 201,
+        "rate": 95.0
+      },
+      "new": {
+        "correct": 192,
+        "total": 201,
+        "rate": 95.5
+      },
+      "delta_correct": 1,
+      "delta_wrong": -1,
+      "verdict": "better"
+    },
+    {
+      "metric": "top3_expected",
+      "label": "top-3 (с кодом)",
+      "base": {
+        "correct": 198,
+        "total": 201,
+        "rate": 98.5
+      },
+      "new": {
+        "correct": 198,
+        "total": 201,
+        "rate": 98.5
+      },
+      "delta_correct": 0,
+      "delta_wrong": 0,
+      "verdict": "equal"
+    },
+    {
+      "metric": "top1_all",
+      "label": "top-1 по всем",
+      "base": {
+        "correct": 222,
+        "total": 233,
+        "rate": 95.3
+      },
+      "new": {
+        "correct": 223,
+        "total": 233,
+        "rate": 95.7
+      },
+      "delta_correct": 1,
+      "delta_wrong": -1,
+      "verdict": "better"
+    },
+    {
+      "metric": "ok_precision",
+      "label": "точность статуса ok",
+      "base": {
+        "correct": 183,
+        "total": 190,
+        "rate": 96.3
+      },
+      "new": {
+        "correct": 181,
+        "total": 188,
+        "rate": 96.3
+      },
+      "delta_correct": -2,
+      "delta_wrong": 0,
+      "verdict": "equal"
+    }
+  ]
+}

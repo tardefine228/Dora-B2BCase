@@ -20,6 +20,8 @@ export type Result = {
   clauseRef: string | null;
   url: string | null;
   alternatives: Alternative[];
+  codeRole?: string | null;
+  catalogReviewRequired?: boolean | null;
   userVerdict?: Verdict | null;
   correctedCode?: string | null;
   // Провенанс ответа, если его подтвердила проверяющая ступень (LLM по top-3):
@@ -57,6 +59,8 @@ type ApiClassify = {
   confidence: number; confidence_raw: number | null; status: Status;
   clause_ref: string | null; clause_url: string | null;
   verifier?: string | null; verifier_note?: string | null;
+  code_role?: string | null;
+  catalog_review_required?: boolean | null;
   alternatives?: ApiAlternative[];
 };
 type ApiBatch = {
@@ -115,11 +119,13 @@ function toResult(item: ApiClassify): Result {
   return {
     name: item.query, code: notFound ? null : item.code,
     title: notFound ? null : item.title,
-    confidence: notFound || invalidCode ? null : item.confidence,
+    confidence: invalidCode ? null : item.confidence,
     confidenceRaw: notFound ? null : item.confidence_raw ?? null,
     status: invalidCode ? 'review' : item.status,
     clauseRef: notFound || invalidCode ? null : item.clause_ref,
     url: notFound || invalidCode ? null : item.clause_url,
+    codeRole: item.code_role ?? null,
+    catalogReviewRequired: item.catalog_review_required ?? null,
     verifier: item.verifier ?? null,
     verifierNote: item.verifier_note ?? null,
     alternatives: (item.alternatives ?? []).slice(0, 3).map(alt => ({

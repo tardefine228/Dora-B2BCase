@@ -39,7 +39,7 @@ def test_committed_snapshot_matches_the_catalog():
     assert report["numeric_format_only_cells"] > 0  # 80 vs 80.0 is formatting only
 
 
-def test_only_the_four_pdf_corrected_names_differ():
+def test_only_the_pdf_corrected_names_differ():
     report = verifier.compare(
         verifier.read_catalog(SNAPSHOT),
         verifier.read_catalog(ROOT / "data" / "data.csv"),
@@ -47,10 +47,16 @@ def test_only_the_four_pdf_corrected_names_differ():
 
     ids = {item["record_id"] for item in report["name_diffs"]}
     assert ids == set(verifier.EXPECTED_NAME_CORRECTIONS)
-    # The catalog side carries the verified inclusive bounds.
+    # The catalog side carries the verified text, the snapshot the raw OCR.
     for item in report["name_diffs"]:
-        assert "≥ 500 мл ≤ 1000 мл" in item["catalog"]
         assert item["snapshot"] != item["catalog"]
+        if item["record_id"].startswith("2-402-"):
+            assert "≥ 500 мл ≤ 1000 мл" in item["catalog"]
+        elif item["record_id"].startswith("2-362-"):
+            assert "Х$" in item["snapshot"] and "XS" in item["catalog"]
+        else:
+            assert "опоры- ходунки" in item["snapshot"]
+            assert "опоры-ходунки" in item["catalog"]
 
 
 def test_snapshot_lacks_only_the_qa_column():
@@ -61,7 +67,9 @@ def test_snapshot_lacks_only_the_qa_column():
 
     assert report["columns"]["catalog_only"] == ["review_required"]
     assert report["columns"]["snapshot_only"] == []
-    assert report["catalog_review_required_true"] == 84
+    # All 84 flags were closed by the 2026-10-26 line-by-line source check
+    # (eval/data-review-2026-10-26/source-verification.json, remaining_flags = 0).
+    assert report["catalog_review_required_true"] == 0
 
 
 def test_normalize_record_id_handles_zero_padding():
@@ -89,18 +97,23 @@ def _row(record_id: str, **overrides) -> dict:
 
 
 def _whitelisted_corrections() -> tuple[list[dict], list[dict]]:
-    """The four position-402 rows, snapshot OCR text vs the PDF-verified name."""
+    """Every PDF-corrected row, snapshot OCR text vs the verified name."""
     snapshot, catalog = [], []
-    for index in range(1, 5):
-        record = f"2-402-0{index}"
-        snapshot.append(_row(record, name="объем контейнера 2 500 мл < 1000 мл, - - текст"))
-        catalog.append(
-            _row(
-                f"2-402-{index}",
-                name="объем контейнера ≥ 500 мл ≤ 1000 мл, соответствующие кодам",
-                review_required="False",
-            )
+    for record in verifier.EXPECTED_NAME_CORRECTIONS:
+        if record.startswith("2-402-"):
+            raw = "объем контейнера 2 500 мл < 1000 мл, - - текст"
+            fixed = "объем контейнера ≥ 500 мл ≤ 1000 мл, соответствующие кодам"
+        elif record.startswith("2-362-"):
+            raw = "Изделия санитарно-гигиенические (Х$), соответствующие кодам"
+            fixed = "Изделия санитарно-гигиенические (XS), соответствующие кодам"
+        else:
+            raw = "опоры- ходунки шагающие, соответствующие кодам"
+            fixed = "опоры-ходунки шагающие, соответствующие кодам"
+        padded = "-".join(
+            part.zfill(2) if index else part for index, part in enumerate(record.split("-"))
         )
+        snapshot.append(_row(padded, name=raw))
+        catalog.append(_row(record, name=fixed, review_required="False"))
     return snapshot, catalog
 
 

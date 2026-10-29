@@ -8,12 +8,9 @@ such as ``22.29.29.190``. The replacement follows the fixed-level OKPD2 grammar
 
 from __future__ import annotations
 
-import re
-
 import pytest
-from app.services.catalog_io import OKPD2_PATTERN, parse_catalog_bytes, validate_rows
-
-OKPD2_RE = re.compile(OKPD2_PATTERN)
+from app.core.okpd2 import OKPD2_RE
+from app.services.catalog_io import parse_catalog_bytes, validate_rows
 
 VALID_CODES = [
     "13",  # класс

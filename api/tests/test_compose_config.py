@@ -132,6 +132,23 @@ def test_dockerfile_bakes_the_embedder_with_explicit_fallback() -> None:
     assert "WARNING: torch install failed" in dockerfile
 
 
+def test_ml_requirements_do_not_reinstall_the_base_stack() -> None:
+    # Regression: requirements-ml.txt used to start with `-r requirements.txt`,
+    # so the transformer layer re-resolved the whole base stack and re-downloaded
+    # the 42 MB ru_core_news_md wheel from github.com — after the base layer had
+    # already installed it. A truncated re-download ("Wheel 'ru-core-news-md'
+    # ... is invalid", ~47 kB/s to the GitHub CDN) failed otherwise healthy
+    # builds after ~20 minutes. The ML file layers on top of the base install.
+    ml_requirements = (ROOT / "api" / "requirements-ml.txt").read_text(encoding="utf-8")
+    requirement_lines = [
+        line.strip()
+        for line in ml_requirements.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert not any(line.startswith("-r") for line in requirement_lines), requirement_lines
+    assert any(line.startswith("sentence-transformers") for line in requirement_lines)
+
+
 def test_dockerfile_builds_ui_and_ships_only_dist() -> None:
     dockerfile = (ROOT / "api" / "Dockerfile").read_text(encoding="utf-8")
     # Sources must not be copied raw: the browser cannot run .tsx or bare imports.

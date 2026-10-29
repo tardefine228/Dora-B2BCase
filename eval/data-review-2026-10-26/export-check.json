@@ -1,0 +1,6 @@
+{
+  "exit_code": 2,
+  "created_real_queries_csv": false,
+  "reason": "125 recovered queries have no confirmed expert labels. Machine suggestions intentionally excluded.",
+  "stderr": "usage: export_reviewed_queries.py [-h] --output OUTPUT review\nexport_reviewed_queries.py: error: No verified labels; refusing to create a misleading empty dataset\n"
+}

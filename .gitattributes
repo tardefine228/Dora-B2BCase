@@ -1,6 +1,10 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 
+# Keep artifact hashes and shell scripts identical on Windows and Linux.
+ml/artifacts/*.json text eol=lf
+*.sh text eol=lf
+
 # Raw UI exports are evidence: keep their original bytes (they use CRLF) so the
 # sha256 recorded in query_review.json / traffic_drift.json stays verifiable.
 eval/raw-exports/** -text
