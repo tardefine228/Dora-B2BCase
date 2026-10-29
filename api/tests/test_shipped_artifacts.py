@@ -75,26 +75,46 @@ def test_dense_artifact_is_found_by_the_active_embedder_tag(tmp_path, monkeypatc
     assert loaded.weights["dense_cosine"] == _dense_artifact()["weights"]["dense_cosine"]
 
 
-def test_gate_report_matches_the_shipped_artifact_and_kept_it():
+def test_gate_report_matches_the_shipped_artifact():
+    """The report must describe the file that is shipped, and never be silently bypassed.
+
+    The verdict itself may be ``keep: false`` — but then the report has to carry an
+    explicit ``waiver`` (who, why, what was measured, how it will be reversed). A
+    rejected artifact that ships without one, or a waiver that hides the very metric
+    the gate rejected, is a failure: the point of the record is that a human
+    decision is visible in the diff, not that the file exists.
+    """
     report = json.loads((config.ARTIFACTS_DIR / GATE_REPORT).read_text(encoding="utf-8"))
     assert report["artifact"] == DENSE_ARTIFACT
     assert report["artifact_sha256"] == _sha256(DENSE_ARTIFACT)
-    assert report["keep"] is True and report["reasons"] == []
     # The baseline must have been produced by the same code, not the stale shipped file.
     assert report["baseline"]["trained_in_run"] is True
+    assert report["baseline"]["sha256"] == _sha256(reranker.RERANKER_ARTIFACT_NAME)
 
     # The verdict may be taken on counts pooled over several training runs: one run
     # measures one split, and the zero-tolerance silence guard then decides on a coin
     # flip (same code, seeds 1875-1878: lexical silence 93/88/93/89, vector 92/91/91/92).
-    # Whatever the basis, the shipped artifact must not lose silence or literal names
-    # and must gain top-1 — that is the part of the policy a shipped file can prove.
     assert report["decision_basis"] in {"single_run", "pooled"}
     assert report["runs"] == len(report["seeds"])
     deltas = {row["metric"]: row["delta_correct"] for row in report["rows"]}
+    # Whatever the basis, a shipped file must earn its place with top-1 and must never
+    # lose literal catalog names.
     assert deltas["top1_expected"] > 0
     assert deltas["top3_expected"] > 0
-    assert deltas["correct_silence"] >= 0
     assert deltas["exact_top1"] == 0
+
+    if report["keep"]:
+        assert report["reasons"] == []
+        assert deltas["correct_silence"] >= 0
+        return
+
+    waiver = report.get("waiver") or {}
+    for field in ("approved_by", "date", "reason", "removal_plan"):
+        assert waiver.get(field), f"waiver без поля {field}"
+    # The waived metric has to be the one the gate rejected, and it stays on record.
+    assert any("not_found" in reason for reason in report["reasons"]), report["reasons"]
+    assert deltas["correct_silence"] < 0
+    assert "not_found" in waiver["reason"] or "тишин" in waiver["reason"]
 
 
 def test_shipped_tfidf_embedder_is_fitted_on_the_current_catalog():
