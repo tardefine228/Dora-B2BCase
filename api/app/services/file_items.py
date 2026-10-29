@@ -18,6 +18,7 @@ import csv
 import io
 import json
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -170,15 +171,59 @@ def _lines(text: str) -> list[str]:
 # --- format readers ----------------------------------------------------------
 
 
+_CSV_DELIMITERS = (";", ",", "\t", "|")
+
+
+def _row_widths(sample: str, delimiter: str) -> list[int]:
+    """Filled-cell count of every non-empty row parsed with ``delimiter``."""
+    widths: list[int] = []
+    for row in csv.reader(io.StringIO(sample), delimiter=delimiter):
+        filled = sum(1 for cell in row if cell.strip())
+        if filled:
+            widths.append(filled)
+    return widths
+
+
+def detect_csv_delimiter(text: str) -> str:
+    """Pick the delimiter that makes the widest *consistent* table.
+
+    ``csv.Sniffer`` alone misreads the usual Russian exports: a semicolon table
+    with decimal commas (``1;Ноутбук;3;89 900,00``) looks comma-separated to it,
+    and the whole row becomes one "product name". So candidates are scored by
+    the modal column count and how many rows agree with it; the sniffer's answer
+    only breaks ties.
+    """
+    sample = text[:4096]
+    try:
+        sniffer = csv.Sniffer().sniff(sample, delimiters="".join(_CSV_DELIMITERS))
+    except csv.Error:
+        sniffed: str | None = None
+    else:
+        sniffed = sniffer.delimiter
+
+    best: str | None = None
+    best_score: tuple[float, float, bool, int] | None = None
+    for index, delimiter in enumerate(_CSV_DELIMITERS):
+        widths = _row_widths(sample, delimiter)
+        if not widths:
+            continue
+        counts = Counter(widths)
+        width, repeats = counts.most_common(1)[0]
+        if width < 2:
+            continue
+        score = (width, repeats / len(widths), delimiter == sniffed, -index)
+        if best_score is None or score > best_score:
+            best, best_score = delimiter, score
+    if best is not None:
+        return best
+    if sniffed is not None:
+        return sniffed
+    return ";" if text.count(";") >= text.count(",") else ","
+
+
 def _read_csv(content: bytes, result: ExtractedItems, filename: str) -> list[str]:
     text = _decode(content)
-    if filename.lower().endswith(".tsv"):
-        delimiter = "\t"
-    else:
-        try:
-            delimiter = csv.Sniffer().sniff(text[:4096], delimiters=";,\t|").delimiter
-        except csv.Error:
-            delimiter = ";" if text.count(";") >= text.count(",") else ","
+    delimiter = "\t" if filename.lower().endswith(".tsv") else detect_csv_delimiter(text)
     rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
     return _pick_from_table(rows, result)
 
