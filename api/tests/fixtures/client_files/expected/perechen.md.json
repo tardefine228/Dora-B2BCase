@@ -1,20 +1,11 @@
 {
   "file": "perechen.md",
-  "description": "Чек-лист в Markdown: заголовок «#» плюс маркированный список, включая позиции вне перечня.",
+  "description": "Чек-лист в Markdown: заголовок «#» (структура документа, не товар) плюс маркированный список, включая позиции вне перечня.",
   "format": "text",
   "source_column": null,
   "duplicates": 0,
-  "skipped": 0,
+  "skipped": 1,
   "items": [
-    {
-      "query": "# Перечень позиций к закупке",
-      "codes": null,
-      "statuses": [
-        "review",
-        "not_found"
-      ],
-      "note": "Строка-заголовок Markdown, не товар: уверенного «ok» по ней быть не должно."
-    },
     {
       "query": "Ноутбук Lenovo ThinkPad T14",
       "codes": [

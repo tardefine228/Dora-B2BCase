@@ -628,7 +628,12 @@ CSV без шапки, JSON-заявка, Markdown-чек-лист, XLSX с ти
 ```bash
 PYTHONPATH=api python -m pytest api/tests/test_client_files.py -q   # приёмка «глазами клиента»
 python scripts/make_client_files.py --check                         # файлы соответствуют генератору
+python scripts/compare_client_results.py ~/Downloads                # сверить выгрузки сайта с эталонами
 ```
+
+Последняя команда берёт `classification-results*.csv`, которые отдаёт сайт, и печатает
+построчный вердикт: что распознано верно, что нет, где потерялись строки и откуда взялся
+лишний товар. Код возврата 1 при любом расхождении, кроме задокументированных промахов.
 
 ## Структура
 

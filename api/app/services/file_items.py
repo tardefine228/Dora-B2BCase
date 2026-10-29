@@ -59,6 +59,7 @@ JSON_NAME_KEYS = ("name", "title", "product", "item", "наименование"
 
 _LIST_MARKER = re.compile(r"^\s*(?:[-–—•*·▪●]+|\(?\d{1,4}[.)]|\d{1,4}\s*[-–]\s)\s*")
 _ONLY_NUMBERS = re.compile(r"^[\d\s.,;:%№/\\()+\-–—]*$")
+_MD_HEADING = re.compile(r"^\s{0,3}#{1,6}(\s|$)")
 
 
 class FileParseError(ValueError):
@@ -166,6 +167,33 @@ def _pick_from_table(rows: list[list[str]], result: ExtractedItems) -> list[str]
 
 def _lines(text: str) -> list[str]:
     return text.splitlines()
+
+
+def _read_text(content: bytes, result: ExtractedItems, filename: str) -> list[str]:
+    """Plain text: one item per line.
+
+    Markdown gets one extra rule: a heading (``# Компьютерная техника``,
+    ``## Перечень позиций``) is a document structure line, never a product — a
+    client's check-list keeps its goods in list items. Without this rule the
+    heading is classified as a product and can even come back with a confident
+    ``ok`` on a random catalogue position.
+    """
+    lines = _lines(_decode(content))
+    if not filename.lower().endswith((".md", ".markdown")):
+        return lines
+    kept: list[str] = []
+    for line in lines:
+        if _MD_HEADING.match(line):
+            if line.strip():
+                result.skipped += 1
+            continue
+        kept.append(line)
+    if result.skipped:
+        result.warnings.append(
+            f"Пропущено заголовков Markdown: {result.skipped} — они относятся к структуре "
+            "документа, а не к товарам."
+        )
+    return kept
 
 
 # --- format readers ----------------------------------------------------------
@@ -347,7 +375,7 @@ def extract_items(filename: str, content: bytes, max_items: int = 100) -> Extrac
         raise FileParseError("Файл пустой")
     result = ExtractedItems(format=kind)
     if kind == "text":
-        raw = _lines(_decode(content))
+        raw = _read_text(content, result, filename)
     elif kind == "csv":
         raw = _read_csv(content, result, filename)
     elif kind == "json":

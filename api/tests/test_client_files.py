@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -158,9 +159,7 @@ def _wait_for_job(client: TestClient, status_url: str, timeout: float = 120.0) -
 
 def test_every_fixture_has_an_expectation_file() -> None:
     fixtures = {
-        path.name
-        for path in FIXTURES_DIR.iterdir()
-        if path.is_file() and path.name != "README.md"
+        path.name for path in FIXTURES_DIR.iterdir() if path.is_file() and path.name != "README.md"
     }
     described = {_load(path)["file"] for path in expectation_paths()}
     assert fixtures == described, "у каждого файла клиента должен быть свой *.json с ожиданиями"
@@ -219,6 +218,29 @@ def test_plain_text_keeps_numbering_out_of_names() -> None:
     result = extract_items("list.txt", content.encode())
     assert result.items == ["Ноутбук", "Монитор", "Клавиатура", "Мышь"]
     assert result.skipped == 1
+
+
+def test_markdown_headings_are_structure_not_products() -> None:
+    """A check-list heading must not become a product with a confident answer.
+
+    Observed on a real upload: «# Перечень позиций к закупке» was classified as
+    «22.22.1 Изделия пластмассовые упаковочные» with status ok, confidence 0.81.
+    """
+    content = (
+        "# Перечень позиций к закупке\n"
+        "\n"
+        "## Компьютерная техника\n"
+        "- Ноутбук Lenovo\n"
+        "- Монитор Dell\n"
+    ).encode()
+    result = extract_items("perechen.md", content)
+    assert result.items == ["Ноутбук Lenovo", "Монитор Dell"]
+    assert result.skipped == 2
+    assert any("заголовков Markdown" in warning for warning in result.warnings)
+
+    # Plain text keeps headings: there is no markup, so «#» is literal text.
+    plain = extract_items("list.txt", b"# not a heading\nNoatbook\n")
+    assert plain.items == ["# not a heading", "Noatbook"]
 
 
 # --- recognition of each position -------------------------------------------
@@ -366,3 +388,58 @@ def test_unsupported_and_empty_files_are_rejected_with_clear_codes() -> None:
         files={"file": ("list.txt", b"1\n2\n3\n", "text/plain")},
     )
     assert numbers_only.status_code == 422
+
+
+# --- the offline checker -----------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def comparator():
+    """Import scripts/compare_client_results.py as a module (dataclasses need sys.modules)."""
+    script = REPO_ROOT / "scripts" / "compare_client_results.py"
+    spec = importlib.util.spec_from_file_location("compare_client_results", script)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_compare_script_passes_on_ideal_results(tmp_path: Path, comparator) -> None:
+    """``scripts/compare_client_results.py`` must accept a perfect run.
+
+    Guards the tool used to review real uploads: a checker that fails on ideal
+    data would hide actual regressions behind noise.
+    """
+    module = comparator
+
+    def write_csv(name: str, rows: list[tuple[str, str | None, str]]) -> Path:
+        path = tmp_path / name
+        lines = ["query;code;title;status;confidence;confidence_raw;clause_ref"]
+        for query, code, status in rows:
+            lines.append(f'"{query}";{code or ""};;{status};0.9;0.9;')
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8-sig")
+        return path
+
+    for expected_path in expectation_paths():
+        expected = _load(expected_path)
+        rows = []
+        for item in expected["items"]:
+            code = item["codes"][0] if item["codes"] else None
+            rows.append((item["query"], code, item["statuses"][0]))
+        path = write_csv(f"ok-{expected['file']}.csv", rows)
+        assert module.main([str(path)]) == 0, (
+            f"идеальная выгрузка {expected['file']} не прошла сверку"
+        )
+
+
+def test_compare_script_flags_a_wrong_code(tmp_path: Path, comparator) -> None:
+    module = comparator
+
+    path = tmp_path / "broken.csv"
+    path.write_text(
+        "query;code;title;status;confidence;confidence_raw;clause_ref\n"
+        '"Ноутбук Lenovo ThinkPad T14";33.12.99;;ok;0.9;0.9;\n',
+        encoding="utf-8-sig",
+    )
+    assert module.main([str(path)]) == 1
