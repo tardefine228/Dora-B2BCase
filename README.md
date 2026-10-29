@@ -617,6 +617,24 @@ python -m pip install -r api/requirements-dev.txt
 PYTHONPATH=api python -m pytest api/tests -q
 ```
 
+### Файлы клиента
+
+`api/tests/fixtures/client_files/` — восемь демонстрационных документов того вида,
+что загружают на главную страницу (cp1251-выгрузка из 1С, TSV, текстовый список,
+CSV без шапки, JSON-заявка, Markdown-чек-лист, XLSX с титульной строкой, DOCX с
+таблицей), и эталонные ответы к ним: что именно должно быть распознано как
+позиция и какой код ОКПД2 из перечня она должна получить.
+
+```bash
+PYTHONPATH=api python -m pytest api/tests/test_client_files.py -q   # приёмка «глазами клиента»
+python scripts/make_client_files.py --check                         # файлы соответствуют генератору
+python scripts/compare_client_results.py ~/Downloads                # сверить выгрузки сайта с эталонами
+```
+
+Последняя команда берёт `classification-results*.csv`, которые отдаёт сайт, и печатает
+построчный вердикт: что распознано верно, что нет, где потерялись строки и откуда взялся
+лишний товар. Код возврата 1 при любом расхождении, кроме задокументированных промахов.
+
 ## Структура
 
 ```

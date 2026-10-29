@@ -26,6 +26,9 @@ data/*
 !data/data.json
 !data/source_text.txt
 
+# Generated at runtime (embedding cache), never committed
+api/data/
+
 # Environment / secrets
 .env
 .env.*

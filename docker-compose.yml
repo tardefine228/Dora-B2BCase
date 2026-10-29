@@ -83,6 +83,8 @@ x-app-build: &app-build
     INSTALL_TRANSFORMER: "${INSTALL_TRANSFORMER:-true}"
     ALLOW_DEGRADE: "${ALLOW_DEGRADE:-false}"
     EMBEDDER_MODEL: "${EMBEDDER_MODEL:-intfloat/multilingual-e5-small}"
+    # Base64 of a corporate root CA, for builds behind TLS interception (see .env.example)
+    CORP_CA_PEM_B64: "${CORP_CA_PEM_B64:-}"
 
 services:
   api:
