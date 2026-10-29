@@ -478,22 +478,57 @@ def _distinct_alternatives(
     return alternatives
 
 
+class TrainedArtifactUnavailable(RuntimeError):
+    """Raised in strict mode when no calibrated reranker artifact can be served.
+
+    The heuristic scorer has different, uncalibrated decision floors, so shipping
+    it silently would make every confidence threshold meaningless. With
+    ``ALLOW_DEGRADE=true`` the old forgiving behaviour is kept on purpose.
+    """
+
+
+def _is_trained_reranker(reranker) -> bool:
+    return reranker is not None and not getattr(reranker, "meta", {}).get("fallback")
+
+
 def _load_reranker(tag: str | None = None):
-    """Return the trained reranker, or a lexical fallback when artifacts are absent.
+    """Return the trained reranker, or a lexical fallback when degradation is allowed.
 
     ``tag`` is the active embedder: the artifact trained with that embedder's vector
-    features is preferred (see ``ml.reranker.load_reranker``).
+    features is preferred (see ``ml.reranker.load_reranker``). Under the default
+    ``ALLOW_DEGRADE=false`` policy an absent/broken artifact (or a heuristic
+    fallback scorer) raises :class:`TrainedArtifactUnavailable` instead of serving
+    uncalibrated decisions; the readiness probe then returns 503.
     """
     try:
         from ml.reranker import load_reranker
-    except Exception:  # ml package must never break the offline catalog backend
-        logger.exception("ml.reranker недоступен — используется эвристический скоринг")
-        return None
+    except Exception as exc:  # ml package must never break the offline catalog backend
+        if settings.allow_degrade:
+            logger.exception("ml.reranker недоступен — используется эвристический скоринг")
+            return None
+        raise TrainedArtifactUnavailable(
+            "Пакет ml.reranker недоступен, а ALLOW_DEGRADE=false: "
+            "нельзя отдавать некалиброванный эвристический скоринг. "
+            "Пересоберите образ или разрешите деградацию явно (ALLOW_DEGRADE=true)."
+        ) from exc
     try:
-        return load_reranker(tag=tag)
-    except Exception:
-        logger.exception("Не удалось загрузить реранкер — используется эвристический скоринг")
-        return None
+        reranker = load_reranker(tag=tag)
+    except Exception as exc:
+        if settings.allow_degrade:
+            logger.exception("Не удалось загрузить реранкер — используется эвристический скоринг")
+            return None
+        raise TrainedArtifactUnavailable(
+            f"Артефакт реранкера не загружается ({exc}), а ALLOW_DEGRADE=false. "
+            "Проверьте ml/artifacts и права доступа либо разрешите деградацию явно."
+        ) from exc
+    if not _is_trained_reranker(reranker) and not settings.allow_degrade:
+        raise TrainedArtifactUnavailable(
+            "Калиброванный артефакт реранкера отсутствует — загрузчик вернул "
+            "эвристический скоринг с другими порогами. ALLOW_DEGRADE=false запрещает "
+            "тихую замену: соберите артефакт (python scripts/build_model.py) или "
+            "задайте ALLOW_DEGRADE=true для диагностического запуска."
+        )
+    return reranker
 
 
 def _reranker_artifact_name(reranker, tag: str | None) -> str | None:
@@ -591,9 +626,7 @@ class CatalogClassifier:
                 tag,
             )
             reranker_tag = None
-        loaded_reranker = (
-            reranker if reranker is not None else _load_reranker(reranker_tag)
-        )
+        loaded_reranker = reranker if reranker is not None else _load_reranker(reranker_tag)
         self._reranker = _apply_catalog_floors(loaded_reranker)
         logger.info(
             "CatalogClassifier загружен: %d позиций из %s (reranker=%s, vector=%s)",
@@ -738,9 +771,7 @@ class CatalogClassifier:
             try:
                 self._dense.warm_queries([name for name in to_encode if name])
             except Exception:  # noqa: BLE001 - per-query encoding still works
-                logger.exception(
-                    "Пакетное кодирование запросов не удалось — кодируем по одному"
-                )
+                logger.exception("Пакетное кодирование запросов не удалось — кодируем по одному")
         answers: list[ClassifyResponse] = []
         position = 0
         for text, group in zip(originals, variants, strict=True):
@@ -1208,9 +1239,7 @@ class QdrantClassifier:
         self._reranker = _apply_semantic_floors(_load_reranker(reranker_tag))
         self._reranker_name = _reranker_artifact_name(self._reranker, reranker_tag)
         model = getattr(self._reranker, "confidence_model", None)
-        floors = (
-            {"ok": model.threshold_ok, "review": model.threshold_review} if model else None
-        )
+        floors = {"ok": model.threshold_ok, "review": model.threshold_review} if model else None
         logger.info(
             "QdrantClassifier готов: embedder=%s dim=%d reranker=%s thresholds=%s",
             self._embedder_tag or "unknown",

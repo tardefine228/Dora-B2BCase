@@ -19,7 +19,7 @@ from app.dispatch import BATCH_TASK_NAME
 from app.services.classifier import get_classifier
 from app.tasks import run_batch_job
 
-configure_logging(settings.log_level)
+configure_logging(settings.log_level, settings.log_format)
 logger = logging.getLogger("dora.worker")
 
 celery_app = Celery("dora", broker=settings.redis_url)

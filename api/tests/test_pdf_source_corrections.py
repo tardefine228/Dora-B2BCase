@@ -31,7 +31,10 @@ def test_remaining_source_flags_have_visual_evidence():
     report = json.loads(
         (ROOT / "eval/data-review-2026-10-26/source-verification.json").read_text(encoding="utf-8")
     )
-    rows = {r["record_id"]: r for r in json.loads((ROOT / "data/data.json").read_text(encoding="utf-8"))}
+    rows = {
+        r["record_id"]: r
+        for r in json.loads((ROOT / "data/data.json").read_text(encoding="utf-8"))
+    }
     assert len(report["records"]) == 84
     assert len({r["record_id"] for r in report["records"]}) == 84
     for checked in report["records"]:

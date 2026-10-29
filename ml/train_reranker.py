@@ -1184,9 +1184,12 @@ def train(
     # every batch and no query group straddles train/validation.
     feedback_pairs = 0
     if feedback_path is not None:
-        from ml.hard_negatives import load_feedback, mine_feedback_pairs
+        from ml.hard_negatives import MiningReport, load_feedback, mine_feedback_pairs
 
-        mined = mine_feedback_pairs(load_feedback(feedback_path), catalog, dense=dense)
+        feedback_report = MiningReport()
+        mined = mine_feedback_pairs(
+            load_feedback(feedback_path), catalog, dense=dense, report=feedback_report
+        )
         feedback_pairs = len(mined)
         pairs.extend(mined)
         if mined:
@@ -1194,6 +1197,14 @@ def train(
                 f"  hard negatives from feedback: {feedback_pairs} pairs "
                 f"({sum(1 for pair in mined if pair.label == 1)} positive)"
             )
+        else:
+            # A path that silently contributes nothing is the failure mode this
+            # printer exists for: a real export was read but mined no pairs.
+            print("  hard negatives from feedback: 0 пар")
+            print(f"    {feedback_report.summary().replace(chr(10), chr(10) + '    ')}")
+            diagnosis = feedback_report.diagnosis()
+            if diagnosis:
+                print(f"    причина: {diagnosis}")
     train_pairs, validation_pairs = split_query_groups(pairs, rng, validation_share)
     if dataset_output is not None:
         import csv

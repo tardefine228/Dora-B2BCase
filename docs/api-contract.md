@@ -61,10 +61,11 @@
 1. `status = "not_found"` ⇒ `code = null`, `title = null`, `confidence = confidence_raw = 0.0`.
 2. `0.0 ≤ confidence ≤ 1.0`; уверенность — подсказка, не юридический вердикт.
 3. Прямая передача кода ОКПД2 в `name` ⇒ `confidence = confidence_raw = 1.0`, `status = "ok"`.
-4. `status` определяется только `confidence_raw`; `confidence` — монотонная (Платт) калибровка
-   сырой шкалы под реальные запросы, поэтому статусы от неё не зависят
+4. `status` определяется только `confidence_raw`; `confidence` — монотонная калибровка сырой
+   шкалы под реальные запросы (Платт, если её сдвиг больше ошибки калибровочной площадки;
+   иначе отгружается identity), поэтому статусы от неё не зависят
    (`python scripts/build_model.py` фитит карту на калибровочной площадке,
-   метрики — `eval/experiments.md`, эксп. 10).
+   правило — эксп. 36, метрики — `eval/experiments.md`, эксп. 10 и 37).
 5. `status in {ok, review}` ⇒ `code` и `title` непустые (BE-9). Инвариант
    зашит валидатором `ClassifyResponse` (`api/app/schemas.py`) и покрыт
    `api/tests/test_contract_invariants.py`; нарушение — дефект сервиса, а не
