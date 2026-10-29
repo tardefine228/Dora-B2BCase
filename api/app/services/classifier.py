@@ -1444,7 +1444,10 @@ def _resolve_catalog_path() -> Path | None:
     )
     candidates.append(project_root / "data" / "data.csv")
 
+    from ml.catalog_revision import active_catalog_dir
+
     for candidate in candidates:
+        candidate = active_catalog_dir(candidate.parent) / candidate.name
         if candidate.is_file():
             return candidate
     return None

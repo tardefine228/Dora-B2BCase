@@ -229,14 +229,14 @@ _lookup_lock = threading.Lock()
 
 def get_source_lookup(data_dir: Path | None = None) -> SourceLookup:
     """Process-wide lookup instance for the configured ``DATA_DIR``."""
-    global _lookup
-    with _lookup_lock:
-        if _lookup is None or (data_dir is not None and Path(data_dir) != _lookup.data_dir):
-            if data_dir is None:
-                from app.services.catalog_io import resolve_data_dir
+    from app.services.catalog_io import resolve_data_dir
+    from ml.catalog_revision import active_catalog_dir
 
-                data_dir = resolve_data_dir()
-            _lookup = SourceLookup(Path(data_dir))
+    global _lookup
+    resolved = active_catalog_dir(Path(data_dir) if data_dir is not None else resolve_data_dir())
+    with _lookup_lock:
+        if _lookup is None or resolved != _lookup.data_dir:
+            _lookup = SourceLookup(resolved)
         return _lookup
 
 

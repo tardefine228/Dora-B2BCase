@@ -603,11 +603,6 @@ CANONICAL_CODES: dict[str, str] = {
     "доски": "32.99.16.110",
 }
 
-# Reverse index: catalog word -> source words that map to it.
-_BY_TARGET: dict[str, list[str]] = {}
-for _source, _target in BRIDGES.items():
-    _BY_TARGET.setdefault(_target, []).append(_source)
-
 # Stem of a source word -> target word (stems make the lookup inflection-proof).
 _BRIDGE_BY_STEM: dict[str, str] = {}
 for _source, _target in BRIDGES.items():
@@ -669,8 +664,3 @@ def substitute_query(query: str, keep_stems: set[str] | None = None) -> str:
         if target not in replaced:
             replaced.append(target)
     return " ".join(replaced)
-
-
-def sources_for_target_word(target_word: str) -> list[str]:
-    """Product words that bridge into a catalog word (used by training)."""
-    return _BY_TARGET.get(target_word, [])

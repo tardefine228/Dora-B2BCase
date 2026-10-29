@@ -15,10 +15,9 @@ const message = (error: unknown) => error instanceof Error ? error.message : 'О
 const percent = (value: number | null) => value === null ? '—' : `${Math.round(value * 100)}%`;
 const isSafeUrl = (url: string | null): url is string => !!url && (/^\/source\/[\w-]+$/.test(url) || /^https?:\/\//i.test(url));
 
-function Icon({ kind = 'search' }: { kind?: 'search' | 'upload' }) {
+function UploadIcon() {
   return <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-    {kind === 'search' ? <><circle cx="10" cy="10" r="6.5"/><path d="m15 15 6 6"/></> :
-      <><path d="M14 3H5v18h14V8zM14 3v5h5M12 17V10m-4 4 4-4 4 4"/></>}
+    <path d="M14 3H5v18h14V8zM14 3v5h5M12 17V10m-4 4 4-4 4 4"/>
   </svg>;
 }
 function SourceLink({ url }: { url: string | null }) {
@@ -269,7 +268,7 @@ export default function App() {
             onDrop={e => { e.preventDefault(); setDrag(false); if (busy) return;
               if (e.dataTransfer.files.length !== 1) { setError('Загрузите один файл за раз.'); return; }
               void load(e.dataTransfer.files[0]); }}>
-            <Icon kind="upload"/><strong>{busy === 'file' ? 'Загружаем файл…' : filename || 'Перетащите файл сюда'}</strong>
+            <UploadIcon/><strong>{busy === 'file' ? 'Загружаем файл…' : filename || 'Перетащите файл сюда'}</strong>
             <span>Excel, CSV, PDF, DOCX, JSON · до 100 товаров</span>
           </div>
           <input ref={input} type="file" accept=".xlsx,.xlsm,.csv,.tsv,.pdf,.docx,.json,.txt,.md" hidden aria-label="Выбрать файл товаров"

@@ -4,3 +4,7 @@
 # Keep artifact hashes and shell scripts identical on Windows and Linux.
 ml/artifacts/*.json text eol=lf
 *.sh text eol=lf
+
+# Stable catalog bytes on Windows and Linux.
+data/data.csv text eol=lf
+data/source_text.txt -text

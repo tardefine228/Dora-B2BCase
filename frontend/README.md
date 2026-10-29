@@ -1,4 +1,4 @@
-# Dora B2BCase — React-интерфейс (ветка arena/81300b54-dora-b2bcase)
+# Dora B2BCase — React-интерфейс
 
 Сайт доступен в Docker по **http://localhost:8000/ui/**. Запуск и диагностика Windows:
 [`../docs/START_WINDOWS_DOCKER.md`](../docs/START_WINDOWS_DOCKER.md).
