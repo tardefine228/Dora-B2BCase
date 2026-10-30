@@ -43,7 +43,9 @@ jobs:
         env:
           PYTHONPATH: api
           TEST_DATABASE_URL: postgresql://dora_test:dora_test@localhost:5432/dora_test
-        run: python -m pytest api/tests -q
+        # eval/golden_1875/test_dataset.py pins the synthetic fixtures to the
+        # shipped catalog hashes; it rotted once already because nothing ran it.
+        run: python -m pytest api/tests eval/golden_1875/test_dataset.py -q
 
   # Model quality gate: rebuild the reranker from the catalog deterministically, prove
   # that the shipped artifact still equals a fresh build, and compare the labeled-set

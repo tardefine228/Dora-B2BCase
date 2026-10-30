@@ -25,6 +25,8 @@ from pathlib import Path
 
 from app.core.okpd2 import OKPD2_RE
 from app.schemas import CatalogInfo, CatalogIssue
+from app.services.catalog_bundle import serialized_update
+from ml.catalog_revision import active_catalog_dir
 
 logger = logging.getLogger("dora.catalog_io")
 
@@ -69,6 +71,7 @@ def resolve_data_dir() -> Path:
 @dataclass
 class ParsedCatalog:
     rows: list[dict] = field(default_factory=list)
+    source_files: dict[str, bytes] = field(default_factory=dict)
     source_format: str = "csv"  # csv | json
     columns: list[str] = field(default_factory=list)
 
@@ -90,6 +93,10 @@ def parse_catalog_bytes(filename: str, content: bytes) -> ParsedCatalog:
     if len(content) > 5_000_000:
         raise ValueError("Файл каталога не должен превышать 5 МБ")
     lowered = (filename or "").lower()
+    if lowered.endswith(".zip"):
+        from app.services.catalog_bundle import parse_bundle
+
+        return parse_bundle(content)
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
@@ -256,11 +263,13 @@ def normalize_rows(parsed: ParsedCatalog) -> list[dict]:
     return normalized
 
 
+@serialized_update
 def write_catalog(
     rows: list[dict],
     data_dir: Path,
     *,
     snapshot: bool = True,
+    source_files: dict[str, bytes] | None = None,
     keep: int = DEFAULT_VERSIONS_KEPT,
 ) -> CatalogInfo:
     """Atomically replace data.csv and data.json, return the resulting facts.
@@ -280,6 +289,16 @@ def write_catalog(
     writer.writeheader()
     writer.writerows(rows)
     json_text = json.dumps(rows, ensure_ascii=False, indent=1)
+
+    if source_files is not None or (data_dir / "active-catalog.json").exists():
+        from app.services.catalog_bundle import current_files, publish
+
+        blobs = current_files(data_dir)
+        blobs.update(source_files or {})
+        blobs.update({"data.csv": csv_buffer.getvalue().encode("utf-8"),
+                      "data.json": json_text.encode("utf-8")})
+        publish(data_dir, blobs)
+        return catalog_facts(data_dir)
 
     _atomic_write(csv_path, csv_buffer.getvalue().encode("utf-8"))
     _atomic_write(json_path, json_text.encode("utf-8"))
@@ -307,9 +326,12 @@ def _atomic_write(path: Path, content: bytes) -> None:
 
 def catalog_facts(data_dir: Path) -> CatalogInfo:
     """Describe the currently installed catalog (for /admin/catalog)."""
+    data_dir = active_catalog_dir(data_dir)
     csv_path = data_dir / "data.csv"
     json_path = data_dir / "data.json"
-    existing = [path for path in (csv_path, json_path) if path.is_file()]
+    existing = [path for path in (
+        csv_path, json_path, data_dir / "source_text.txt", data_dir / "report.json"
+    ) if path.is_file()]
     if not existing:
         return CatalogInfo(rows=0, columns=[], sha256="", modified_at=None, source_files=[])
 
@@ -367,8 +389,9 @@ def snapshot_catalog(
     data_dir: Path, *, keep: int = DEFAULT_VERSIONS_KEPT
 ) -> CatalogVersion | None:
     """Copy the current catalog aside (no-op when there is nothing to copy)."""
-    csv_path = data_dir / "data.csv"
-    json_path = data_dir / "data.json"
+    current = active_catalog_dir(data_dir)
+    csv_path = current / "data.csv"
+    json_path = current / "data.json"
     if not csv_path.is_file():
         return None
     content = csv_path.read_bytes()
@@ -384,6 +407,10 @@ def snapshot_catalog(
         _atomic_write(target / "data.json", json_path.read_bytes())
         files.append("data.json")
 
+    for name in ("source_text.txt", "report.json"):
+        if (current / name).is_file():
+            _atomic_write(target / name, (current / name).read_bytes())
+            files.append(name)
     rows = _csv_row_count(content)
     meta = {
         "version_id": version_id,
@@ -452,12 +479,14 @@ def list_versions(data_dir: Path) -> list[CatalogVersion]:
                 rows=stored_rows,
                 created_at=str(meta.get("created_at") or ""),
                 sha256=str(meta.get("sha256") or ""),
-                files=[name for name in ("data.csv", "data.json") if (path / name).is_file()],
+                files=[name for name in ("data.csv", "data.json", "source_text.txt", "report.json")
+                       if (path / name).is_file()],
             )
         )
     return versions
 
 
+@serialized_update
 def restore_version(
     data_dir: Path,
     version_id: str | None = None,
@@ -487,6 +516,17 @@ def restore_version(
     if not csv_source.is_file():
         raise ValueError(f"Снимок {snapshot.version_id!r} повреждён: нет data.csv")
 
+    from app.services.catalog_bundle import current_files, publish
+
+    blobs = current_files(source)  # Read before snapshot pruning can remove the target.
+    if "data.json" not in blobs:
+        parsed = parse_catalog_bytes("data.csv", blobs["data.csv"])
+        blobs["data.json"] = json.dumps(normalize_rows(parsed), ensure_ascii=False).encode()
+    if (data_dir / "active-catalog.json").exists() or "source_text.txt" in blobs:
+        snapshot_catalog(data_dir, keep=keep)
+        publish(data_dir, blobs)
+        return catalog_facts(data_dir), snapshot
+
     snapshot_catalog(data_dir, keep=keep)  # so the rollback can be undone
     _atomic_write(data_dir / "data.csv", csv_source.read_bytes())
     json_source = source / "data.json"
@@ -510,7 +550,7 @@ def restore_version(
 
 def export_catalog_csv(data_dir: Path) -> bytes:
     """Current catalog exactly as installed, for backup before an upload."""
-    csv_path = data_dir / "data.csv"
+    csv_path = active_catalog_dir(data_dir) / "data.csv"
     if not csv_path.is_file():
         raise FileNotFoundError("Каталог не установлен: data.csv отсутствует")
     return csv_path.read_bytes()

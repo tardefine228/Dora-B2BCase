@@ -1,7 +1,7 @@
 {
   "dataset_kind": "synthetic_positive_fixtures",
-  "catalog_sha256": "040def4d00ff59802410c7339f586f5e98bb3ec56ddf0ff006d4bdc7d857b961",
-  "source_text_sha256": "0ceabb6b856eade4c2c4374e0b05282ef2732a82ee8c441794b24368ba045e26",
+  "catalog_sha256": "e4a5c45b635335e49986aae0e160e76abb32cdbd40ef3d85a6d6ccfe4c225229",
+  "source_text_sha256": "c535b911c256163056861459fd67888dff1f851e836b850317f6577f6ec86639",
   "source_report": {
     "parser_version": "1.0.0",
     "source": "pp_1875.pdf",

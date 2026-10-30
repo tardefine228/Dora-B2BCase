@@ -1163,7 +1163,7 @@ def catalog_versions() -> CatalogVersionsResponse:
     return CatalogVersionsResponse(
         versions=[_version_model(version) for version in list_versions(data_dir)],
         keep=settings.catalog_snapshot_keep,
-        current=catalog_facts(data_dir) if (data_dir / "data.csv").is_file() else None,
+        current=catalog_facts(data_dir),
     )
 
 
@@ -1224,14 +1224,14 @@ def get_catalog_info() -> CatalogInfo:
     "/admin/catalog",
     response_model=CatalogUploadResponse,
     tags=["admin"],
-    summary="Загрузить и проверить новый каталог (CSV или JSON)",
+    summary="Загрузить каталог (CSV/JSON) или пакет постановления (ZIP)",
     dependencies=[Depends(require_admin_key)],
 )
 async def upload_catalog(
     background_tasks: BackgroundTasks,
     file: Annotated[
         UploadFile,
-        File(description="data.csv или data.json с перечнем ПП № 1875"),
+        File(description="data.csv, data.json или ZIP: data.csv + source_text.txt + report.json"),
     ],
     dry_run: bool = Query(
         default=False,
@@ -1261,6 +1261,7 @@ async def upload_catalog(
             rows,
             resolve_data_dir(),
             snapshot=True,
+            source_files=parsed.source_files or None,
             keep=settings.catalog_snapshot_keep,
         )
         applied = True

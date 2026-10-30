@@ -14,7 +14,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
-from math import log, sqrt
+from math import sqrt
 
 TOKEN_RE = re.compile(r"[a-zа-яё0-9]+", re.IGNORECASE)
 DIGIT_RE = re.compile(r"\d+(?:[.,]\d+)?")
@@ -197,10 +197,6 @@ def cosine_sparse(left: Counter[str], right: Counter[str]) -> float:
     if norm_left == 0.0 or norm_right == 0.0:
         return 0.0
     return dot / (norm_left * norm_right)
-
-
-def stems_match(query_stem: str, candidate_stem: str) -> bool:
-    return match_weight(query_stem, candidate_stem) > 0.0
 
 
 # Compound nouns like "электрочайник" (электро+чайник) embed the head word as a
@@ -681,11 +677,6 @@ def jaccard_digits(query: str, candidate: str) -> float:
         return 0.0
     union = query_digits | candidate_digits
     return len(query_digits & candidate_digits) / len(union)
-
-
-def idf_weight(total_docs: int, doc_frequency: int) -> float:
-    """Standard smoothed idf; used by the hashing embedder and the ranker."""
-    return log((total_docs + 1) / (doc_frequency + 1)) + 1.0
 
 
 def lexical_score(query: str, candidate: str) -> float:

@@ -44,17 +44,12 @@ button.small{font-size:13px;min-height:40px;padding:9px 14px}
 
 .brand-icon img{display:block;flex-shrink:0}
 .procurement{margin-top:20px;padding:20px;border:1px solid #cdd6e8;border-left:4px solid #64748b;border-radius:12px;background:#f7f9fc;line-height:1.6;overflow-wrap:anywhere}
-.procurement-label{display:block;margin-bottom:8px;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#465577}
 .procurement strong{display:block;font-size:18px;line-height:1.5}
 .procurement p{margin:10px 0 0}
-.procurement .procurement-caution{margin:0 0 12px;font-weight:600}
 .procurement-ban{border-color:#e8c7c4;border-left-color:#ad3932;background:#fff7f6}
 .procurement-condition{border-color:#e7d5ac;border-left-color:#947020;background:#fffbf1}
-.procurement .procurement-scope{font-size:13px;color:#465577}
-.procurement a{display:inline-block;margin-top:12px;font-size:13px}
 .procurement-brief{margin:0;padding:12px;font-size:13px;min-width:310px}
 .procurement-brief strong{font-size:14px}
-.procurement-brief .procurement-label{display:none}
 .procurement-cell{min-width:334px;width:32%;max-width:480px}
 @media(max-width:520px){.procurement{padding:15px}.procurement strong{font-size:16px}}
 

@@ -1145,19 +1145,6 @@ def split_query_groups(pairs, rng, validation_share=0.25):
     return training_pairs, validation_pairs
 
 
-def _as_candidates(group: list[TrainingPair]) -> list[RankedCandidate]:
-    return [
-        RankedCandidate(
-            code=pair.code or None,
-            title=pair.title,
-            clause_ref=None,
-            retrieval_score=pair.retrieval_score,
-            payload={"label": pair.label, "dense": pair.dense, "dense_top": pair.dense_top},
-        )
-        for pair in group
-    ]
-
-
 def train(
     output: Path,
     *,

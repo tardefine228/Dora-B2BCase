@@ -22,7 +22,6 @@ import logging
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
 
 from ml.config import ARTIFACTS_DIR, MODELS_DIR
 from ml.features import (
@@ -233,10 +232,6 @@ def dense_values(candidate: RankedCandidate) -> tuple[float, float]:
     cosine = float(candidate.payload.get("dense", 0.0) or 0.0)
     top = float(candidate.payload.get("dense_top", cosine) or 0.0)
     return cosine, min(cosine - top, 0.0)
-
-
-class Reranker(Protocol):
-    def score(self, query: str, candidate_title: str, candidate_code: str = "") -> float: ...
 
 
 def _sigmoid(linear: float) -> float:

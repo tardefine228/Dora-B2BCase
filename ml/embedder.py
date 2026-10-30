@@ -496,11 +496,6 @@ def encode_texts(texts: list[str], normalize: bool = True) -> list[list[float]]:
     return get_encoder().encode(texts, normalize=normalize)
 
 
-def encode_text(text: str, normalize: bool = True) -> list[float]:
-    """Encode a single query."""
-    return encode_texts([text], normalize=normalize)[0]
-
-
 def reset_encoder_cache() -> None:
     """Drop the cached encoder (used after catalog updates and by tests)."""
     get_encoder.cache_clear()

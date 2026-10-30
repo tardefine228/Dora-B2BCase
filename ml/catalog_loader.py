@@ -2,6 +2,7 @@
 
 import json
 
+from ml.catalog_revision import active_catalog_dir
 from ml.config import DEBUG, RAW_DATA_DIR
 
 CATALOG_FILE = "data.json"
@@ -20,7 +21,7 @@ def load_catalog() -> list[dict]:
         description, pp_code, pp_link, code_role.
     Raises ``FileNotFoundError`` rather than silently indexing a dummy catalog.
     """
-    path = RAW_DATA_DIR / CATALOG_FILE
+    path = active_catalog_dir(RAW_DATA_DIR) / CATALOG_FILE
     if not path.is_file():
         raise FileNotFoundError(f"Catalog JSON not found: {path}")
 
