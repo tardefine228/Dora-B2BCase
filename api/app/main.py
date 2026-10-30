@@ -886,7 +886,11 @@ def _render_decree(text: str, code: str) -> str:
     from html import escape
 
     entry_re = re.compile(r"^(\d{1,5})\.\s+(.*)$")
-    code_re = re.compile(r"\s(\d+(?:\.\d+){1,4})$")
+    # A decree entry ends with its OKPD2 code; Appendix 3 rows append the
+    # minimum-share percentage after it («… 31.01.12 75»). Anchoring the code
+    # at the very end of the line therefore missed every Appendix 3 entry:
+    # no code badge and no highlight on the /source page.
+    code_re = re.compile(r"\s(\d+(?:\.\d+){1,4})(?:\s+(\d+(?:[.,]\d+)?))?$")
     # Remove repeated OCR table headings from the presentation only.
     text = re.sub(
         r"(?m)^(?:[ \t]*\d+[ \t]*\n)?[ \t]*Код товара[^\n]*\n"
@@ -908,10 +912,12 @@ def _render_decree(text: str, code: str) -> str:
             and not value.startswith("===")
             and lines[-1] != "=== TABLE HEADER ==="
         ):
-            # Keep the code at the end while appending wrapped name text.
+            # Keep the code (and its trailing share, if any) at the end while
+            # appending wrapped name text.
             match = code_re.search(lines[-1])
             if match:
-                lines[-1] = lines[-1][:match.start()] + " " + value + " " + match.group(1)
+                tail = lines[-1][match.start() :]
+                lines[-1] = lines[-1][: match.start()] + " " + value + tail
             else:
                 lines[-1] += " " + value
         else:
@@ -934,6 +940,8 @@ def _render_decree(text: str, code: str) -> str:
             if coded:
                 hit_code = coded.group(1)
                 body = body[: coded.start()]
+                if coded.group(2):
+                    body = f"{body} · доля {coded.group(2)}%"
             hit = " hit" if hit_code and hit_code == code else ""
             badge = f'<span class="code">{escape(hit_code)}</span>' if hit_code else ""
             out.append(
