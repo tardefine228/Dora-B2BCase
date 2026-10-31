@@ -1,6 +1,6 @@
 # Dora B2BCase — классификатор товаров по ПП № 1875
 
-# Наше видео с демонстрацией: https://drive.google.com/file/d/1z_slQKm0TohS2sIivm6f28k4ydYAJZ4a/view?usp=drive_link
+# Наше видео с демонстрацией: [https://drive.google.com/file/d/1z_slQKm0TohS2sIivm6f28k4ydYAJZ4a/view?usp=drive_link](https://drive.google.com/file/d/1z_slQKm0TohS2sIivm6f28k4ydYAJZ4a/view?usp=sharing)
 
 Веб-сервис для закупок: по названию товара находит **позицию перечня ПП № 1875**
 (национальный режим) и **код ОКПД2**, показывает уверенность, альтернативы и даёт
