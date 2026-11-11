@@ -92,13 +92,23 @@ def test_the_title_stem_set_is_what_the_anchor_compares_against():
         ("Трансформатор силовой масляный", "27.11.4"),
         ("Счетчик электрической энергии трехфазный", "26.51.63.130"),
         ("Бульдозер колесный тяжелый", "28.92.21"),
-        ("Самосвал карьерный трехосный", "28.92.29"),
     ],
 )
 def test_spec_heavy_line_answers_with_its_position(classifier, query, code):
     answer = classifier.classify(query)
     assert answer.status != "not_found", query
     assert answer.code == code
+
+
+def test_multi_code_spec_heavy_line_offers_both_codes(classifier):
+    answer = classifier.classify("Самосвал карьерный трехосный")
+    assert answer.status == "needs_clarification"
+    assert answer.code is None and answer.title is None
+    assert answer.clarification is not None
+    assert {option.code for option in answer.clarification.options} == {
+        "28.92.29",
+        "28.92.29.000",
+    }
 
 
 @pytest.mark.parametrize(
@@ -144,5 +154,9 @@ def test_invariant_five_holds_for_rescued_answers(classifier):
         "Трансформатор силовой масляный",
     ):
         answer = classifier.classify(query)
-        if answer.status != "not_found":
+        if answer.status == "needs_clarification":
+            assert answer.code is None
+            assert answer.clarification is not None
+            assert answer.clarification.options
+        elif answer.status != "not_found":
             assert answer.code

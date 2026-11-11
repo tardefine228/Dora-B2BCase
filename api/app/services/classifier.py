@@ -843,7 +843,21 @@ class CatalogClassifier:
         if not fused:
             return _not_found(normalized_query)
 
-        return self._rank_to_response(normalized_query, fused)
+        response = self._rank_to_response(normalized_query, fused)
+        # Keep retrieval, encoding and reranker instrumentation intact, but do
+        # not let statistical ordering replace a complete catalog-title match.
+        # Multi-code titles are intercepted by the shared guard afterwards.
+        exact = self._ambiguity.exact_title_answer(normalized_query)
+        if exact is not None:
+            # The deterministic title chooses the position, while confidence
+            # remains the value produced by the calibrated scoring pipeline.
+            exact = exact.model_copy(
+                update={
+                    "confidence": response.confidence,
+                    "confidence_raw": response.confidence_raw,
+                }
+            )
+        return exact if exact is not None else response
 
     def _retrieve(self, query: str, query_tokens: set[str]) -> list[tuple[float, dict]]:
         """Lexical shortlist as ``(retrieval_score, row)`` pairs, best first."""
@@ -1039,27 +1053,45 @@ def _head_rescued_answer(
     """
     if status != "not_found" or not best.code:
         return None
+    rescued = best
     if best.probability < _HEAD_RESCUE_FLOOR or not _head_anchored(best, query):
-        return None
+        # An official position can be a deliberate lexicon match even when its
+        # title does not contain the everyday product word («мышь» → «устройства
+        # ввода»). Only a single canonical target is eligible, the candidate
+        # must already be retrieved above the same floor, and the result stays
+        # review. Ambiguous bridges never take this path.
+        from ml.lexicon import CANONICAL_CODES, bridged_targets
+
+        targets = set(bridged_targets(query).values())
+        canonical_codes = {CANONICAL_CODES[target] for target in targets}
+        candidates = [
+            candidate
+            for candidate in ranked
+            if candidate.code in canonical_codes
+            and candidate.probability >= _HEAD_RESCUE_FLOOR
+        ]
+        if len(canonical_codes) != 1 or not candidates:
+            return None
+        rescued = max(candidates, key=lambda candidate: candidate.probability)
     logger.info(
         "Слабая подсказка показана как review: query=%r title=%r p=%.3f",
         query,
-        best.title,
-        best.probability,
+        rescued.title,
+        rescued.probability,
     )
-    code_role, review_required = _candidate_catalog_flags(best, classifier)
+    code_role, review_required = _candidate_catalog_flags(rescued, classifier)
     return _with_verifier(
         classifier,
         query,
         ClassifyResponse(
             query=query,
-            code=best.code,
-            title=best.title,
+            code=rescued.code,
+            title=rescued.title,
             confidence=round(_display_confidence(classifier._reranker, raw_confidence), 4),
             confidence_raw=raw_confidence,
             status="review",
-            clause_ref=best.clause_ref,
-            clause_url=clause_url_for(best.payload.get("record_id")),
+            clause_ref=rescued.clause_ref,
+            clause_url=clause_url_for(rescued.payload.get("record_id")),
             code_role=code_role,
             catalog_review_required=review_required,
             alternatives=_distinct_alternatives(ranked, "review", query_stems),
@@ -1472,6 +1504,14 @@ class QdrantClassifier:
             chunk = results[position : position + len(group)]
             position += len(group)
             answer = _best_answer(chunk).model_copy(update={"query": text})
+            exact = self._ambiguity.exact_title_answer(text)
+            if exact is not None:
+                answer = exact.model_copy(
+                    update={
+                        "confidence": answer.confidence,
+                        "confidence_raw": answer.confidence_raw,
+                    }
+                )
             answers.append(self._ambiguity.apply(text, answer))
         return answers
 

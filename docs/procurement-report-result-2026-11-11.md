@@ -61,7 +61,7 @@ SQLite/PostgreSQL позволяют пережить рестарт API/worker;
 ## Проверки
 
 * Ruff: passed.
-* Полный backend + golden dataset: **1102 passed, 7 skipped, 3 xfailed**.
+* Полный backend + golden dataset после всех доработок: **1141 passed, 7 skipped, 3 xfailed**.
 * Backend report tests: buckets, пересекающиеся причины, specialist review, API/CSV
   пересчёт после resolve — passed.
 * Frontend: **41 unit passed**, TypeScript и production build passed.
@@ -74,6 +74,12 @@ SQLite/PostgreSQL позволяют пережить рестарт API/worker;
 * Затем API был остановлен и запущен заново на том же SQLite. Новый Chromium context
   восстановил job `ee0249da-4d1b-4d40-bf0d-20b45467a1db`: 3 строки, **2/0/1**,
   «Выбрано специалистом» — passed.
+* Повторный живой сценарий после содержательных исправлений: batch «Прибор учёта»,
+  «Смеситель», «Весы» дал **1/1/1**. Выбор `1-28-01` изменил сводку на **2/0/1**,
+  `specialist_resolved=1`. CSV прочитан обратно: `accepted/accepted/not_found`.
+  После остановки и нового запуска Uvicorn на том же SQLite job
+  `e1e6e1c2-be6c-4088-a4ed-f6f536c66954` восстановлен с выбором, сводкой и
+  `resolution.original` (исходный модельный `review 26.70.2`).
 
 ## Не проверено в этой среде
 

@@ -31,8 +31,8 @@ from app.schemas import (
     Resolution,
 )
 from app.services.source_lookup import clause_url_for
-from ml.features import stems
-from ml.lexicon import CANONICAL_CODES
+from ml.features import best_match_weight, stem, stems, tokens
+from ml.lexicon import CANONICAL_CODES, bridged_targets
 from ml.query import split_purchase_query
 
 
@@ -133,6 +133,107 @@ _register(
         "компрессор части комплектующие",
     ),
 )
+_register(
+    "клапан",
+    _rule(
+        "Какой тип клапана закупается?",
+        "3-120-01 3-126-01 3-121-01 3-122-01 3-123-01 3-125-01",
+        "редукционный запорный регулирующий обратный предохранительный отключающий",
+    ),
+)
+_register(
+    "вентиль",
+    _rule(
+        "Какой тип вентиля закупается?",
+        "3-120-01 3-126-01 3-121-01 3-122-01 3-123-01 3-125-01",
+        "редукционный запорный регулирующий обратный предохранительный отключающий",
+    ),
+)
+_register(
+    "аккумулятор",
+    _rule(
+        "Какой аккумулятор закупается: стартерный, прочий свинцовый или литий-ионный?",
+        "1-31-01 2-190-01 3-100-01",
+        "стартерный запуск свинцовый литий ионный литиевый",
+    ),
+)
+_register(
+    "шкаф",
+    _rule(
+        "Какого назначения и материала нужен шкаф?",
+        "1-56-01 2-139-01 1-138-01 2-141-01",
+        "холодильный офисный металлический деревянный медицинский вытяжной",
+    ),
+)
+_register(
+    "перчатки",
+    _rule(
+        "Какие перчатки закупаются: тканевые, хирургические или технические резиновые?",
+        "1-3-01 3-16-01 3-17-01 3-18-01 3-19-01",
+        "тканевый рабочий хирургический резиновый технический латексный стерильный",
+    ),
+)
+_register(
+    "подгузники",
+    _rule(
+        "Какие подгузники закупаются: детские или другое абсорбирующее бельё?",
+        "2-2-01 2-362-01",
+        "детский взрослый xs сверхмалый",
+    ),
+)
+_register(
+    "контейнер",
+    _rule(
+        "Какого назначения нужен контейнер?",
+        "1-113-01 1-114-01 2-74-01 2-378-01",
+        "общий универсальный специализированный биопроб полимерный упаковочный кровь",
+    ),
+)
+_register(
+    "стол",
+    _rule(
+        "Какого назначения нужен стол?",
+        "2-139-01 2-141-01 2-320-01",
+        "письменный офисный деревянный неонатальный медицинский",
+    ),
+)
+
+# A phrase-level family is needed when the generic head is «аппарат», but its
+# modifier still leaves several real medical device types. More specific
+# modifiers disable the question and let the ordinary classifier answer.
+QUERY_FAMILY_RULES: list[tuple[frozenset[str], GenericRule]] = []
+
+
+def _register_family(required: str, rule: GenericRule) -> None:
+    QUERY_FAMILY_RULES.append((frozenset(stems(required)), rule))
+
+
+_register_family(
+    "ультразвуковой аппарат",
+    _rule(
+        "Какой ультразвуковой аппарат закупается: для сканирования, терапии или хирургии?",
+        "2-314-01 2-318-01 2-380-01",
+        "сканирование диагностический терапия хирургический",
+    ),
+)
+_register_family(
+    "ИВЛ",
+    _rule(
+        "Выберите позицию аппарата искусственной вентиляции лёгких.",
+        "1-139-01 3-275-01",
+        "контур расходный комплектующие",
+    ),
+)
+_register_family(
+    "прибор учёт",
+    _rule(
+        "Что измеряет прибор учёта: электроэнергию, газ или жидкость?",
+        "1-28-01 2-278-01 2-279-01",
+        "электроэнергия электрический энергия газ газовый жидкость вода",
+    ),
+)
+
+
 def _norm(text: str | None) -> str:
     return " ".join((text or "").casefold().split())
 
@@ -186,6 +287,21 @@ def load_catalog_rows(path: Path) -> tuple[list[dict], str]:
                 "catalog_review_required": review,
             }
     return list(by_key.values()), _sha256(path)
+
+
+def _has_product_anchor(query: str, product_stem: str, title: str | None) -> bool:
+    """Whether a single-noun candidate has a literal or curated lexical anchor."""
+    # pymorphy maps «всех/всем» to the same stem as «весы». These function
+    # words are not evidence that an antenna or a vessel is a weighing device.
+    title_stems = {
+        stem(token)
+        for token in tokens(title or "")
+        if token not in {"всех", "всем", "всего"}
+    }
+    if best_match_weight(product_stem, title_stems) > 0:
+        return True
+    targets = " ".join(bridged_targets(query).values())
+    return any(best_match_weight(target, title_stems) > 0 for target in stems(targets))
 
 
 class AmbiguityGuard:
@@ -258,10 +374,24 @@ class AmbiguityGuard:
         scores = self._score_map(answer)
         options = []
         seen: set[tuple[str, str]] = set()
+        # A curated rule or a top-3 fallback names an interpretation, not the
+        # only acceptable code for it. Expand every offered title to all its
+        # real catalog rows so resolving a type never hides a sibling code.
+        expanded_rows = []
         for row in rows:
+            expanded_rows.extend(self._by_title.get(_norm(row.get("name")), [row]))
+        for row in expanded_rows:
             option = self._option(row, scores)
             if option is None:
                 continue
+            if option.code == answer.code and _norm(option.title) == _norm(answer.title):
+                # Qdrant payload is fresher than the CSV fallback. Preserve its
+                # catalog facts on the matching option instead of silently
+                # replacing them while the answer becomes a clarification.
+                if answer.code_role is not None:
+                    option.code_role = answer.code_role
+                if answer.catalog_review_required is not None:
+                    option.catalog_review_required = answer.catalog_review_required
             key = (option.code, _norm(option.title))
             if key in seen:
                 continue
@@ -294,6 +424,45 @@ class AmbiguityGuard:
             latency_ms=answer.latency_ms,
         )
 
+    def exact_title_answer(self, query: str) -> ClassifyResponse | None:
+        """Return a deterministic answer only for a complete catalog-title match.
+
+        Stem-sequence equality handles ordinary Russian inflection («Клапан
+        запорный» / «Клапаны запорные») without turning a partial lexical match
+        into an answer. Multiple codes stay provisional: ``apply`` immediately
+        replaces the first row with a clarification containing all of them.
+        """
+        rows = self._by_title.get(_norm(query), [])
+        if not rows:
+            query_stems = stems(query)
+            if not query_stems:
+                return None
+            rows = [
+                row
+                for title, title_rows in self._by_title.items()
+                if stems(title) == query_stems
+                for row in title_rows
+            ]
+            if len({_norm(row.get("name")) for row in rows}) != 1:
+                return None
+        row = next((row for row in rows if row.get("okpd2")), None)
+        if row is None:
+            return None
+        return ClassifyResponse(
+            query=query,
+            code=row["okpd2"],
+            title=row["name"],
+            confidence=1.0,
+            confidence_raw=1.0,
+            status="ok",
+            clause_ref=row.get("clause_ref"),
+            clause_url=clause_url_for(row.get("record_id")),
+            code_role=row.get("code_role"),
+            catalog_review_required=row.get("catalog_review_required"),
+            catalog_sha256=self.catalog_sha256,
+            latency_ms=0.0,
+        )
+
     def apply(self, query: str, answer: ClassifyResponse) -> ClassifyResponse:
         if answer.status == "needs_clarification" or answer.decision_source == "specialist":
             return answer
@@ -303,8 +472,9 @@ class AmbiguityGuard:
 
         head, _ = split_purchase_query(query)
         head_stems = set(stems(head))
+        query_stems = set(stems(query))
         rule = GENERIC_RULES.get(next(iter(head_stems), "")) if len(head_stems) == 1 else None
-        if rule is not None and not (set(stems(query)) & set(stems(rule.discriminators))):
+        if rule is not None and not (query_stems & set(stems(rule.discriminators))):
             rows = [
                 self._by_record[record_id]
                 for record_id in rule.record_ids
@@ -314,31 +484,101 @@ class AmbiguityGuard:
             if guarded.status == "needs_clarification":
                 return guarded
 
-        # The exact title can have several codes even when the model is highly
+        for required_stems, family_rule in QUERY_FAMILY_RULES:
+            if not required_stems <= query_stems:
+                continue
+            if query_stems & set(stems(family_rule.discriminators)):
+                continue
+            rows = [
+                self._by_record[record_id]
+                for record_id in family_rule.record_ids
+                if record_id in self._by_record
+            ]
+            guarded = self._clarify(
+                answer, family_rule.question, rows, "ambiguous_name"
+            )
+            if guarded.status == "needs_clarification":
+                return guarded
+
+        # A title can have several codes even when the model is highly
         # confident. Looking only at its top-3 alternatives would hide this.
-        # Do not infer a conflict from an unrelated weak top-1: the requested
-        # words must actually identify the duplicated catalog title.
-        head_norm = _norm(head)
-        answer_title_norm = _norm(answer.title)
-        titles = [head]
-        if answer_title_norm and (
-            head_norm.startswith(answer_title_norm)
-            or (len(head_norm) >= 24 and answer_title_norm.startswith(head_norm))
-        ):
-            titles.append(answer.title)
-        for title in titles:
-            rows = self._by_title.get(_norm(title), [])
-            codes = {(row.get("okpd2") or "").strip() for row in rows if row.get("okpd2")}
-            if len(codes) >= 2:
+        # Check both the literal request and the selected title: procurement
+        # queries often use a short product name («Шприц») or a different word
+        # order («Самосвал» → «Автомобили-самосвалы…»).
+        multiple_code_question = (
+            "Одно название указано в перечне с разными кодами. "
+            "Какой код и пункт требуются?"
+        )
+        rows = self._by_title.get(_norm(head), [])
+        codes = {(row.get("okpd2") or "").strip() for row in rows if row.get("okpd2")}
+        if len(codes) >= 2:
+            guarded = self._clarify(
+                answer, multiple_code_question, rows, "multiple_codes"
+            )
+            if guarded.status == "needs_clarification":
+                return guarded
+
+        # A specific short query can identify a long multi-code title even if
+        # retrieval chose another family («Светильники медицинские» → household
+        # lights). Match all its content stems against the catalog, not only the
+        # already selected answer. Phrase-level families above take precedence
+        # so a broad ultrasound query is not narrowed to surgical devices.
+        if len(head_stems) >= 2:
+            matching_rows = []
+            for title, title_rows in self._by_title.items():
+                title_codes = {
+                    (row.get("okpd2") or "").strip()
+                    for row in title_rows
+                    if row.get("okpd2")
+                }
+                if (
+                    len(title_codes) >= 2
+                    and head_stems <= set(stems(title))
+                    and next(iter(stems(title)), None) == next(iter(stems(head)), None)
+                ):
+                    matching_rows.extend(title_rows)
+            if matching_rows:
                 guarded = self._clarify(
-                    answer,
-                    "Одно название указано в перечне с разными кодами. "
-                    "Какой код и пункт требуются?",
-                    rows,
-                    "multiple_codes",
+                    answer, multiple_code_question, matching_rows, "multiple_codes"
                 )
                 if guarded.status == "needs_clarification":
                     return guarded
+
+        selected_rows = self._by_title.get(_norm(answer.title), [])
+        selected_codes = {
+            (row.get("okpd2") or "").strip() for row in selected_rows if row.get("okpd2")
+        }
+        if len(selected_codes) >= 2:
+            # Do not turn an unrelated weak top-1 into a question. Requiring
+            # the primary product stem from the query head in the official
+            # title covers inflection, word order and extra specifications
+            # without treating any multi-code retrieval result as a match.
+            answer_title_stems = set(stems(answer.title or ""))
+            primary_product_stem = next(iter(stems(head)), None)
+            if primary_product_stem in answer_title_stems:
+                guarded = self._clarify(
+                    answer, multiple_code_question, selected_rows, "multiple_codes"
+                )
+                if guarded.status == "needs_clarification":
+                    return guarded
+
+            # Even an unrelated candidate with several legal codes must never
+            # look automatically accepted. Keep a weak candidate reviewable,
+            # but expose the catalog conflict to the common report service.
+            reasons = list(answer.attention_reasons)
+            if not any(reason.code == "multiple_codes" for reason in reasons):
+                reasons.append(
+                    AttentionReason(
+                        code="multiple_codes",
+                        message="Одно название встречается в перечне с разными кодами ОКПД2.",
+                    )
+                )
+            return answer.model_copy(
+                update={
+                    "status": "review" if answer.status == "ok" else answer.status,
+                    "attention_reasons": reasons,
+                }
+            )
 
         # Generic fallback for unregistered product nouns. It deliberately works
         # only on a single content stem and literal candidate anchors: dense
@@ -382,6 +622,30 @@ class AmbiguityGuard:
                         }
                     )
         if len({(row["okpd2"], _norm(row["name"])) for row in anchored}) < 2:
+            if answer.status in {"ok", "review"} and not _has_product_anchor(
+                query, product_stem, answer.title
+            ):
+                # A single noun with no literal or curated relation to the
+                # candidate must not receive a plausible-looking review/ok
+                # («Весы» → antennas). Multi-word semantic queries continue
+                # through the measured dense/lexical classifier unchanged.
+                alternatives = [
+                    alternative
+                    for alternative in answer.alternatives
+                    if _has_product_anchor(query, product_stem, alternative.title)
+                ]
+                return ClassifyResponse(
+                    query=answer.query,
+                    code=None,
+                    title=None,
+                    confidence=0.0,
+                    confidence_raw=0.0,
+                    status="not_found",
+                    alternatives=alternatives,
+                    catalog_sha256=self.catalog_sha256,
+                    item_id=answer.item_id,
+                    latency_ms=answer.latency_ms,
+                )
             return answer
         # Resolve generated options back to real catalog rows by title+code; if
         # they are not in the active catalog they must not become resolvable.

@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.job_store import SqliteJobStore
 from app.main import app
 from app.schemas import ClassifyResponse
-from app.services.ambiguity import AmbiguityConflict, AmbiguityGuard
+from app.services.ambiguity import AmbiguityConflict, AmbiguityGuard, load_catalog_rows
 from app.services.classifier import CatalogClassifier, reset_classifier
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -64,6 +64,91 @@ def test_all_curated_product_groups_ask_instead_of_forcing_top1() -> None:
         assert answer.alternatives == []
 
 
+@pytest.mark.parametrize(
+    ("query", "required_option_ids"),
+    [
+        ("Клапан", {"3-120-01", "3-126-01", "3-122-01"}),
+        ("Вентиль", {"3-120-01", "3-126-01", "3-122-01"}),
+        ("Аккумулятор", {"1-31-01", "2-190-01", "3-100-01"}),
+        ("Шкаф", {"1-56-01", "2-139-01", "1-138-01", "2-141-01"}),
+        ("Перчатки", {"1-3-01", "3-16-01", "3-17-01", "3-18-01", "3-19-01"}),
+        ("Подгузники", {"2-2-01", "2-362-01", "2-362-02", "2-362-03", "2-362-04"}),
+        ("Контейнер", {"1-113-01", "1-114-01", "2-74-01", "2-378-06"}),
+        ("Стол", {"2-139-01", "2-141-01", "2-320-01", "2-320-02"}),
+        ("Ультразвуковой аппарат", {"2-314-01", "2-318-01", "2-380-03"}),
+    ],
+)
+def test_observed_generic_families_offer_real_product_types(
+    query: str, required_option_ids: set[str]
+) -> None:
+    answer = CatalogClassifier(CATALOG).classify(query)
+    assert answer.status == "needs_clarification"
+    assert answer.code is None and answer.title is None
+    assert answer.clarification is not None
+    option_ids = {option.option_id for option in answer.clarification.options}
+    assert required_option_ids <= option_ids
+
+
+@pytest.mark.parametrize("query", ["Аппараты ИВЛ", "Аппарат искусственной вентиляции легких"])
+def test_ventilators_do_not_include_light_therapy_or_breathing_circuits(query: str) -> None:
+    answer = CatalogClassifier(CATALOG).classify(query)
+    assert answer.status == "needs_clarification"
+    assert answer.clarification is not None
+    assert {option.code for option in answer.clarification.options} == {
+        "32.50.21.121",
+        "32.50.21.122",
+        "32.50.21.123",
+    }
+    assert all(not option.title.startswith("Контур") for option in answer.clarification.options)
+
+
+@pytest.mark.parametrize("vector_search", ["0", "1"])
+def test_observed_lexical_bridges_find_the_real_catalog_positions(
+    vector_search: str, monkeypatch
+) -> None:
+    monkeypatch.setenv("VECTOR_SEARCH", vector_search)
+    classifier = CatalogClassifier(CATALOG)
+    for query, code in {
+        "Компьютерная мышь": "26.20.16",
+        "Смеситель": "28.14.11.160",
+    }.items():
+        answer = classifier.classify(query)
+        assert answer.status in {"ok", "review"}, query
+        assert answer.code == code, query
+
+
+def test_unrelated_high_review_candidate_is_silenced() -> None:
+    answer = CatalogClassifier(CATALOG).classify("Весы")
+    assert answer.status == "not_found"
+    assert answer.code is None and answer.title is None
+    assert all("Антенн" not in (alternative.title or "") for alternative in answer.alternatives)
+
+
+def test_meter_query_asks_about_the_measured_resource() -> None:
+    answer = CatalogClassifier(CATALOG).classify("Прибор учёта")
+    assert answer.status == "needs_clarification"
+    assert answer.clarification is not None
+    assert {option.option_id for option in answer.clarification.options} == {
+        "1-28-01",
+        "2-278-01",
+        "2-279-01",
+    }
+
+
+def test_medical_lights_offer_their_two_codes_instead_of_household_lights() -> None:
+    answer = CatalogClassifier(CATALOG).classify("Светильники медицинские")
+    assert answer.status == "needs_clarification"
+    assert answer.clarification is not None
+    assert {option.option_id for option in answer.clarification.options} == {
+        "2-334-01",
+        "2-334-02",
+    }
+    assert {option.code for option in answer.clarification.options} == {
+        "27.40.39",
+        "32.50.50.190",
+    }
+
+
 def test_specific_modifiers_and_direct_code_do_not_trigger_generic_rule() -> None:
     classifier = CatalogClassifier(CATALOG)
     expected = {
@@ -74,6 +159,15 @@ def test_specific_modifiers_and_direct_code_do_not_trigger_generic_rule() -> Non
         "бумага": "17.12",
         "Обувь": "15.2",
         "Одежда": "14.1",
+        "Клапан запорный": "28.14.13.110",
+        "Шкаф холодильный": "28.25.13.111",
+        "Шкаф металлический для документов": "31.09.11",
+        "Перчатки рабочие тканевые": "14.1",
+        "Перчатки хирургические резиновые": "22.19.60.111",
+        "Подгузники детские": "17.22.12.120",
+        "Контейнеры общего назначения": "29.20.21.110",
+        "Аппараты ультразвукового сканирования": "26.60.12.132",
+        "Аппараты ультразвуковой терапии": "26.60.13.150",
         "29.10.59.160": "29.10.59.160",
     }
     for query, code in expected.items():
@@ -90,6 +184,119 @@ def test_exact_title_with_multiple_codes_is_not_a_top1_answer() -> None:
     assert answer.clarification is not None
     assert answer.attention_reasons[0].code == "multiple_codes"
     assert len({option.code for option in answer.clarification.options}) >= 2
+
+
+@pytest.mark.parametrize(
+    ("query", "record_id"),
+    [
+        ("Стол", "2-320-01"),
+        ("Шприц", "2-385-01"),
+        ("Повязки и салфетки раневые", "2-376-01"),
+        ("Холодильник", "2-350-01"),
+        ("Мебель медицинская (кровать больничная и пр.)", "1-140-01"),
+        ("Мебель медицинская, хирургическая", "2-179-01"),
+        ("Самосвал", "1-77-01"),
+        ("Аккумулятор", "2-190-01"),
+        ("Сыры и творог", "2-454-01"),
+        ("Автомобили-самосвалы (бездорожье)", "1-77-01"),
+        ("Аккумуляторы свинцовые прочие", "2-190-01"),
+        ("Микроскопы медицинские", "2-379-01"),
+    ],
+)
+def test_selected_multi_code_title_is_clarified_for_query_wordings(
+    query: str, record_id: str
+) -> None:
+    rows, digest = load_catalog_rows(CATALOG)
+    guard = AmbiguityGuard(rows, digest)
+    selected = next(row for row in rows if row["record_id"] == record_id)
+    original = ClassifyResponse(
+        query=query,
+        code=selected["okpd2"],
+        title=selected["name"],
+        confidence=0.95,
+        confidence_raw=0.95,
+        status="ok",
+        latency_ms=0,
+    )
+    answer = guard.apply(query, original)
+    assert answer.status == "needs_clarification"
+    assert answer.code is None and answer.title is None
+    assert answer.clarification is not None
+    expected_codes = {
+        row["okpd2"] for row in rows if row["name"] == selected["name"] and row["okpd2"]
+    }
+    assert expected_codes <= {option.code for option in answer.clarification.options}
+    assert {reason.code for reason in answer.attention_reasons} <= {
+        "ambiguous_name",
+        "multiple_codes",
+    }
+
+
+@pytest.mark.parametrize(
+    ("query", "record_id"),
+    [
+        ("Автомобиль", "1-77-01"),
+        ("Светильник", "2-334-01"),
+        ("Фильтр", "2-418-01"),
+        ("Контейнер", "2-378-01"),
+    ],
+)
+def test_clarification_contains_every_code_of_each_offered_title(
+    query: str, record_id: str
+) -> None:
+    rows, _ = load_catalog_rows(CATALOG)
+    selected = next(row for row in rows if row["record_id"] == record_id)
+    answer = CatalogClassifier(CATALOG).classify(query)
+    assert answer.status == "needs_clarification" and answer.clarification is not None
+    offered = [
+        option for option in answer.clarification.options if option.title == selected["name"]
+    ]
+    expected_codes = {
+        row["okpd2"] for row in rows if row["name"] == selected["name"] and row["okpd2"]
+    }
+    assert len(expected_codes) >= 2
+    assert {option.code for option in offered} == expected_codes
+    assert len({option.option_id for option in offered}) == len(offered)
+
+
+def test_every_sibling_code_can_be_resolved_without_hiding_the_choice() -> None:
+    classifier = CatalogClassifier(CATALOG)
+    pending = classifier.classify("Фильтр")
+    assert pending.clarification is not None
+    breathing = [
+        option
+        for option in pending.clarification.options
+        if option.option_id.startswith("2-418-")
+    ]
+    assert len(breathing) == 9
+    for selected in breathing:
+        resolved = classifier.resolve_clarification(
+            "Фильтр", selected.option_id, pending.clarification.catalog_sha256
+        )
+        assert resolved.code == selected.code
+        assert resolved.title == selected.title
+        assert resolved.decision_source == "specialist"
+        assert resolved.resolution is not None
+        assert resolved.resolution.option_id == selected.option_id
+        assert resolved.clarification is None
+
+
+def test_unrelated_weak_multi_code_candidate_does_not_create_a_question() -> None:
+    rows, digest = load_catalog_rows(CATALOG)
+    guard = AmbiguityGuard(rows, digest)
+    selected = next(row for row in rows if row["record_id"] == "2-385-01")
+    original = ClassifyResponse(
+        query="Весы",
+        code=selected["okpd2"],
+        title=selected["name"],
+        confidence=0.3,
+        confidence_raw=0.3,
+        status="review",
+        latency_ms=0,
+    )
+    answer = guard.apply("Весы", original)
+    assert answer.status == "review"
+    assert answer.clarification is None
 
 
 def test_single_resolution_validates_option_and_catalog_hash() -> None:
