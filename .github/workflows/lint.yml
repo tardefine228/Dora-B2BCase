@@ -169,9 +169,14 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: Install browser
+      - name: Install packaged Chromium (no external browser CDN)
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        shell: bash
+        run: |
+          npm install --no-save --package-lock=false @sparticuz/chromium@153.0.0
+          chromium=$(node scripts/prepare-ci-chromium.mjs)
+          echo "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=${chromium}" >> "${GITHUB_ENV}"
+          echo "LD_LIBRARY_PATH=/tmp/al2023/lib:${LD_LIBRARY_PATH:-}" >> "${GITHUB_ENV}"
 
       - name: Browser and accessibility tests
         working-directory: frontend
