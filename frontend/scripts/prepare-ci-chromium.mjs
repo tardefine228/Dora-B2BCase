@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 const require = createRequire(import.meta.url);
 const { default: Chromium, inflate } = require('@sparticuz/chromium');
 const packageEntry = require.resolve('@sparticuz/chromium');
-const bin = join(dirname(packageEntry), '..', '..', 'bin');
+const bin = join(dirname(packageEntry), '..', 'bin');
 await inflate(join(bin, 'al2023.tar.br'));
 process.stdout.write(await Chromium.executablePath());
 process.stderr.write(`Chromium compatibility libraries: ${join(tmpdir(), 'al2023', 'lib')}\n`);
