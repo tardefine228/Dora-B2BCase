@@ -88,7 +88,7 @@ row-by-row gate.
 ## Проверки
 
 * `ruff check api/app api/tests eval/run_ambiguity_eval.py eval/specifier_stress.py` — passed.
-* Полный `pytest` после всех пяти этапов доработки: **1141 passed, 7 skipped, 3 xfailed**.
+* Полный `pytest` после всех пяти этапов доработки: **1138 passed, 7 skipped, 3 xfailed**.
 * Дополнительно `eval/golden_1875/test_dataset.py` и eval/gate tests: **63 passed**.
 * Frontend unit/regression: **38 passed**.
 * TypeScript и `vite build`: passed.
@@ -96,8 +96,8 @@ row-by-row gate.
   и axe как до, так и после выбора.
 * Полный quality eval без изменения baselines: lexical и TF‑IDF — **В ПРЕДЕЛАХ**.
   TF‑IDF: решение 193/201, top-3 199/201, тишина 31/32, точные названия 112/112,
-  ECE 0.023; прямой top-1 93.0 %. Lexical: решение 191/201,
-  top-3 198/201, тишина 31/32, точные названия 112/112, ECE 0.010.
+  ECE 0.026; прямой top-1 93.0 %. Lexical: решение 191/201,
+  top-3 198/201, тишина 31/32, точные названия 112/112, ECE 0.013.
 * Живой FastAPI smoke: `/health/ready`, `/ui/`, single resolve, batch resolve, CSV —
   passed. Отдельный браузерный сценарий без моков на живом API — passed.
 * Specifier stress: baseline не ухудшился после перевода измерения на
@@ -120,9 +120,11 @@ row-by-row gate.
 * Exact-title выбор выполняется после retrieval/encoder/reranker и сохраняет их
   calibrated confidence; он не отключает instrumentation и multi-code guard.
 
-Новые мосты синхронизированы с `eval/data-review-2026-10-25/bridge_registry.json`.
-Они остаются `legacy_unreviewed`: машинный regression не подменяет экспертное
-расширение словаря и не объявляет форматные коды эквивалентными.
+Три новых узких alias находятся в прикладном retrieval/guard слое, а не в
+обучающем `ml/lexicon.py`: их добавление в feature space потребовало бы нового
+model-quality admission. Отгруженные артефакты и baselines не менялись. Машинный
+regression не подменяет экспертное расширение словаря и не объявляет форматные
+коды эквивалентными.
 
 ## Что не проверено в этой среде
 

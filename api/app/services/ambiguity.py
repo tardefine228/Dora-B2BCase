@@ -35,6 +35,48 @@ from ml.features import best_match_weight, stem, stems, tokens
 from ml.lexicon import CANONICAL_CODES, bridged_targets
 from ml.query import split_purchase_query
 
+# Observed procurement aliases belong to the decision layer, not to the trained
+# feature space. Adding them to ml.lexicon changes every training pair and
+# requires model-quality admission; these aliases only retrieve existing rows.
+_OBSERVED_BRIDGES = {
+    stem("смеситель"): ("смесительная", "28.14.11.160"),
+    stem("вентиль"): ("арматура", "28.14.11"),
+    stem("ивл"): ("вентиляции", "32.50.21.121"),
+}
+
+
+def observed_bridged_targets(query: str) -> dict[str, str]:
+    """Global reviewed bridges plus narrow application-level observed aliases."""
+    targets = dict(bridged_targets(query))
+    query_stems = set(stems(query))
+    for source, (target, _code) in _OBSERVED_BRIDGES.items():
+        if source in query_stems:
+            targets[source] = target
+    return targets
+
+
+def observed_review_codes(query: str) -> set[str]:
+    """Explicit one-to-one aliases eligible for a cautious review rescue."""
+    query_stems = set(stems(query))
+    return {
+        code
+        for source, (_target, code) in _OBSERVED_BRIDGES.items()
+        if source in query_stems
+    }
+
+
+def observed_canonical_codes(query: str) -> set[str]:
+    """Canonical codes for aliases active in this query."""
+    targets = observed_bridged_targets(query)
+    codes = {CANONICAL_CODES[target] for target in targets.values() if target in CANONICAL_CODES}
+    query_stems = set(stems(query))
+    codes.update(
+        code
+        for source, (_target, code) in _OBSERVED_BRIDGES.items()
+        if source in query_stems
+    )
+    return codes
+
 
 class AmbiguityResolutionError(ValueError):
     """Base class for safe, user-actionable resolution failures."""
@@ -300,7 +342,7 @@ def _has_product_anchor(query: str, product_stem: str, title: str | None) -> boo
     }
     if best_match_weight(product_stem, title_stems) > 0:
         return True
-    targets = " ".join(bridged_targets(query).values())
+    targets = " ".join(observed_bridged_targets(query).values())
     return any(best_match_weight(target, title_stems) > 0 for target in stems(targets))
 
 

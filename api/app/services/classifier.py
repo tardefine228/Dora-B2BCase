@@ -861,14 +861,15 @@ class CatalogClassifier:
 
     def _retrieve(self, query: str, query_tokens: set[str]) -> list[tuple[float, dict]]:
         """Lexical shortlist as ``(retrieval_score, row)`` pairs, best first."""
+        from app.services.ambiguity import observed_bridged_targets
         from ml.features import lexical_score_prepared, prepare_candidate, stem
-        from ml.lexicon import bridged_targets, expand_query
+        from ml.lexicon import expand_query
 
         prepared_query = prepare_candidate(expand_query(query), idf=self._idf)
         # A bridged product word ("принтер" -> "вывода") is a deliberate lexicon
         # decision: candidates containing the category word get a retrieval bonus
         # so abstract official names outrank stem-accidental junk ("печать" ~ "печи").
-        bridge_stems = {stem(target) for target in set(bridged_targets(query).values())}
+        bridge_stems = {stem(target) for target in set(observed_bridged_targets(query).values())}
         scored: list[tuple[float, dict]] = []
         for row in self.index:
             score = lexical_score_prepared(prepared_query, row["prepared"])
@@ -1058,17 +1059,21 @@ def _head_rescued_answer(
         # An official position can be a deliberate lexicon match even when its
         # title does not contain the everyday product word («мышь» → «устройства
         # ввода»). Only a single canonical target is eligible, the candidate
-        # must already be retrieved above the same floor, and the result stays
-        # review. Ambiguous bridges never take this path.
-        from ml.lexicon import CANONICAL_CODES, bridged_targets
+        # must already be retrieved. Statistical bridges keep the same floor;
+        # an explicit one-to-one observed alias may be weaker, but still yields
+        # only review, never ok. Ambiguous bridges never take this path.
+        from app.services.ambiguity import observed_canonical_codes, observed_review_codes
 
-        targets = set(bridged_targets(query).values())
-        canonical_codes = {CANONICAL_CODES[target] for target in targets}
+        canonical_codes = observed_canonical_codes(query)
+        review_codes = observed_review_codes(query)
         candidates = [
             candidate
             for candidate in ranked
             if candidate.code in canonical_codes
-            and candidate.probability >= _HEAD_RESCUE_FLOOR
+            and (
+                candidate.probability >= _HEAD_RESCUE_FLOOR
+                or candidate.code in review_codes
+            )
         ]
         if len(canonical_codes) != 1 or not candidates:
             return None

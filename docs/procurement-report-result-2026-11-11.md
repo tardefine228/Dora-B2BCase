@@ -61,7 +61,7 @@ SQLite/PostgreSQL позволяют пережить рестарт API/worker;
 ## Проверки
 
 * Ruff: passed.
-* Полный backend + golden dataset после всех доработок: **1141 passed, 7 skipped, 3 xfailed**.
+* Полный backend + golden dataset после всех доработок: **1138 passed, 7 skipped, 3 xfailed**.
 * Backend report tests: buckets, пересекающиеся причины, specialist review, API/CSV
   пересчёт после resolve — passed.
 * Frontend: **41 unit passed**, TypeScript и production build passed.
