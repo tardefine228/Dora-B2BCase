@@ -16,7 +16,9 @@ client = TestClient(app)
 CSV_HEADER = (
     "query;code;title;status;confidence;confidence_raw;clause_ref;clause_url;"
     "code_role;catalog_review_required;"
-    "alt1_code;alt1_title;alt2_code;alt2_title;alt3_code;alt3_title"
+    "alt1_code;alt1_title;alt2_code;alt2_title;alt3_code;alt3_title;"
+    "decision_source;selected_option_id;clarification_question;clarification_options;"
+    "catalog_sha256;report_bucket;risk_rank;report_reasons"
 )
 
 
@@ -44,7 +46,7 @@ def test_csv_export_has_bom_separators_and_headers() -> None:
     assert rows[1][3] == "ok"
     assert rows[1][7] == "/source/2-339-01"
     status = client.get(f"/classify/batch/{job_id}").json()
-    assert status["contract_version"] == "1.0"
+    assert status["contract_version"] == "2.0"
     assert rows[1][5] == f"{status['results'][0]['confidence_raw']:.4f}"
     # The status of the second row depends on the trained artifact (the
     # heuristic fallback answers "ok" where the model stays silent), so only
@@ -144,7 +146,7 @@ def test_events_stream_reports_progress_and_done() -> None:
     assert 0 <= progress["completed"] <= 2
     done = events[-1][1]
     assert done["status"] == "completed"
-    assert done["contract_version"] == "1.0"
+    assert done["contract_version"] == "2.0"
     assert done["completed"] == 2
     assert len(done["results"]) == 2
 

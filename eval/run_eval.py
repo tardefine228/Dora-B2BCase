@@ -15,8 +15,9 @@ are trained on it (see ``ml/train_reranker.py``). Match rules:
 Besides the labeled set the script measures:
 
 * **exact-name regression** — every N-th catalog position name is sent verbatim
-  and must come back as top-1 with its own code (lexicon bridges and feature
-  changes must never break literal queries such as "Материалы лакокрасочные");
+  and must come back as top-1 with its own code, or as a clarification containing
+  that code when the same catalog title has several codes (lexicon bridges and
+  feature changes must never break literal queries such as "Материалы лакокрасочные");
 * **calibration** — expected calibration error (ECE) and a reliability table of
   the reported ``confidence`` against top-1 correctness;
 * **threshold sweep** (``--sweep``) — metrics as a function of the ``review``
@@ -113,11 +114,28 @@ def load_exact_names(path: Path, step: int = EXACT_NAME_STEP) -> list[tuple[str,
     return rows[::step]
 
 
-def evaluate_exact_names(classifier, names: list[tuple[str, str]]) -> list[dict]:
-    """Literal catalog names must come back as themselves.
+def _clarification_has_code(response, expected: str) -> bool:
+    """A question is a correct decision only when it offers the labeled code.
 
-    87 position names carry several OKPD2 codes in the list (one row per code),
-    so a hit is either the expected code or the very same position name.
+    Counting every ``needs_clarification`` as success would let the guard improve
+    the metrics by refusing everything. Counting every question as failure would
+    instead require an arbitrary code for a catalog title that has several codes.
+    """
+    clarification = getattr(response, "clarification", None)
+    return bool(
+        response.status == "needs_clarification"
+        and clarification is not None
+        and len(clarification.options) >= 2
+        and any(codes_match(option.code, expected) for option in clarification.options)
+    )
+
+
+def evaluate_exact_names(classifier, names: list[tuple[str, str]]) -> list[dict]:
+    """Literal catalog names must identify themselves or a necessary question.
+
+    87 position names carry several OKPD2 codes in the list (one row per code).
+    For those names a question containing the expected code is the only honest
+    answer. ``direct_top1`` keeps the old direct-answer metric visible separately.
     """
     exact: list[dict] = []
     for name, code in names:
@@ -135,7 +153,13 @@ def evaluate_exact_names(classifier, names: list[tuple[str, str]]) -> list[dict]
                 "confidence_raw": response.confidence_raw
                 if response.confidence_raw is not None
                 else response.confidence,
-                "correct_top1": same_name or codes_match(response.code, code),
+                "correct_top1": (
+                    same_name
+                    or codes_match(response.code, code)
+                    or _clarification_has_code(response, code)
+                ),
+                "direct_top1": same_name or codes_match(response.code, code),
+                "clarified_expected": _clarification_has_code(response, code),
             }
         )
     return exact
@@ -223,6 +247,8 @@ def _classify_rows(classifier, rows: list[dict]) -> list[dict]:
         kind = label_kind(row)
         disputed = (row.get("disputed") or "0").strip() == "1"
         response = classifier.classify(query)
+        direct_top1 = codes_match(response.code, expected) if kind == "code" else False
+        clarified_expected = False
 
         if kind == "unclear":
             # Contested ground truth: recorded for transparency, never scored.
@@ -232,7 +258,9 @@ def _classify_rows(classifier, rows: list[dict]) -> list[dict]:
             correct_top1 = response.status == "not_found"
             correct_top3 = correct_top1
         else:
-            correct_top1 = codes_match(response.code, expected)
+            direct_top1 = codes_match(response.code, expected)
+            clarified_expected = _clarification_has_code(response, expected)
+            correct_top1 = direct_top1 or clarified_expected
             correct_top3 = correct_top1 or any(
                 codes_match(alternative.code, expected) for alternative in response.alternatives
             )
@@ -248,6 +276,8 @@ def _classify_rows(classifier, rows: list[dict]) -> list[dict]:
                 else response.confidence,
                 "correct_top1": correct_top1,
                 "correct_top3": correct_top3,
+                "direct_top1": direct_top1,
+                "clarified_expected": clarified_expected,
                 "label_kind": kind,
                 "disputed": disputed,
                 "title": response.title or "",
@@ -261,12 +291,15 @@ def calibration(results: list[dict], bins: int = ECE_BINS, key: str = "confidenc
     """Reliability of ``confidence`` as P(top-1 correct) over answered queries.
 
     ``not_found`` answers report confidence 0 and are excluded: their
-    correctness is a different question (was silence right?). ECE is the
+    correctness is a different question (was silence right?). A clarification
+    has no code probability either, so including its artificial zero confidence
+    would make ECE measure the guard rather than the model. ECE is the
     confidence-weighted mean |accuracy − mean confidence| over equal-width bins.
     """
     answered = [
         r for r in results
-        if r["status"] != "not_found" and _row_kind(r) != "unclear"
+        if r["status"] not in {"not_found", "needs_clarification"}
+        and _row_kind(r) != "unclear"
     ]
     if not answered:
         return {"ece": 0.0, "bins": [], "answered": 0}
@@ -373,6 +406,24 @@ def summarize(report: dict) -> dict:
     }
     summary["exact_rows"] = counts["exact_top1"].total
     summary["exact_top1"] = round(counts["exact_top1"].rate, 1)
+    with_expected = [r for r in results if _row_kind(r) == "code"]
+    exact = report.get("exact") or []
+    summary["direct_top1_expected"] = round(
+        100
+        * sum(1 for r in with_expected if r.get("direct_top1", r["correct_top1"]))
+        / len(with_expected),
+        1,
+    ) if with_expected else 0.0
+    summary["clarified_expected"] = sum(
+        1 for r in with_expected if r.get("clarified_expected")
+    )
+    summary["direct_exact_top1"] = round(
+        100
+        * sum(1 for r in exact if r.get("direct_top1", r["correct_top1"]))
+        / len(exact),
+        1,
+    ) if exact else 0.0
+    summary["clarified_exact"] = sum(1 for r in exact if r.get("clarified_expected"))
     summary["ece"] = calibration(results)["ece"]
     summary["ece_raw"] = calibration(results, key="confidence_raw")["ece"]
     return summary
@@ -400,7 +451,9 @@ def render_markdown(report: dict) -> str:
         "",
         "| Метрика | Значение |",
         "| --- | ---: |",
-        f"| Top-1 (примеры с кодом) | {summary['top1_expected']}% |",
+        f"| Верное решение: код или уточнение с ожидаемым кодом | {summary['top1_expected']}% |",
+        f"| Из них прямой top-1 | {summary['direct_top1_expected']}% |",
+        f"| Уточнения с ожидаемым кодом | {summary['clarified_expected']} |",
         f"| Top-3 (примеры с кодом) | {summary['top3_expected']}% |",
         f"| Верный `not_found` (проверенные «вне перечня», {summary['not_found_rows']} шт.) "
         f"| {summary['correct_silence']}% |",
@@ -409,8 +462,10 @@ def render_markdown(report: dict) -> str:
         f"{summary['contested_rows']} / {summary['contested_silence']}% |",
         f"| Top-1 без спорных | {summary['clean_top1']}% |",
         f"| Top-1 по спорным | {summary['disputed_top1']}% |",
-        f"| Точные названия каталога, top-1 ({summary['exact_rows']} шт.) "
+        f"| Точные названия: код или необходимое уточнение ({summary['exact_rows']} шт.) "
         f"| {summary['exact_top1']}% |",
+        f"| Из них прямой top-1 / уточнений | {summary['direct_exact_top1']}% / "
+        f"{summary['clarified_exact']} |",
         f"| ECE уверенности, калиброванная шкала (отвеченные запросы) | {summary['ece']:.3f} |",
         f"| ECE сырой уверенности (до калибровки, для сравнения) | {summary['ece_raw']:.3f} |",
         "",
@@ -628,8 +683,9 @@ def main() -> int:
     args.output.write_text(markdown, encoding="utf-8")
     summary = summarize(report)
     print(f"Backend: {args.backend}")
-    print(f"  top-1 (с кодом):  {summary['top1_expected']}%")
-    print(f"  top-3 (с кодом):  {summary['top3_expected']}%")
+    print(f"  решение (код/уточнение): {summary['top1_expected']}%")
+    print(f"  прямой top-1 (с кодом):    {summary['direct_top1_expected']}%")
+    print(f"  top-3 (с кодом):          {summary['top3_expected']}%")
     print(f"  верный not_found: {summary['correct_silence']}%")
     print(f"  top-1 всего:      {summary['top1_all']}%")
     print(f"  точные названия:  {summary['exact_top1']}% ({summary['exact_rows']} шт.)")

@@ -71,6 +71,11 @@ def test_statuses_follow_the_raw_confidence_on_the_labeled_set() -> None:
     rescued = 0
     for query in _labeled_queries():
         response = classifier.classify(query)
+        # Ambiguity is a separate post-model decision (contract 2.0). Calibration
+        # is still checked against the preserved raw model answer.
+        if response.status == "needs_clarification" and response.clarification:
+            assert response.code is None and response.title is None
+            response = response.clarification.original
         assert response.confidence_raw is not None
         expected_status = reranker.confidence_model.status_for(response.confidence_raw)
         if response.status != expected_status:
@@ -100,6 +105,8 @@ def test_reported_confidence_is_the_calibrated_raw_value() -> None:
 
     for query in ("Электрочайники", "Ноутбук Lenovo IdeaPad", "Смарт-часы"):
         response = classifier.classify(query)
+        if response.status == "needs_clarification" and response.clarification:
+            response = response.clarification.original
         expected = round(reranker.display_confidence(response.confidence_raw or 0.0), 4)
         assert response.confidence == expected, query
 
@@ -210,6 +217,8 @@ def test_calibration_platform_mirrors_the_api_confidence() -> None:
     rescued = 0
     for query, _expected in cases[:: max(1, len(cases) // 30)]:
         response = classifier.classify(query)
+        if response.status == "needs_clarification" and response.clarification:
+            response = response.clarification.original
         raw, status, _code = calibration_confidence(reranker, index, query)
         if status != response.status:
             # The only allowed divergence is the documented head rescue

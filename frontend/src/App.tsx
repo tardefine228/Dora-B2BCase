@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, followBatch, type Job, type Result, type UploadAccepted, type Verdict } from './api';
+import { api, followBatch, type Job, type ProcurementReport, type ReportBucket, type ReportReasonCode, type Result, type UploadAccepted, type Verdict } from './api';
 import { exportResults, exportResultsCsv } from './files';
 import { procurementVerdict, PROCUREMENT_SCOPE, PROCUREMENT_SOURCE } from './procurement';
 import { STATUS_HELP, STATUS_LABEL, codeLabel, duplicateAppendixHint, notFoundHint, verifierNote } from './status';
 import { orderResults, type SortMode } from './rows';
 import { storage } from './storage';
 import { isRunningJob, navigationType, parseJobMarker, readStoredView, type StoredView } from './view';
+import { BUCKET_LABEL, filterReportResults, REASON_LABEL, reportItem } from './report';
 
 const ACTIVE_JOB_KEY = 'dora:active-job:v1';
 // Ключи удалённой локальной истории: их надо стирать у тех, кто успел включить
@@ -37,6 +38,39 @@ function Alternatives({ result }: { result: Result }) {
         <SourceLink url={alt.url}/>
       </div>)}</div>
   </details>;
+}
+function ClarificationBox({ result, onResolve, onResolved }: {
+  result: Result;
+  onResolve: (result: Result, optionId: string) => Promise<Result>;
+  onResolved: (original: Result, resolved: Result) => void;
+}) {
+  const [sending, setSending] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const clarification = result.clarification;
+  if (!clarification) return null;
+  const choose = async (optionId: string) => {
+    if (sending) return;
+    setSending(optionId); setError('');
+    try { onResolved(result, await onResolve(result, optionId)); }
+    catch (e) { setError(message(e)); }
+    finally { setSending(null); }
+  };
+  return <section className="clarification" aria-labelledby={`question-${result.itemId ?? 'single'}`}>
+    <h3 id={`question-${result.itemId ?? 'single'}`}>{clarification.question}</h3>
+    <p>Выберите один вариант. До выбора код ОКПД2 не назначается.</p>
+    <div className="clarification-options">{clarification.options.map(option =>
+      <div className="clarification-option" key={option.optionId}>
+        <button type="button" className="clarification-choice" disabled={sending !== null}
+          onClick={() => void choose(option.optionId)}>
+          <strong>{option.code}</strong><span>{option.title}</span>
+          <small>{sending === option.optionId ? 'Сохраняем выбор…' : 'Выбрать этот вариант'}
+            {option.catalogReviewRequired ? ' · потребуется сверка каталога' : ''}</small>
+        </button>
+        <SourceLink url={option.url}/>
+      </div>)}
+    </div>
+    {error && <p className="field-error" role="alert">{error} Обновите результат и попробуйте снова.</p>}
+  </section>;
 }
 function Feedback({ result, onSaved }: { result: Result; onSaved: (r: Result, verdict: Verdict, corrected: string | null) => void }) {
   const [choice, setChoice] = useState<Verdict | null>(null);
@@ -70,6 +104,7 @@ function Feedback({ result, onSaved }: { result: Result; onSaved: (r: Result, ve
   </div>;
 }
 function resultStatus(result: Result) {
+  if (result.decisionSource === 'specialist' && result.status === 'ok') return 'Выбрано специалистом';
   return procurementVerdict(result).caution ?? STATUS_LABEL[result.status];
 }
 function Procurement({ result, brief = false }: { result: Result; brief?: boolean }) {
@@ -79,8 +114,14 @@ function Procurement({ result, brief = false }: { result: Result; brief?: boolea
     <p>{verdict.explanation}</p>
   </div>;
 }
-function ResultCard({ result, compact = false, onSaved }: { result: Result; compact?: boolean; onSaved: (r: Result, verdict: Verdict, corrected: string | null) => void }) {
-  const missingCode = result.status !== 'not_found' && !result.code;
+function ResultCard({ result, compact = false, onSaved, onResolve, onResolved }: {
+  result: Result;
+  compact?: boolean;
+  onSaved: (r: Result, verdict: Verdict, corrected: string | null) => void;
+  onResolve: (result: Result, optionId: string) => Promise<Result>;
+  onResolved: (original: Result, resolved: Result) => void;
+}) {
+  const missingCode = (result.status === 'ok' || result.status === 'review') && !result.code;
   // «Нет в перечне» и «нашёл, но не уверен» — разные ответы, и подсказка у них
   // тоже разная: в первом случае важно, есть ли вообще похожие позиции.
   const hint = result.status === 'not_found' ? notFoundHint(result) : STATUS_HELP[result.status];
@@ -94,21 +135,29 @@ function ResultCard({ result, compact = false, onSaved }: { result: Result; comp
       <div className="result-grid">
         <div><p className="muted">{codeLabel(result.status)}</p>
           {result.status === 'not_found' ? <p className="title">Совпадение не найдено</p>
-            : missingCode ? <p className="title">Сервис не вернул код — требуется проверка</p>
-              : <><div className="code">{result.code}</div><p className="title">Категория: {result.title ?? "название не указано"}</p>
+            : result.status === 'needs_clarification' ? <p className="title">Код не назначен до уточнения</p>
+              : missingCode ? <p className="title">Сервис не вернул код — требуется проверка</p>
+                : <><div className="code">{result.code}</div><p className="title">Категория: {result.title ?? "название не указано"}</p>
                 {result.clauseRef && <p className="muted">{result.clauseRef}</p>}</>}
         </div>
-        <div className="confidence"><strong>{percent(result.confidence)}</strong><p>Уверенность в подборе кода</p>
-          {result.confidence !== null && <progress max={1} value={result.confidence} aria-label="Уверенность модели"/>}</div>
+        {result.decisionSource === 'specialist'
+          ? <div className="confidence"><strong>Ручной выбор</strong><p>Оценка модели не показывается</p></div>
+          : <div className="confidence"><strong>{percent(result.confidence)}</strong><p>Уверенность в подборе кода</p>
+            {result.confidence !== null && <progress max={1} value={result.confidence} aria-label="Уверенность модели"/>}</div>}
       </div>
     </>}
+    {result.status === 'needs_clarification' &&
+      <ClarificationBox result={result} onResolve={onResolve} onResolved={onResolved}/>}
+    {result.decisionSource === 'specialist' && result.resolution && <p className="resolution-note" role="status">
+      Выбрано специалистом. Исходный ответ модели: {result.resolution.original.code ?? 'без кода'} · {STATUS_LABEL[result.resolution.original.status]}.
+    </p>}
     <Procurement result={result}/>
     <p className="status-help">{missingCode ? 'Без кода нельзя считать результат уверенным.' : hint}{result.status === 'not_found' && ' Процент показывает уверенность в подборе кода, а не вероятность отсутствия товара в постановлении.'}</p>
     {verified && <p className="status-help" role="note">{verified}</p>}
     {twin && <p className="status-help" role="note">{twin}</p>}
     {!compact && <div className="source"><SourceLink url={result.url}/></div>}
     <Alternatives result={result}/>
-    <details className="details"><summary>Сообщить об ошибке (для экспертов)</summary><Feedback key={`${result.name}-${result.code}`} result={result} onSaved={onSaved}/></details>
+    {result.status !== 'needs_clarification' && <details className="details"><summary>Сообщить об ошибке (для экспертов)</summary><Feedback key={`${result.name}-${result.code}`} result={result} onSaved={onSaved}/></details>}
   </div>;
 }
 
@@ -129,6 +178,10 @@ export default function App() {
   const [fileInfo, setFileInfo] = useState<UploadAccepted | null>(savedView.fileInfo ?? null);
   const [progress, setProgress] = useState<{ processed: number; total: number; state: 'running' | 'done' | 'failed' } | null>(savedView.progress ?? null);
   const [results, setResults] = useState<Result[]>(savedView.results ?? []);
+  const [jobId, setJobId] = useState<string | null>(savedView.jobId ?? null);
+  const [report, setReport] = useState<ProcurementReport | null>(null);
+  const [bucketFilter, setBucketFilter] = useState<ReportBucket | 'all'>('all');
+  const [reasonFilter, setReasonFilter] = useState<ReportReasonCode | 'all'>('all');
   const [sort, setSort] = useState<SortMode>('original');
   const [drag, setDrag] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -147,9 +200,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    try { sessionStorage.setItem('dora:current-view:v1', JSON.stringify({ name, result, filename, fileInfo, progress, results })); }
+    try { sessionStorage.setItem('dora:current-view:v1', JSON.stringify({ name, result, filename, fileInfo, progress, results, jobId })); }
     catch { setStorageWarning('Не удалось сохранить текущие результаты для возврата по «Назад». Скачайте CSV перед переходом по ссылке.'); }
-  }, [name, result, filename, fileInfo, progress, results]);
+  }, [name, result, filename, fileInfo, progress, results, jobId]);
 
   function saveVerdict(r: Result, verdict: Verdict, corrected: string | null) {
     const mark = (item: Result) => item.name === r.name && item.code === r.code
@@ -157,7 +210,26 @@ export default function App() {
     setResult(old => old ? mark(old) : old);
     setResults(old => old.map(mark));
   }
+  async function resolveClarification(original: Result, optionId: string): Promise<Result> {
+    if (jobId) {
+      const itemId = original.itemId ?? results.indexOf(original);
+      if (itemId < 0) throw new Error('Позиция не найдена в текущем списке. Загрузите файл повторно.');
+      return api.resolveBatch(jobId, itemId, original, optionId);
+    }
+    return api.resolve(original, optionId);
+  }
+  function clarificationResolved(original: Result, resolved: Result) {
+    setResult(current => current === original ? resolved : current);
+    setResults(current => current.map(item => item === original ? resolved : item));
+    setError('');
+    if (jobId) {
+      void api.getBatch(jobId).then(job => setReport(job.report)).catch((error: unknown) => {
+        setError(`Выбор сохранён, но сводку не удалось обновить: ${message(error)}`);
+      });
+    }
+  }
   async function follow(jobId: string, total: number) {
+    setJobId(jobId);
     abort.current?.abort();
     const controller = new AbortController(); abort.current = controller;
     locked.current = true; setBusy('batch'); setError('');
@@ -168,13 +240,15 @@ export default function App() {
         setProgress({ processed: job.processed, total: job.total,
           state: job.status === 'completed' ? 'done' : job.status === 'failed' ? 'failed' : 'running' });
         if (job.results.length) setResults(job.results);
+        if (job.report) setReport(job.report);
       }, controller.signal);
       if (controller.signal.aborted) return;
       setResults(done.results);
+      setReport(done.report);
       if (done.status !== 'completed') {
         setError(done.error ?? 'Не удалось обработать все товары. Частичные результаты сохранены.');
       }
-      storage.removeItem(ACTIVE_JOB_KEY);
+      // Keep only the server job id: a completed report is restored after reload.
     } catch (e) {
       if (!controller.signal.aborted) {
         setError(message(e));
@@ -190,34 +264,38 @@ export default function App() {
     return () => { abort.current?.abort(); locked.current = false; };
   }, []);
 
-  /**
-   * Возобновляет только *идущую* обработку.
-   *
-   * Задание лежит в localStorage, чтобы пережить закрытие вкладки, но показывать
-   * результаты задания, которое завершилось в прошлой сессии, нельзя: страница
-   * открывается пустой, а о потере результатов честно сообщает строка ниже.
-   */
+  /** Restore running work or a completed server report using only its opaque id. */
   async function resumeActiveJob() {
     const marker = parseJobMarker(storage.getItem(ACTIVE_JOB_KEY));
     if (!marker) { storage.removeItem(ACTIVE_JOB_KEY); return; }
     let job: Job;
     try { job = await api.getBatch(marker.id); }
-    catch { return; }  // Сервер недоступен — не пугаем и не теряем задание.
-    if (!isRunningJob(job.status)) {
-      storage.removeItem(ACTIVE_JOB_KEY);
-      const name = marker.filename ? `«${marker.filename}»` : 'файла';
-      setNotice(`Обработка ${name} завершилась, пока страница была закрыта. Результаты не восстановлены — загрузите файл снова, если они нужны.`);
+    catch (error) {
+      setNotice(`Отчёт не восстановлен: ${message(error)} Идентификатор сохранён для повторной попытки.`);
       return;
     }
     if (marker.filename) setFilename(marker.filename);
-    await follow(marker.id, job.total || marker.total);
+    if (isRunningJob(job.status)) {
+      await follow(marker.id, job.total || marker.total);
+      return;
+    }
+    setJobId(job.job_id);
+    setResults(job.results);
+    setReport(job.report);
+    setProgress({
+      processed: job.processed, total: job.total,
+      state: job.status === 'completed' ? 'done' : 'failed',
+    });
+    if (job.status === 'completed') setNotice('Отчёт восстановлен с сервера. Срок хранения ограничен настройкой JOB_TTL_HOURS.');
+    else setError(job.error ?? 'Сохранённая обработка завершилась с ошибкой.');
   }
 
   async function single() {
     if (locked.current) return;
     const value = name.trim();
     if (!value) { setError('Введите название товара.'); return; }
-    locked.current = true; setBusy('single'); setError(''); setNotice(''); setResult(null); setResults([]); setProgress(null);
+    locked.current = true; setBusy('single'); setError(''); setNotice(''); setResult(null); setResults([]); setProgress(null); setJobId(null); setReport(null);
+    storage.removeItem(ACTIVE_JOB_KEY);
     try { const found = await api.classify(value); setResult(found); }
     catch (e) { setError(message(e)); }
     finally { locked.current = false; setBusy(null); }
@@ -229,7 +307,8 @@ export default function App() {
       setError('Поддерживаются Excel (.xlsx), CSV, PDF, DOCX, JSON и текстовые файлы.'); return;
     }
     if (file.size > 9_500_000) { setError('Файл должен быть меньше 9,5 МБ (ограничение на загрузку).'); return; }
-    locked.current = true; setBusy('file'); setError(''); setNotice(''); setFileInfo(null); setFilename(''); setResults([]); setProgress(null); setResult(null);
+    locked.current = true; setBusy('file'); setError(''); setNotice(''); setFileInfo(null); setFilename(''); setResults([]); setProgress(null); setResult(null); setJobId(null); setReport(null); setBucketFilter('all'); setReasonFilter('all');
+    storage.removeItem(ACTIVE_JOB_KEY);
     try {
       const accepted = await api.uploadFile(file);
       setFilename(file.name); setFileInfo(accepted);
@@ -241,9 +320,22 @@ export default function App() {
     } catch (e) { setError(message(e)); }
     finally { locked.current = false; setBusy(null); if (input.current) input.current.value = ''; }
   }
-  // Порядок строк: файл, название или уверенность (см. src/rows.ts). Номер в
-  // первой колонке — просто счётчик строк этого порядка, 1…N.
-  const sorted = orderResults(results, sort);
+  const visible = filterReportResults(results, report, bucketFilter, reasonFilter);
+  const sorted = orderResults(visible, sort, report);
+  const showBucket = (bucket: ReportBucket) => {
+    setBucketFilter(current => current === bucket ? 'all' : bucket);
+    setReasonFilter('all');
+    if (bucket !== 'accepted') setSort('risk');
+  };
+  const goToFirstRisk = () => {
+    setBucketFilter('needs_review'); setReasonFilter('all'); setSort('risk');
+    window.setTimeout(() => document.querySelector('tr[data-risk="true"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+  };
+  const closeReport = () => {
+    storage.removeItem(ACTIVE_JOB_KEY);
+    setResults([]); setReport(null); setJobId(null); setFileInfo(null); setFilename(''); setProgress(null);
+    setBucketFilter('all'); setReasonFilter('all'); setNotice('Отчёт закрыт. Серверный срок хранения не изменился.');
+  };
 
   return <>
     <header><div className="brand"><span className="brand-icon"><img src={`${import.meta.env.BASE_URL}russia-flag.svg`} width="32" height="32" alt="Флаг России"/></span>Классификатор товаров</div></header>
@@ -293,31 +385,60 @@ export default function App() {
           <span>{progress.processed} из {progress.total}</span>
           <progress max={progress.total} value={progress.processed} aria-label="Обработано товаров"/>
         </section>}
-        {result && <section className="card result"><ResultCard result={result} onSaved={saveVerdict}/></section>}
+        {result && <section className="card result"><ResultCard result={result} onSaved={saveVerdict} onResolve={resolveClarification} onResolved={clarificationResolved}/></section>}
         {results.length > 0 && <section className="card result">
           <div className="result-heading"><h2>Результаты списка</h2>
+            <button type="button" className="outline small" onClick={closeReport}>Закрыть отчёт</button>
           </div>
+          {report && <div className="report-summary" aria-label="Итоги закупки">
+            {(['accepted', 'needs_review', 'not_found'] as ReportBucket[]).map(bucket => {
+              const count = bucket === 'accepted' ? report.summary.accepted
+                : bucket === 'needs_review' ? report.summary.needsReview : report.summary.notFound;
+              return <button type="button" className={`summary-card summary-${bucket}`} key={bucket}
+                aria-pressed={bucketFilter === bucket} onClick={() => showBucket(bucket)}>
+                <strong>{count}</strong><span>{BUCKET_LABEL[bucket]}</span>
+                <small>{report.summary.total ? Math.round(count * 100 / report.summary.total) : 0}%</small>
+              </button>;
+            })}
+            <p className="report-provenance">Автоматически: {report.summary.autoAccepted} · Специалистом: {report.summary.specialistResolved}</p>
+          </div>}
+          {report && report.summary.needsReview + report.summary.notFound > 0 &&
+            <button type="button" className="outline risk-next" onClick={goToFirstRisk}>Перейти к самой рискованной позиции</button>}
           <div className="toolbar"><label htmlFor="sort">Сортировка
             <select id="sort" value={sort} onChange={e => setSort(e.target.value as SortMode)}>
-              <option value="original">Как в файле</option><option value="name">По названию</option><option value="confidence">По уверенности</option>
+              <option value="original">Как в файле</option><option value="name">По названию</option><option value="confidence">По уверенности</option><option value="risk">Сначала рискованные</option>
             </select></label>
+            {report && <label htmlFor="reason-filter">Причина
+              <select id="reason-filter" value={reasonFilter} onChange={event => setReasonFilter(event.target.value as ReportReasonCode | 'all')}>
+                <option value="all">Все причины</option>
+                {Object.entries(report.summary.reasonCounts).map(([code, count]) =>
+                  <option value={code} key={code}>{REASON_LABEL[code as ReportReasonCode]} ({count})</option>)}
+              </select></label>}
             <span className="toolbar-actions">
               <button type="button" className="outline" disabled={exporting} onClick={async () => { setExporting(true);
-                try { await exportResults(sorted); } catch (e) { setError(message(e)); } finally { setExporting(false); }
+                try { await exportResults(sorted, report); } catch (e) { setError(message(e)); } finally { setExporting(false); }
               }}>{exporting ? 'Сохраняем…' : 'Скачать Excel'}</button>
               <button type="button" className="outline" disabled={exporting} onClick={() => {
-                try { exportResultsCsv(sorted); } catch (e) { setError(message(e)); }
+                try { exportResultsCsv(sorted, report); } catch (e) { setError(message(e)); }
               }}>Скачать CSV</button>
             </span>
           </div>
           <div className="table-scroll"><table><thead><tr><th scope="col" className="row-num">№</th><th scope="col">Товар</th><th scope="col">Код и статус</th><th scope="col">Условия закупки</th><th scope="col">Уверенность</th><th scope="col">Подробности</th></tr></thead>
-            <tbody>{sorted.map((r, index) => <tr key={results.indexOf(r)}>
-              <td className="row-num">{index + 1}</td>
-              <td>{r.name}</td><td>{r.code ?? '—'}{r.code && <span className="cell-status">Категория: {r.title ?? 'название не указано'}</span>}<span className="muted cell-status">{resultStatus(r)}</span></td>
-              <td className="procurement-cell"><Procurement result={r} brief/></td>
-              <td>{percent(r.confidence)}{r.status === 'not_found' && <small className="muted">Код не подобран</small>}</td><td><SourceLink url={r.url}/>
-                <details className="details"><summary>Проверить результат</summary><ResultCard result={r} compact onSaved={saveVerdict}/></details></td>
-            </tr>)}</tbody></table></div>
+            <tbody>{sorted.map((r, index) => {
+              const sourceIndex = results.indexOf(r);
+              const itemReport = reportItem(report, r, sourceIndex);
+              return <tr key={sourceIndex} id={`report-item-${r.itemId ?? sourceIndex}`}
+                data-risk={itemReport && itemReport.bucket !== 'accepted' ? 'true' : undefined}>
+                <td className="row-num">{index + 1}</td>
+                <td>{r.name}{itemReport && <span className="report-reasons">{itemReport.reasons.map(reason =>
+                  <small key={reason.code}><strong>{REASON_LABEL[reason.code]}:</strong> {reason.message}</small>)}</span>}</td>
+                <td>{r.code ?? '—'}{r.code && <span className="cell-status">Категория: {r.title ?? 'название не указано'}</span>}<span className="muted cell-status">{resultStatus(r)}</span></td>
+                <td className="procurement-cell"><Procurement result={r} brief/></td>
+                <td>{percent(r.confidence)}{r.status === 'not_found' && <small className="muted">Код не подобран</small>}</td><td><SourceLink url={r.url}/>
+                  <details className="details"><summary>{r.status === 'needs_clarification' ? 'Уточнить товар' : 'Проверить результат'}</summary><ResultCard result={r} compact onSaved={saveVerdict} onResolve={resolveClarification} onResolved={clarificationResolved}/></details></td>
+              </tr>;
+            })}</tbody></table></div>
+          {sorted.length === 0 && <p className="hint">По выбранному фильтру позиций нет.</p>}
         </section>}
       </div>
       <footer>{PROCUREMENT_SCOPE}<br/><a href={PROCUREMENT_SOURCE}>Основание: ПП № 1875, пункты 1 и 2</a></footer>

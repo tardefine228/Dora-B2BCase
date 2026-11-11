@@ -38,19 +38,19 @@ def call(coro_factory):
     return asyncio.run(_call(coro_factory))
 
 
-def test_classify_result_matches_contract_v1() -> None:
+def test_classify_result_matches_contract_v2() -> None:
     response = call(lambda c: c.post("/classify", json={"name": "Ноутбук Lenovo"}))
     assert response.status_code == 200
     body = response.json()
     assert REQUIRED_RESULT_FIELDS <= set(body)
-    assert body["contract_version"] == "1.0"
+    assert body["contract_version"] == "2.0"
     assert body["status"] in {"ok", "review", "not_found"}
     assert 0.0 <= body["confidence"] <= 1.0
     for alternative in body["alternatives"]:
         assert {"code", "title", "confidence", "clause_ref"} <= set(alternative)
 
 
-def test_batch_job_flow_over_http() -> None:
+def test_batch_job_flow_over_http_contract_v2() -> None:
     async def flow(client):
         accepted = await client.post(
             "/classify/batch",
@@ -59,12 +59,12 @@ def test_batch_job_flow_over_http() -> None:
         assert accepted.status_code == 202
         job = accepted.json()
         assert {"job_id", "status", "total", "status_url", "contract_version"} <= set(job)
-        assert job["contract_version"] == "1.0"
+        assert job["contract_version"] == "2.0"
 
         status = await client.get(job["status_url"])
         assert status.status_code == 200
         state = status.json()
-        assert state["contract_version"] == "1.0"
+        assert state["contract_version"] == "2.0"
         return state
 
     state = call(flow)

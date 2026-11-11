@@ -55,10 +55,10 @@ ECE_TOLERANCE = 0.01
 # metric key -> human label
 GUARD_METRICS: dict[str, str] = {
     "correct_silence": "верный not_found",
-    "exact_top1": "точные названия, top-1",
+    "exact_top1": "точные названия: код/уточнение",
 }
 HEADLINE_METRICS: dict[str, str] = {
-    "top1_expected": "top-1 (с кодом)",
+    "top1_expected": "верное решение: код/уточнение",
     "top3_expected": "top-3 (с кодом)",
     "top1_all": "top-1 по всем",
 }

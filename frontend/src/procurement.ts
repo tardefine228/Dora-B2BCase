@@ -29,6 +29,9 @@ export function procurementVerdict(result: Pick<Result, 'status' | 'code' | 'cla
   const unknown = (explanation: string): ProcurementVerdict => ({
     title: 'Условия закупки требуют проверки', explanation, caution: null, tone: 'neutral',
   });
+  if (result.status === 'needs_clarification') {
+    return unknown('Сначала уточните товар. До выбора позиции условия закупки определить нельзя.');
+  }
   if (result.status === 'not_found' || !result.code) {
     return unknown('Совпадение не найдено. Это не подтверждает разрешение на закупку иностранного товара.');
   }

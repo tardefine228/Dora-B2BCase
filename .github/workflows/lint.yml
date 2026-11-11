@@ -47,6 +47,14 @@ jobs:
         # shipped catalog hashes; it rotted once already because nothing ran it.
         run: python -m pytest api/tests eval/golden_1875/test_dataset.py -q
 
+      - name: Ambiguity guard regression
+        env:
+          PYTHONPATH: api
+        run: |
+          python eval/run_ambiguity_eval.py
+          VECTOR_STORE=memory EMBEDDER_BACKEND=tfidf VECTOR_SEARCH=true ALLOW_DEGRADE=false \
+            python eval/run_ambiguity_eval.py
+
   # Model quality gate: rebuild the reranker from the catalog deterministically, prove
   # that the shipped artifact still equals a fresh build, and compare the labeled-set
   # metrics row by row with a recorded measurement (eval/baselines/*.json). Floors on a

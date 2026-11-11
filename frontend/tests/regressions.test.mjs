@@ -152,7 +152,7 @@ test('CSV preserves row numbers and includes procurement explanation', async t =
   assert.equal(lines[0].split(';')[12], 'row');
   assert.equal(lines[1].split(';')[12], '1');
   assert.equal(lines[2].split(';')[12], '2');
-  assert.ok(lines[0].endsWith(';procurement_regime;procurement_explanation'));
+  assert.ok(lines[0].includes(';procurement_regime;procurement_explanation;decision_source;'));
   assert.ok(lines[1].includes('Это не подтверждает'));
 });
 

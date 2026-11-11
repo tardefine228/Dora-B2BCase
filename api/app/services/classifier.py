@@ -20,6 +20,7 @@ a specialist, not a legal determination.
 from __future__ import annotations
 
 import csv
+import hashlib
 import logging
 import re
 import time
@@ -32,6 +33,7 @@ from typing import Protocol
 from app.core.config import settings
 from app.core.okpd2 import OKPD2_RE
 from app.schemas import Alternative, ClassifyResponse
+from app.services.ambiguity import AmbiguityConflict, AmbiguityGuard, load_catalog_rows
 from app.services.source_lookup import clause_url_for
 
 logger = logging.getLogger("dora.classifier")
@@ -612,6 +614,8 @@ class CatalogClassifier:
         self._load()
         if not self.index:
             raise ValueError(f"В каталоге нет записей: {self.catalog_path}")
+        self._catalog_sha256 = hashlib.sha256(self.catalog_path.read_bytes()).hexdigest()
+        self._ambiguity = AmbiguityGuard(self.index, self._catalog_sha256)
         self._dense = _build_dense_index(self.index) if dense == "auto" else dense
         tag = self._dense.tag if self._dense is not None else None
         # Same escape hatch as the qdrant backend: a wrong or untested artifact must
@@ -744,9 +748,16 @@ class CatalogClassifier:
         from ml.query import name_variants
 
         text = query.strip()
-        return _best_answer(
+        answer = _best_answer(
             self._classify_normalized(autocorrect(variant)) for variant in name_variants(text)
         ).model_copy(update={"query": text})
+        return self._ambiguity.apply(text, answer)
+
+    def resolve_clarification(
+        self, query: str, option_id: str, expected_catalog_sha256: str
+    ) -> ClassifyResponse:
+        answer = self.classify(query)
+        return self._ambiguity.resolve_answer(answer, option_id, expected_catalog_sha256)
 
     def classify_many(self, queries: list[str]) -> list[ClassifyResponse]:
         """Batch path (BE-7): one autocorrect pass, ONE batched encoding call.
@@ -779,7 +790,8 @@ class CatalogClassifier:
             for _variant in group:
                 scored.append(self._classify_normalized(to_encode[position]))
                 position += 1
-            answers.append(_best_answer(scored).model_copy(update={"query": text}))
+            answer = _best_answer(scored).model_copy(update={"query": text})
+            answers.append(self._ambiguity.apply(text, answer))
         return answers
 
     def _classify_normalized(self, normalized_query: str) -> ClassifyResponse:
@@ -801,6 +813,7 @@ class CatalogClassifier:
                         confidence=1.0,
                         confidence_raw=1.0,
                         status="ok",
+                        decision_source="direct_code",
                         clause_ref=row["clause_ref"],
                         clause_url=clause_url_for(row.get("record_id")),
                         alternatives=[],
@@ -1211,6 +1224,11 @@ class QdrantClassifier:
         # Collections indexed before the catalog facts landed in the payload carry
         # no code_role/review_required; the CSV on the shared volume fills the gap.
         self._catalog_flags = _catalog_flags_lookup()
+        catalog_path = _resolve_catalog_path()
+        if catalog_path is None:
+            raise RuntimeError("Для проверки неоднозначности нужен активный data.csv")
+        catalog_rows, catalog_sha256 = load_catalog_rows(catalog_path)
+        self._ambiguity = AmbiguityGuard(catalog_rows, catalog_sha256)
         # How many points the collection holds (for /health). Counted once: a
         # reindex rebuilds the collection with the same number of rows, and a
         # probe must not turn into a network round trip on every poll.
@@ -1453,8 +1471,15 @@ class QdrantClassifier:
         for text, group in zip(originals, variants, strict=True):
             chunk = results[position : position + len(group)]
             position += len(group)
-            answers.append(_best_answer(chunk).model_copy(update={"query": text}))
+            answer = _best_answer(chunk).model_copy(update={"query": text})
+            answers.append(self._ambiguity.apply(text, answer))
         return answers
+
+    def resolve_clarification(
+        self, query: str, option_id: str, expected_catalog_sha256: str
+    ) -> ClassifyResponse:
+        answer = self.classify(query)
+        return self._ambiguity.resolve_answer(answer, option_id, expected_catalog_sha256)
 
 
 def _resolve_catalog_path() -> Path | None:
@@ -1543,6 +1568,14 @@ class CachedClassifier:
                     result = self._classifier.classify(query)
                     self._save(key, result)
         return result.model_copy(update={"query": query})
+
+    def resolve_clarification(
+        self, query: str, option_id: str, expected_catalog_sha256: str
+    ) -> ClassifyResponse:
+        resolver = getattr(self._classifier, "resolve_clarification", None)
+        if not callable(resolver):
+            raise AmbiguityConflict("Этот backend не поддерживает уточнение запросов")
+        return resolver(query, option_id, expected_catalog_sha256)
 
     def classify_many(self, queries: list[str]) -> list[ClassifyResponse]:
         if not queries:

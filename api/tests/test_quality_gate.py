@@ -72,7 +72,7 @@ def test_one_lost_row_is_noise_and_two_are_a_regression():
         _record(LEXICAL, LEXICAL_ECE), _with(top1_expected=(189 - ROW_TOLERANCE - 1, 201))
     )
     assert fatal.keep is False
-    assert any("top-1 (с кодом)" in reason and "−2 строк" in reason for reason in fatal.reasons)
+    assert any("код/уточнение" in reason and "−2 строк" in reason for reason in fatal.reasons)
 
 
 def test_lost_silence_is_reported_with_its_own_rows():

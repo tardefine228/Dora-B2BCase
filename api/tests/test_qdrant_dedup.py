@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from app.services.ambiguity import AmbiguityGuard
 from app.services.classifier import (
     CatalogClassifier,
     QdrantClassifier,
@@ -52,6 +53,8 @@ def _qdrant_classifier(hits: list[SimpleNamespace]) -> QdrantClassifier:
     classifier = QdrantClassifier.__new__(QdrantClassifier)
     classifier._search_many = lambda queries, top_k=10: [hits for _ in queries]
     classifier._reranker = _StubReranker()
+    # This unit test bypasses __init__; isolate dedup/rescue from the catalog guard.
+    classifier._ambiguity = AmbiguityGuard([], "0" * 64)
     return classifier
 
 

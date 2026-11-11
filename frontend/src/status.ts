@@ -15,6 +15,7 @@ export const STATUS_LABEL: Record<Status, string> = {
   ok: 'Уверенный результат',
   review: 'Предварительный результат — проверьте позицию',
   not_found: 'Совпадение не найдено',
+  needs_clarification: 'Нужно уточнение',
 };
 
 export const STATUS_HELP: Record<Status, string> = {
@@ -23,6 +24,7 @@ export const STATUS_HELP: Record<Status, string> = {
     + 'Код-кандидат чаще всего верный: сверьте его и альтернативы.',
   not_found: 'Надёжного совпадения в перечне нет. Это не значит, что сервис не ответил: '
     + 'у перечня закрытый состав позиций.',
+  needs_clarification: 'Название подходит к нескольким позициям. Код не назначен: выберите нужный товар.',
 };
 
 /** Текст под молчанием: различает «нет похожих» и «есть похожие, но не хватило уверенности». */
@@ -57,6 +59,7 @@ export function duplicateAppendixHint(
 
 /** Подпись над кодом: в `review` это кандидат, в `ok` — ответ. */
 export function codeLabel(status: Status): string {
+  if (status === 'needs_clarification') return 'Код будет назначен после уточнения';
   if (status === 'review') return 'Код-кандидат (проверьте)';
   if (status === 'ok') return 'Предполагаемый код ОКПД2';
   return 'Предполагаемый код ОКПД2';

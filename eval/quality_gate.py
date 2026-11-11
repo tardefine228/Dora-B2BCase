@@ -38,8 +38,8 @@ MEASUREMENT_VERSION = 1
 # Same keys as the dense gate, so a measurement can be compared by the same report.
 METRIC_LABELS: dict[str, str] = {
     "correct_silence": "верный not_found",
-    "exact_top1": "точные названия, top-1",
-    "top1_expected": "top-1 (с кодом)",
+    "exact_top1": "точные названия: код/уточнение",
+    "top1_expected": "верное решение: код/уточнение",
     "top3_expected": "top-3 (с кодом)",
     "top1_all": "top-1 по всем",
     "ok_precision": "точность статуса ok",

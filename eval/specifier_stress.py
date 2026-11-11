@@ -170,6 +170,11 @@ def measure(cases: list[dict], classifier) -> dict:
         shape = case["shape"]
         expected = case["expected"]
         response = classifier.classify(case["query"])
+        # Retrieval quality and ambiguity policy are different measurements.
+        # A guarded response has no code by design; score the preserved model
+        # decision here, while eval/run_ambiguity_eval.py gates the guard itself.
+        if response.status == "needs_clarification" and response.clarification:
+            response = response.clarification.original
         row = stats[shape]
         row["rows"] += 1
         answered = response.status in {"ok", "review"} and bool(response.code)

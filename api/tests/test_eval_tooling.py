@@ -13,7 +13,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "eval"))
 
-from run_eval import metric_counts, summarize, sweep_thresholds  # noqa: E402
+from run_eval import (  # noqa: E402
+    _clarification_has_code,
+    calibration,
+    metric_counts,
+    summarize,
+    sweep_thresholds,
+)
 
 
 def _row(expected: str, correct: bool, *, status: str = "ok", top3: bool | None = None) -> dict:
@@ -40,6 +46,36 @@ def _report() -> dict:
         ],
         "exact": [_row("26.20.11", True), _row("26.20.11", False)],
     }
+
+
+def test_clarification_counts_only_when_the_expected_code_is_an_option():
+    from types import SimpleNamespace
+
+    def response(status, options):
+        return SimpleNamespace(
+            status=status,
+            clarification=SimpleNamespace(
+                options=[SimpleNamespace(code=code) for code in options]
+            ) if options is not None else None,
+        )
+
+    valid = response("needs_clarification", ["10.51.30.100", "10.51.30.110"])
+    wrong = response("needs_clarification", ["10.51.30.110", "10.51.40"])
+    single = response("needs_clarification", ["10.51.30.100"])
+    answered = response("ok", ["10.51.30.100", "10.51.30.110"])
+    malformed = response("needs_clarification", None)
+    assert _clarification_has_code(valid, "10.51.30.100")
+    assert not _clarification_has_code(wrong, "10.51.30.100")
+    assert not _clarification_has_code(single, "10.51.30.100")
+    assert not _clarification_has_code(answered, "10.51.30.100")
+    assert not _clarification_has_code(malformed, "10.51.30.100")
+
+
+def test_pending_questions_are_not_fake_zero_confidence_calibration_rows():
+    row = _row("10.51.30.100", True, status="needs_clarification")
+    row["confidence"] = row["confidence_raw"] = 0.0
+    assert calibration([row])["answered"] == 0
+    assert calibration([row])["ece"] == 0.0
 
 
 def test_counts_use_the_right_denominators():

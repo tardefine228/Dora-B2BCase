@@ -67,7 +67,7 @@ def test_classify_single_contract_and_request_id() -> None:
     body = response.json()
     assert body["query"] == "Ноутбук Lenovo"
     assert 0 <= body["confidence"] <= 1
-    assert body["status"] in ("ok", "review", "not_found")
+    assert body["status"] in ("ok", "review", "not_found", "needs_clarification")
     assert body["latency_ms"] >= 0
     assert response.headers["X-Request-ID"] == "test-request-17"
     assert float(response.headers["X-Process-Time-Ms"]) >= 0
