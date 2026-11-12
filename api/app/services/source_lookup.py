@@ -210,10 +210,16 @@ class SourceLookup:
 
         appendix = str(row.get("appendix") or "").strip()
         position = str(row.get("position") or "").strip()
+        okpd2 = (row.get("okpd2") or "").strip() or None
+        code_cell = str(row.get("source_code_cell") or okpd2 or "")
+        okpd2_codes = list(dict.fromkeys(re.findall(r"\d+(?:\.\d+){1,4}", code_cell)))
+        if okpd2 and okpd2 not in okpd2_codes:
+            okpd2_codes.insert(0, okpd2)
         return SourceFragment(
             record_id=record_id,
             name=(row.get("name") or "").strip() or None,
-            okpd2=(row.get("okpd2") or "").strip() or None,
+            okpd2=okpd2,
+            okpd2_codes=okpd2_codes,
             clause_ref=_clause_ref(appendix, position),
             pages=SourcePages(start=start, end=end),
             text=text,

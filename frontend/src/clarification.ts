@@ -23,6 +23,39 @@ export function clarificationCodeLevel(
   return null;
 }
 
+export type ClarificationOptionGroup = {
+  key: string;
+  code: string;
+  title: string;
+  options: ClarificationOption[];
+  clauseRefs: string[];
+};
+
+/**
+ * One visual choice per code and official description. Equal codes with different
+ * descriptions stay separate: in the decree they may be unrelated legal rows.
+ */
+export function groupClarificationOptions(
+  options: readonly ClarificationOption[],
+): ClarificationOptionGroup[] {
+  const groups = new Map<string, ClarificationOptionGroup>();
+  for (const option of options) {
+    const key = `${option.code}\u0000${option.title.trim().toLocaleLowerCase('ru')}`;
+    const refs = (option.clauseRef ?? '').split('; ').map(ref => ref.trim()).filter(Boolean);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.options.push(option);
+      existing.clauseRefs = [...new Set([...existing.clauseRefs, ...refs])];
+    } else {
+      groups.set(key, {
+        key, code: option.code, title: option.title,
+        options: [option], clauseRefs: [...new Set(refs)],
+      });
+    }
+  }
+  return [...groups.values()];
+}
+
 export const CODE_LEVEL_LABEL: Record<CodeLevel, string> = {
   group: 'Укрупнённый код',
   detail: 'Детальный код',

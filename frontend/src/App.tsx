@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, followBatch, type Job, type ProcurementReport, type ReportBucket, type ReportReasonCode, type Result, type UploadAccepted, type Verdict } from './api';
+import { api, followBatch, type ClarificationOption, type Job, type ProcurementReport, type ReportBucket, type ReportReasonCode, type Result, type UploadAccepted, type Verdict } from './api';
 import { exportResults, exportResultsCsv } from './files';
 import { procurementVerdict, PROCUREMENT_SCOPE, PROCUREMENT_SOURCE } from './procurement';
 import { STATUS_HELP, STATUS_LABEL, codeLabel, duplicateAppendixHint, notFoundHint, verifierNote } from './status';
@@ -7,7 +7,8 @@ import { orderResults, type SortMode } from './rows';
 import { storage } from './storage';
 import { isRunningJob, navigationType, parseJobMarker, readStoredView, type StoredView } from './view';
 import { BUCKET_LABEL, filterReportResults, REASON_LABEL, reportItem } from './report';
-import { clarificationCodeLevel, CODE_LEVEL_LABEL } from './clarification';
+import { clarificationCodeLevel, CODE_LEVEL_LABEL, groupClarificationOptions } from './clarification';
+import { addFileHistory, FILE_HISTORY_KEY, parseFileHistory, updateFileHistoryStatus, type FileHistoryEntry } from './history';
 
 const ACTIVE_JOB_KEY = 'dora:active-job:v1';
 const PRODUCT_NAME_MAX_LENGTH = 2000;
@@ -17,6 +18,14 @@ const LEGACY_HISTORY_KEYS = ['dora:local-history:v1', 'dora:history-enabled:v1']
 const message = (error: unknown) => error instanceof Error ? error.message : 'Ошибка. Попробуйте ещё раз.';
 const percent = (value: number | null) => value === null ? '—' : `${Math.round(value * 100)}%`;
 const isSafeUrl = (url: string | null): url is string => !!url && (/^\/source\/[\w-]+$/.test(url) || /^https?:\/\//i.test(url));
+const FILE_STATUS_LABEL: Record<Job['status'], string> = {
+  queued: 'В очереди', running: 'Обрабатывается', completed: 'Готово', failed: 'С ошибкой',
+};
+function historyDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Дата не указана'
+    : new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(date);
+}
 
 function UploadIcon() {
   return <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
@@ -26,6 +35,18 @@ function UploadIcon() {
 function SourceLink({ url }: { url: string | null }) {
   return isSafeUrl(url) ? <a className="source-link" href={url.startsWith("/source/") ? `${url}?view=clean-2` : url}><span>Открыть пункт постановления</span><span className="source-link-arrow" aria-hidden="true">→</span></a>
     : <span className="muted">Ссылка на пункт недоступна</span>;
+}
+function SourcePositions({ options }: { options: ClarificationOption[] }) {
+  const positions = options.flatMap(option =>
+    (option.clauseRef ?? '').split('; ').map(ref => ref.trim()).filter(Boolean)
+      .map((clauseRef, index) => ({ clauseRef, url: index === 0 ? option.url : null, optionId: option.optionId })));
+  if (positions.length <= 1) return <SourceLink url={options[0]?.url ?? null}/>;
+  return <details className="clarification-sources">
+    <summary>Позиции перечня ({positions.length})</summary>
+    <ul>{positions.map(position => <li key={`${position.optionId}-${position.clauseRef}`}>
+      <span>{position.clauseRef}</span>{position.url && <SourceLink url={position.url}/>}
+    </li>)}</ul>
+  </details>;
 }
 function Alternatives({ result }: { result: Result }) {
   if (!result.alternatives.length) return null;
@@ -64,19 +85,24 @@ function ClarificationBox({ result, onResolve, onResolved }: {
     <p>Выберите один вариант. До выбора код ОКПД2 не назначается.</p>
     {hasCodeHierarchy && <p className="clarification-hierarchy">Укрупнённый и детальный код
       могут относиться к одному товару. Выбирайте требуемый уровень ОКПД2 и приложение перечня.</p>}
-    <div className="clarification-options">{clarification.options.map(option => {
+    <div className="clarification-options">{groupClarificationOptions(clarification.options).map(group => {
+      const option = group.options[0];
       const level = clarificationCodeLevel(option, clarification.options);
-      return <div className="clarification-option" key={option.optionId}>
+      const review = group.options.some(item => item.catalogReviewRequired);
+      return <div className="clarification-option" key={group.key}>
         <button type="button" className="clarification-choice" disabled={sending !== null}
           onClick={() => void choose(option.optionId)}>
-          <strong>{option.code}{level &&
+          <strong>{group.code}{level &&
             <span className="code-level">{CODE_LEVEL_LABEL[level]}</span>}</strong>
-          <span className="clarification-title">{option.title}</span>
-          {option.clauseRef && <small className="clarification-clause">{option.clauseRef}</small>}
-          <small>{sending === option.optionId ? 'Сохраняем выбор…' : 'Выбрать этот вариант'}
-            {option.catalogReviewRequired ? ' · потребуется сверка каталога' : ''}</small>
+          <span className="clarification-title">{group.title}</span>
+          {group.clauseRefs.length === 1 &&
+            <small className="clarification-clause">{group.clauseRefs[0]}</small>}
+          {group.clauseRefs.length > 1 &&
+            <small className="clarification-clause">Найден в {group.clauseRefs.length} позициях перечня</small>}
+          <small>{sending === option.optionId ? 'Сохраняем выбор…' : 'Выбрать этот код'}
+            {review ? ' · потребуется сверка каталога' : ''}</small>
         </button>
-        <SourceLink url={option.url}/>
+        <SourcePositions options={group.options}/>
       </div>;
     })}
     </div>
@@ -197,6 +223,8 @@ export default function App() {
   const [drag, setDrag] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [storageWarning, setStorageWarning] = useState('');
+  const [fileHistory, setFileHistory] = useState<FileHistoryEntry[]>(() =>
+    parseFileHistory(storage.getItem(FILE_HISTORY_KEY)));
   // Одноразовая строка о том, что прошлая обработка не восстановлена.
   const [notice, setNotice] = useState('');
   const input = useRef<HTMLInputElement>(null);
@@ -214,6 +242,23 @@ export default function App() {
     try { sessionStorage.setItem('dora:current-view:v1', JSON.stringify({ name, result, filename, fileInfo, progress, results, jobId })); }
     catch { setStorageWarning('Не удалось сохранить текущие результаты для возврата по «Назад». Скачайте CSV перед переходом по ссылке.'); }
   }, [name, result, filename, fileInfo, progress, results, jobId]);
+
+  useEffect(() => {
+    storage.setItem(FILE_HISTORY_KEY, JSON.stringify(fileHistory));
+  }, [fileHistory]);
+
+  function markHistory(id: string, status: Job['status']) {
+    setFileHistory(current => updateFileHistoryStatus(current, id, status));
+  }
+  async function refreshFileHistory() {
+    const snapshot = parseFileHistory(storage.getItem(FILE_HISTORY_KEY));
+    await Promise.all(snapshot.map(async entry => {
+      try {
+        const job = await api.getBatch(entry.jobId);
+        setFileHistory(current => updateFileHistoryStatus(current, entry.jobId, job.status));
+      } catch { /* Keep the metadata: a temporary network error must not erase history. */ }
+    }));
+  }
 
   function saveVerdict(r: Result, verdict: Verdict, corrected: string | null) {
     const mark = (item: Result) => item.name === r.name && item.code === r.code
@@ -241,6 +286,7 @@ export default function App() {
   }
   async function follow(jobId: string, total: number) {
     setJobId(jobId);
+    markHistory(jobId, 'running');
     abort.current?.abort();
     const controller = new AbortController(); abort.current = controller;
     locked.current = true; setBusy('batch'); setError('');
@@ -248,12 +294,14 @@ export default function App() {
     try {
       const done = await followBatch(jobId, job => {
         if (controller.signal.aborted) return;
+        markHistory(jobId, job.status);
         setProgress({ processed: job.processed, total: job.total,
           state: job.status === 'completed' ? 'done' : job.status === 'failed' ? 'failed' : 'running' });
         if (job.results.length) setResults(job.results);
         if (job.report) setReport(job.report);
       }, controller.signal);
       if (controller.signal.aborted) return;
+      markHistory(jobId, done.status);
       setResults(done.results);
       setReport(done.report);
       if (done.status !== 'completed') {
@@ -272,6 +320,7 @@ export default function App() {
   }
   useEffect(() => {
     void resumeActiveJob();
+    void refreshFileHistory();
     return () => { abort.current?.abort(); locked.current = false; };
   }, []);
 
@@ -323,6 +372,10 @@ export default function App() {
     try {
       const accepted = await api.uploadFile(file);
       setFilename(file.name); setFileInfo(accepted);
+      setFileHistory(current => addFileHistory(current, {
+        jobId: accepted.job_id, filename: file.name, total: accepted.total,
+        createdAt: new Date().toISOString(), status: 'queued', fileInfo: accepted,
+      }));
       if (!storage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ id: accepted.job_id, total: accepted.total, filename: file.name }))) {
         setStorageWarning('Браузер не сохранил задание. Дождитесь завершения обработки, не закрывая страницу.');
       }
@@ -330,6 +383,33 @@ export default function App() {
       await follow(accepted.job_id, accepted.total);
     } catch (e) { setError(message(e)); }
     finally { locked.current = false; setBusy(null); if (input.current) input.current.value = ''; }
+  }
+  async function openHistory(entry: FileHistoryEntry) {
+    if (locked.current) return;
+    locked.current = true; setBusy('batch'); setError(''); setNotice('');
+    setResult(null); setResults([]); setReport(null); setProgress(null); setJobId(null);
+    setFilename(entry.filename); setFileInfo(entry.fileInfo);
+    setBucketFilter('all'); setReasonFilter('all');
+    try {
+      const job = await api.getBatch(entry.jobId);
+      setJobId(job.job_id);
+      storage.setItem(ACTIVE_JOB_KEY, JSON.stringify({
+        id: job.job_id, total: job.total || entry.total, filename: entry.filename,
+      }));
+      markHistory(job.job_id, job.status);
+      if (isRunningJob(job.status)) {
+        await follow(job.job_id, job.total || entry.total);
+      } else {
+        setResults(job.results); setReport(job.report);
+        setProgress({ processed: job.processed, total: job.total,
+          state: job.status === 'completed' ? 'done' : 'failed' });
+        if (job.status === 'completed') setNotice(`Открыт отчёт «${entry.filename}». Результаты загружены с сервера.`);
+        else setError(job.error ?? 'Обработка этого файла завершилась с ошибкой.');
+      }
+      window.setTimeout(() => document.querySelector('.result, .progress')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+    } catch (e) {
+      setError(`Не удалось открыть «${entry.filename}»: ${message(e)}`);
+    } finally { locked.current = false; setBusy(null); }
   }
   const visible = filterReportResults(results, report, bucketFilter, reasonFilter);
   const sorted = orderResults(visible, sort, report);
@@ -452,6 +532,37 @@ export default function App() {
           {sorted.length === 0 && <p className="hint">По выбранному фильтру позиций нет.</p>}
         </section>}
       </div>
+      <section className="card file-history" aria-labelledby="file-history-title">
+        <div className="history-heading">
+          <span className="history-icon" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+              <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/>
+            </svg>
+          </span>
+          <div><h2 id="file-history-title">История файлов</h2>
+            <p>Последние три отчёта всегда под рукой</p></div>
+          <span className="history-limit">до 3 файлов</span>
+        </div>
+        {fileHistory.length === 0 ? <div className="history-empty">
+          <UploadIcon/><span>Загрузите файл — здесь появится ссылка на его отчёт.</span>
+        </div> : <ul className="history-list">{fileHistory.map(entry =>
+          <li key={entry.jobId} className={jobId === entry.jobId ? 'history-current' : ''}>
+            <button type="button" className="history-open" disabled={!!busy}
+              onClick={() => void openHistory(entry)}>
+              <span className="history-file-icon" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                  <path d="M14 3H5v18h14V8zM14 3v5h5M8 13h8M8 17h5"/>
+                </svg>
+              </span>
+              <span className="history-file-copy"><strong>{entry.filename}</strong>
+                <small>{historyDate(entry.createdAt)} · {entry.total} позиц.</small></span>
+              <span className={`history-status history-${entry.status}`}>{FILE_STATUS_LABEL[entry.status]}</span>
+              <span className="history-action">{jobId === entry.jobId ? 'Текущий' : 'Открыть'}<span aria-hidden="true">→</span></span>
+            </button>
+          </li>)}
+        </ul>}
+        <p className="history-note">В браузере сохраняются только имена файлов и ссылки на отчёты, без названий товаров. Результаты доступны, пока хранится серверное задание.</p>
+      </section>
       <footer>{PROCUREMENT_SCOPE}<br/><a href={PROCUREMENT_SOURCE}>Основание: ПП № 1875, пункты 1 и 2</a></footer>
     </main>
   </>;

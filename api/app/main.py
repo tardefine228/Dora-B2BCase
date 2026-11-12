@@ -996,8 +996,8 @@ def get_source_fragment(
     return fragment
 
 
-def _render_decree(text: str, code: str) -> str:
-    """Structure the decree pages: numbered positions, codes as badges."""
+def _render_decree(text: str, code: str, *, codes_grouped: bool = False) -> str:
+    """Structure decree pages; grouped codes are shown once above the quotation."""
     import re
     from html import escape
 
@@ -1059,7 +1059,10 @@ def _render_decree(text: str, code: str) -> str:
                 if coded.group(2):
                     body = f"{body} · доля {coded.group(2)}%"
             hit = " hit" if hit_code and hit_code == code else ""
-            badge = f'<span class="code">{escape(hit_code)}</span>' if hit_code else ""
+            badge = (
+                f'<span class="code">{escape(hit_code)}</span>'
+                if hit_code and not (codes_grouped and hit) else ""
+            )
             out.append(
                 f'<div class="pos{hit}"><span class="num">{escape(entry.group(1))}.</span>'
                 f'<span class="name">{escape(body.strip())}</span>{badge}</div>'
@@ -1075,18 +1078,35 @@ def _source_page(fragment: SourceFragment) -> str:
     meta_items = "".join(
         f"<li>{part}</li>"
         for part in (
-            escape(fragment.okpd2) if fragment.okpd2 else "",
             escape(fragment.clause_ref) if fragment.clause_ref else "",
             f"стр. {fragment.pages.start}–{fragment.pages.end}" if fragment.pages.end else "",
         )
         if part
+    )
+    codes = fragment.okpd2_codes or ([fragment.okpd2] if fragment.okpd2 else [])
+    code_parts = []
+    for item in codes:
+        current = item == fragment.okpd2
+        current_class = " current" if current else ""
+        current_attr = ' aria-current="true"' if current else ""
+        code_parts.append(
+            f'<li class="source-code{current_class}"{current_attr}>{escape(item)}</li>'
+        )
+    code_items = "".join(code_parts)
+    code_group = (
+        f'<section class="code-group" aria-label="Коды ОКПД2">'
+        f'<h2>{"Коды ОКПД2 (" + str(len(codes)) + ")" if len(codes) > 1 else "Код ОКПД2"}</h2>'
+        f'<ul>{code_items}</ul></section>'
+        if codes else ""
     )
     sources = "\n".join(
         f'<li><a href="{url}">{escape(title)}</a>'
         f"<span>{escape(note)}</span></li>"
         for title, url, note in DECREE_OFFICIAL_SOURCES
     )
-    decree = _render_decree(fragment.text, fragment.okpd2 or "")
+    decree = _render_decree(
+        fragment.text, fragment.okpd2 or "", codes_grouped=len(codes) > 1
+    )
     return f"""<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1104,6 +1124,13 @@ h1{{font-size:27px;line-height:1.35;margin:0 0 10px;letter-spacing:-.3px}}
 .meta{{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 22px;padding:0;list-style:none}}
 .meta li{{background:#fff;border:1px solid #dbe1ef;border-radius:10px;padding:7px 14px;
 font-size:14px;color:#4c5f94;font-weight:600}}
+.code-group{{margin:-6px 0 24px;padding:18px 20px;background:linear-gradient(135deg,#f2f3ff,#fafaff);
+border:1px solid #dfe2fa;border-radius:16px}}
+.code-group h2{{margin:0 0 12px;font-size:14px;color:#657293;letter-spacing:.02em}}
+.code-group ul{{display:flex;flex-wrap:wrap;gap:9px;margin:0;padding:0;list-style:none}}
+.source-code{{padding:7px 12px;border:1px solid #dce0f5;border-radius:9px;background:#fff;
+color:#3a3fd6;font:600 14px ui-monospace,Consolas,monospace;white-space:nowrap}}
+.source-code.current{{border-color:#8f94ef;background:#e8eaff;box-shadow:0 0 0 2px #ffffffaa}}
 .verify{{background:#fff;border:1px solid #dbe1ef;border-radius:16px;padding:20px 24px;
 margin:0 0 26px}}
 .verify h2{{font-size:16px;margin:0 0 6px}}
@@ -1143,6 +1170,7 @@ color:#3a3fd6;border-radius:7px;padding:2px 9px;white-space:nowrap}}
 </div>
 <h1>{escape(fragment.name or fragment.record_id)}</h1>
 <ul class="meta">{meta_items}</ul>
+{code_group}
 <section class="verify">
 <h2>Удостовериться в подлинности</h2>
 <p>Ниже — рабочий файл постановления; первоисточники и действующая редакция:</p>

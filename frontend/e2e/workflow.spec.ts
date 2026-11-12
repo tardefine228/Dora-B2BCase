@@ -256,3 +256,59 @@ test('identical option titles expose their clause and structural code level', as
   await expect(page.locator('.clarification-clause').nth(0)).toHaveText('Приложение 1, позиция 77');
   await expect(page.locator('.clarification-clause').nth(1)).toHaveText('Приложение 3, позиция 175');
 });
+
+test('identical codes are grouped without losing their source positions', async ({ page }) => {
+  const repeated = [
+    { option_id: '1-10-01', code: '26.51.42', clause_ref: 'Приложение 1, позиция 10', clause_url: '/source/1-10-01' },
+    { option_id: '2-20-01', code: '26.51.42', clause_ref: 'Приложение 2, позиция 20', clause_url: '/source/2-20-01' },
+    { option_id: '3-30-01', code: '26.51.43', clause_ref: 'Приложение 3, позиция 30', clause_url: '/source/3-30-01' },
+  ].map(option => ({ ...option, title: 'Осциллографы', confidence: .8, code_role: 'Включён', catalog_review_required: false }));
+  await page.route('**/classify', r => r.fulfill({ json: {
+    ...pending(), query: 'Осциллограф', clarification: { question: 'Уточните код товара.', options: repeated, catalog_sha256: 'a'.repeat(64), original },
+  } }));
+  await page.route('**/classify/resolve', r => r.fulfill({ json: result('Осциллограф', '26.51.42') }));
+  await page.goto('/ui/');
+  await page.getByLabel('Название товара', { exact: true }).fill('Осциллограф');
+  await page.getByLabel('Название товара', { exact: true }).press('Enter');
+  await expect(page.locator('.clarification-option')).toHaveCount(2);
+  await expect(page.locator('.clarification-option').first()).toContainText('Найден в 2 позициях перечня');
+  await page.getByText('Позиции перечня (2)', { exact: true }).click();
+  await expect(page.locator('.clarification-sources li')).toHaveCount(2);
+  await expect(page.locator('.clarification-sources a')).toHaveCount(2);
+});
+
+test('file history keeps three reports and reopens a previous server result', async ({ page }) => {
+  const jobs: Record<string, any> = {};
+  let uploads = 0;
+  await page.route('**/classify/file', r => {
+    uploads++;
+    const id = `history-${uploads}`;
+    jobs[id] = { job_id: id, status: 'completed', total: 1, completed: 1,
+      results: [{ ...result(`Товар ${uploads}`, '26.20.11'), item_id: 0 }] };
+    return r.fulfill({ json: { job_id: id, total: 1, total_found: 1, filename: `${uploads}.csv`, format: 'csv', duplicates: 0, skipped: 0, truncated: false, warnings: [] } });
+  });
+  await page.route('**/classify/batch/*', r => {
+    const url = new URL(r.request().url());
+    if (url.pathname.endsWith('/events')) return r.fulfill({ contentType: 'text/event-stream', body: 'event: done\ndata: {}\n\n' });
+    const id = url.pathname.split('/').at(-1)!;
+    return r.fulfill({ json: jobs[id] });
+  });
+  await page.goto('/ui/');
+  for (let index = 1; index <= 4; index++) {
+    await page.locator('input[type=file]').setInputFiles({ name: `${index}.csv`, mimeType: 'text/csv', buffer: Buffer.from(`name\nТовар ${index}`) });
+    await expect(page.locator('.history-file-copy strong').first()).toHaveText(`${index}.csv`);
+  }
+  await expect(page.locator('.history-list li')).toHaveCount(3);
+  await expect(page.locator('.history-file-copy strong')).toHaveText(['4.csv', '3.csv', '2.csv']);
+  const stored = await page.evaluate(() => localStorage.getItem('dora:file-history:v1')!);
+  expect(stored).not.toContain('Товар');
+  expect(stored).not.toContain('results');
+  await page.getByRole('button', { name: /2\.csv/ }).click();
+  await expect(page.locator('tbody')).toContainText('Товар 2');
+  await expect(page.locator('tbody')).not.toContainText('Товар 4');
+  await page.reload();
+  await expect(page.locator('.history-list li')).toHaveCount(3);
+  await expect(page.locator('tbody')).toContainText('Товар 2');
+  const audit = await new AxeBuilder({ page }).analyze();
+  expect(audit.violations.filter(v => ['critical', 'serious'].includes(v.impact ?? ''))).toEqual([]);
+});

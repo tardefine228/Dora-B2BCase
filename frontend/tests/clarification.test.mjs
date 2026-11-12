@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { clarificationCodeLevel, clarificationOptionExport } from '../src/clarification.ts';
+import { clarificationCodeLevel, clarificationOptionExport, groupClarificationOptions } from '../src/clarification.ts';
 
 const dumpParent = {
   optionId: '1-77-01', code: '28.92.29', title: 'Автомобили-самосвалы',
@@ -38,4 +38,26 @@ test('export distinguishes identical titles by clause and code level', () => {
   );
   assert.ok(clarificationOptionExport(microscope, [microscope]).includes('Приложение 2'));
   assert.ok(!clarificationOptionExport(microscope, [microscope]).includes('Детальный код'));
+});
+
+test('identical code and title become one choice with all source positions', () => {
+  const second = { ...dumpParent, optionId: '2-200-01', clauseRef: 'Приложение 2, позиция 200' };
+  const groups = groupClarificationOptions([dumpParent, second]);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].code, '28.92.29');
+  assert.deepEqual(groups[0].options.map(option => option.optionId), ['1-77-01', '2-200-01']);
+  assert.deepEqual(groups[0].clauseRefs, ['Приложение 1, позиция 77', 'Приложение 2, позиция 200']);
+});
+
+test('equal codes with different legal descriptions are never merged', () => {
+  const other = { ...dumpParent, optionId: '2-999-01', title: 'Другой товар' };
+  const groups = groupClarificationOptions([dumpParent, other]);
+  assert.equal(groups.length, 2);
+});
+
+test('already combined clause references are deduplicated inside one group', () => {
+  const combined = { ...dumpParent, clauseRef: 'Приложение 1, позиция 77; Приложение 3, позиция 175' };
+  const groups = groupClarificationOptions([combined, dumpParent]);
+  assert.equal(groups.length, 1);
+  assert.deepEqual(groups[0].clauseRefs, ['Приложение 1, позиция 77', 'Приложение 3, позиция 175']);
 });

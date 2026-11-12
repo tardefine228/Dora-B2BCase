@@ -45,6 +45,7 @@ def test_source_endpoint_returns_decree_fragment() -> None:
     assert body["clause_ref"] == "Приложение 2, позиция 339"
     assert "339. Электрочайники" in body["text"]
     assert body["okpd2"] == "27.51.24.110"
+    assert body["okpd2_codes"] == ["27.51.24.110"]
     assert body["truncated"] is False
     assert body["clause_url"] == f"/source/{KETTLE_RECORD}"
     assert "max-age" in response.headers["Cache-Control"]

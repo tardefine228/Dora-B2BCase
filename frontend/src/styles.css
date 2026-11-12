@@ -94,3 +94,50 @@ button.small{font-size:13px;min-height:40px;padding:9px 14px}
   .report-summary { grid-template-columns: 1fr; }
   .summary-card { padding: 12px; }
 }
+
+/* Compact choices: one code, with every legal source kept inside the card. */
+.clarification-sources { margin: 10px 8px 2px; border-top: 1px solid #eee8da; padding-top: 9px; }
+.clarification-sources summary { color: #454cff; cursor: pointer; font-size: 13px; font-weight: 600; min-height: 28px; }
+.clarification-sources summary:focus-visible { outline: 3px solid #9299ff; outline-offset: 3px; }
+.clarification-sources ul { display: grid; gap: 9px; list-style: none; margin: 10px 0 2px; padding: 0; }
+.clarification-sources li { display: grid; gap: 4px; padding: 10px 12px; border-radius: 9px; background: #f7f8fd; }
+.clarification-sources li > span { color: #4c5f94; font-size: 13px; }
+.clarification-sources .source-link { font-size: 12px; }
+
+/* The last three file reports: metadata only, never a second product database. */
+.file-history { margin-top: 28px; padding: 26px 28px 20px; background: linear-gradient(145deg, #fff 30%, #fafaff); }
+.history-heading { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+.history-heading h2 { margin: 0 0 4px; font-size: 22px; }
+.history-heading p { margin: 0; color: #657293; font-size: 14px; }
+.history-icon { display: grid; place-items: center; width: 46px; height: 46px; flex: 0 0 46px; border-radius: 14px; color: #454cff; background: #eef0ff; }
+.history-limit { margin-left: auto; padding: 6px 11px; border-radius: 20px; color: #59678a; background: #f0f2f8; font-size: 12px; white-space: nowrap; }
+.history-list { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
+.history-list li { border: 1px solid #e0e5f1; border-radius: 13px; background: #fff; overflow: hidden; transition: border-color .15s, box-shadow .15s; }
+.history-list li:hover { border-color: #b8bdf5; box-shadow: 0 5px 18px #3038ca0a; }
+.history-list li.history-current { border-color: #b8bdf5; background: #f9f9ff; }
+.history-open { display: flex; align-items: center; gap: 13px; width: 100%; min-height: 72px; padding: 13px 16px; border: 0; border-radius: 0; background: transparent; color: #141c3b; text-align: left; }
+.history-open:hover:not(:disabled) { background: #f5f6ff; }
+.history-file-icon { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 38px; border-radius: 10px; color: #5968c9; background: #f0f2ff; }
+.history-file-copy { display: grid; min-width: 0; gap: 4px; }
+.history-file-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.history-file-copy small { color: #59678a; font-size: 12px; font-weight: 400; }
+.history-status { margin-left: auto; padding: 5px 10px; border-radius: 20px; font-size: 11px; white-space: nowrap; }
+.history-completed { color: #176b45; background: #e9f6ef; }
+.history-running, .history-queued { color: #5c5500; background: #fff5cf; }
+.history-failed { color: #982e27; background: #fff1f0; }
+.history-action { display: flex; align-items: center; gap: 9px; min-width: 82px; justify-content: flex-end; color: #454cff; font-size: 12px; white-space: nowrap; }
+.history-note { margin: 16px 2px 0; color: #59678a; font-size: 12px; line-height: 1.55; }
+.history-empty { display: flex; align-items: center; justify-content: center; gap: 14px; min-height: 100px; padding: 20px; border: 1px dashed #cbd2e6; border-radius: 12px; color: #657293; background: #fafbfe; font-size: 14px; text-align: center; }
+.history-empty svg { flex: 0 0 auto; color: #819cea; }
+@media (max-width: 600px) {
+  .file-history { padding: 20px 18px 16px; }
+  .history-heading { align-items: flex-start; gap: 11px; }
+  .history-heading h2 { font-size: 20px; }
+  .history-heading p { font-size: 12px; }
+  .history-limit { display: none; }
+  .history-open { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 10px; }
+  .history-status { grid-column: 2; grid-row: 2; justify-self: start; margin: 0; }
+  .history-action { grid-column: 3; grid-row: 1 / 3; min-width: 0; font-size: 0; }
+  .history-action span { font-size: 20px; }
+  .history-empty { align-items: center; flex-direction: column; gap: 8px; }
+}
