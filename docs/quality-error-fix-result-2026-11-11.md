@@ -68,6 +68,8 @@
 
 Для независимого доступа к production-результату audit формирует компактный Markdown с runtime identity E5/Qdrant/PostgreSQL/Celery, сводкой и построчными ошибками. Push-job публикует его комментарием к коммиту через GitHub API; полный JSON остаётся artifact. Это устраняет зависимость ручной проверки от скачивания Azure Blob Storage.
 
+Фактический production-прогон коммита `a63f7587b9c428ad01f48b693f391c854cfc1904` (run `43176851199`, commit comment `209534058`) завершён успешно: `st-multilingual-e5-small-v2-9b1a13eefd5f`, Qdrant, PostgreSQL, Celery; 984 позиции, 1123 API-запроса за 148,979 секунды. Exact-title: 653 `ok` / 87 уточнений / 6 `not_found`; generic-head: 7 / 95 / 1; quality: 233/233; failures: 0. URL результата: <https://github.com/tardefine228/Dora-B2BCase/commit/a63f7587b9c428ad01f48b693f391c854cfc1904#commitcomment-209534058>.
+
 ## Граница результата
 
 100% на текущем labeled set не является доказательством идеальности всех закупочных формулировок. Полный E5/Qdrant/PostgreSQL sweep остаётся отдельной production-проверкой; локальные исчерпывающие измерения относятся к lexical и TF-IDF/in-memory.

@@ -2,6 +2,7 @@ import type { ProcurementReport, Result } from './api';
 import { BUCKET_LABEL, REASON_LABEL, reportItem } from './report.ts';
 import { STATUS_LABEL } from './status.ts';
 import { procurementVerdict, PROCUREMENT_SCOPE } from './procurement.ts';
+import { clarificationOptionExport } from './clarification.ts';
 
 const procurementColumns = (r: Result) => {
   const v = procurementVerdict(r);
@@ -29,7 +30,8 @@ export async function exportResults(results: Result[], report: ProcurementReport
         r.confidence ?? '', r.confidenceRaw ?? '', r.clauseRef ?? '', absoluteUrl(r.url),
         r.userVerdict ?? '', r.correctedCode ?? '', r.verifier ?? '', r.verifierNote ?? '', ...procurementColumns(r),
         r.decisionSource, r.resolution?.optionId ?? '', r.clarification?.question ?? '',
-        r.clarification?.options.map(option => `${option.code} — ${option.title}`).join('\n') ?? '',
+        r.clarification?.options.map(option =>
+          clarificationOptionExport(option, r.clarification?.options ?? [], false)).join('\n') ?? '',
         r.resolution?.original.code ?? r.clarification?.original.code ?? '',
         item ? BUCKET_LABEL[item.bucket] : '', item?.riskRank ?? '',
         item?.reasons.map(reason => `${REASON_LABEL[reason.code]}: ${reason.message}`).join('\n') ?? '',
@@ -97,7 +99,8 @@ export function exportResultsCsv(results: Result[], report: ProcurementReport | 
     esc(index + 1), ...procurementColumns(r).map(esc),
     esc(r.decisionSource), esc(r.resolution?.optionId ?? null),
     esc(r.clarification?.question ?? null),
-    esc(r.clarification?.options.map(option => `${option.optionId}: ${option.code} — ${option.title}`).join(' | ') ?? null),
+    esc(r.clarification?.options.map(option =>
+      clarificationOptionExport(option, r.clarification?.options ?? [])).join(' | ') ?? null),
     esc(r.resolution?.original.code ?? r.clarification?.original.code ?? null),
     esc(r.resolution?.original.status ?? r.clarification?.original.status ?? null),
     esc((r.itemId ?? index) + 1), esc(item?.bucket ?? null), esc(item?.riskRank ?? null),

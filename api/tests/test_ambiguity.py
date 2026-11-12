@@ -613,6 +613,8 @@ def test_pending_batch_csv_contains_question_and_options_without_code() -> None:
     assert row["code"] == row["title"] == ""
     assert "Какой именно автомобиль" in row["clarification_question"]
     assert "29.10.2" in row["clarification_options"]
+    assert "Приложение 1, позиция 77; Укрупнённый код" in row["clarification_options"]
+    assert "Приложение 3, позиция 175; Детальный код" in row["clarification_options"]
     assert row["decision_source"] == "model"
 
 

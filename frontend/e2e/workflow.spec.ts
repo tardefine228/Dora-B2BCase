@@ -203,3 +203,56 @@ test('exception result never displays the ordinary prohibition verdict', async (
   await expect(page.locator('.procurement strong')).toHaveText('Условия закупки требуют проверки');
   await expect(page.locator('.procurement')).toContainText('исключение из позиции');
 });
+
+test('long clarification titles stay readable inside a desktop table cell', async ({ page }, testInfo) => {
+  const title = 'Микроскопы медицинские; микроскопы для клинической лабораторной диагностики; микроскопы биологические';
+  const options = ['26.60.12.119', '26.70.22.150'].map((code, index) => ({
+    option_id: `2-379-0${index + 1}`, code, title, confidence: .8,
+    clause_ref: 'Приложение 2, позиция 379', clause_url: `/source/2-379-0${index + 1}`,
+    code_role: 'Включён', catalog_review_required: false,
+  }));
+  const row = {
+    ...pending(0), query: 'Микроскопы медицинские',
+    clarification: { question: 'Уточните официальную позицию и код закупаемого товара.', options, catalog_sha256: 'a'.repeat(64), original },
+  };
+  await page.setViewportSize({ width: 1568, height: 1100 });
+  await page.route('**/classify/file', r => r.fulfill({ json: { job_id: 'microscopes', total: 1, total_found: 1, filename: 'goods.csv', format: 'csv', duplicates: 0, skipped: 0, truncated: false, warnings: [] } }));
+  await page.route('**/classify/batch/microscopes/events', r => r.fulfill({ contentType: 'text/event-stream', body: 'event: done\ndata: {}\n\n' }));
+  await page.route('**/classify/batch/microscopes', r => r.fulfill({ json: { job_id: 'microscopes', status: 'completed', total: 1, completed: 1, results: [row] } }));
+  await page.goto('/ui/');
+  await page.locator('input[type=file]').setInputFiles({ name: 'goods.csv', mimeType: 'text/csv', buffer: Buffer.from('name\nМикроскопы медицинские') });
+  await page.getByText('Уточнить товар', { exact: true }).click();
+  const choice = page.locator('.compact-result .clarification-choice').first();
+  const codeBox = await choice.locator('strong').boundingBox();
+  const titleBox = await choice.locator('.clarification-title').boundingBox();
+  expect(codeBox).not.toBeNull();
+  expect(titleBox).not.toBeNull();
+  expect(titleBox!.y).toBeGreaterThanOrEqual(codeBox!.y + codeBox!.height);
+  expect(titleBox!.width).toBeGreaterThan(180);
+  expect(await choice.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  await expect(page.locator('.compact-result .clarification-clause').first()).toHaveText('Приложение 2, позиция 379');
+  await testInfo.attach('microscopes-clarification', { body: await page.screenshot(), contentType: 'image/png' });
+});
+
+test('identical option titles expose their clause and structural code level', async ({ page }) => {
+  const title = 'Автомобили-самосвалы, предназначенные для использования в условиях бездорожья';
+  const options = [
+    { option_id: '1-77-01', code: '28.92.29', clause_ref: 'Приложение 1, позиция 77' },
+    { option_id: '3-175-01', code: '28.92.29.000', clause_ref: 'Приложение 3, позиция 175' },
+  ].map(option => ({
+    ...option, title, confidence: .9, clause_url: `/source/${option.option_id}`,
+    code_role: 'Включён', catalog_review_required: false,
+  }));
+  await page.route('**/classify', r => r.fulfill({ json: {
+    ...pending(), query: 'Самосвал',
+    clarification: { question: 'Какой код и пункт требуются?', options, catalog_sha256: 'a'.repeat(64), original },
+  } }));
+  await page.goto('/ui/');
+  await page.getByLabel('Название товара', { exact: true }).fill('Самосвал');
+  await page.getByLabel('Название товара', { exact: true }).press('Enter');
+  await expect(page.locator('.clarification-hierarchy')).toContainText('требуемый уровень ОКПД2');
+  await expect(page.locator('.code-level').nth(0)).toHaveText('Укрупнённый код');
+  await expect(page.locator('.code-level').nth(1)).toHaveText('Детальный код');
+  await expect(page.locator('.clarification-clause').nth(0)).toHaveText('Приложение 1, позиция 77');
+  await expect(page.locator('.clarification-clause').nth(1)).toHaveText('Приложение 3, позиция 175');
+});

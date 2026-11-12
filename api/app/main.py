@@ -68,6 +68,7 @@ from app.schemas import (
     CatalogUploadResponse,
     CatalogVersion,
     CatalogVersionsResponse,
+    ClarificationOption,
     ClassifyRequest,
     ClassifyResponse,
     FeedbackRequest,
@@ -337,6 +338,26 @@ SSE_POLL_SECONDS = 0.25
 SSE_HEARTBEAT_SECONDS = 15.0
 
 
+def _clarification_option_csv(
+    option: ClarificationOption,
+    options: list[ClarificationOption],
+) -> str:
+    """Keep official clause and structural code level visible in the audit export."""
+    others = [candidate for candidate in options if candidate.option_id != option.option_id]
+    has_parent = any(option.code.startswith(candidate.code + ".") for candidate in others)
+    has_child = any(candidate.code.startswith(option.code + ".") for candidate in others)
+    level = ""
+    if has_parent and has_child:
+        level = "Промежуточный уровень кода"
+    elif has_child:
+        level = "Укрупнённый код"
+    elif has_parent:
+        level = "Детальный код"
+    evidence = "; ".join(value for value in (option.clause_ref, level) if value)
+    suffix = f" [{evidence}]" if evidence else ""
+    return f"{option.option_id}: {option.code} — {option.title}{suffix}"
+
+
 def _build_batch_csv(results: list[ClassifyResponse]) -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
@@ -364,7 +385,7 @@ def _build_batch_csv(results: list[ClassifyResponse]) -> str:
         clarification = result.clarification
         options = (
             " | ".join(
-                f"{option.option_id}: {option.code} — {option.title}"
+                _clarification_option_csv(option, clarification.options)
                 for option in clarification.options
             )
             if clarification

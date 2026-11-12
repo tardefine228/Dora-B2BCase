@@ -7,6 +7,7 @@ import { orderResults, type SortMode } from './rows';
 import { storage } from './storage';
 import { isRunningJob, navigationType, parseJobMarker, readStoredView, type StoredView } from './view';
 import { BUCKET_LABEL, filterReportResults, REASON_LABEL, reportItem } from './report';
+import { clarificationCodeLevel, CODE_LEVEL_LABEL } from './clarification';
 
 const ACTIVE_JOB_KEY = 'dora:active-job:v1';
 const PRODUCT_NAME_MAX_LENGTH = 2000;
@@ -49,6 +50,8 @@ function ClarificationBox({ result, onResolve, onResolved }: {
   const [error, setError] = useState('');
   const clarification = result.clarification;
   if (!clarification) return null;
+  const hasCodeHierarchy = clarification.options.some(option =>
+    clarificationCodeLevel(option, clarification.options) !== null);
   const choose = async (optionId: string) => {
     if (sending) return;
     setSending(optionId); setError('');
@@ -59,16 +62,23 @@ function ClarificationBox({ result, onResolve, onResolved }: {
   return <section className="clarification" aria-labelledby={`question-${result.itemId ?? 'single'}`}>
     <h3 id={`question-${result.itemId ?? 'single'}`}>{clarification.question}</h3>
     <p>Выберите один вариант. До выбора код ОКПД2 не назначается.</p>
-    <div className="clarification-options">{clarification.options.map(option =>
-      <div className="clarification-option" key={option.optionId}>
+    {hasCodeHierarchy && <p className="clarification-hierarchy">Укрупнённый и детальный код
+      могут относиться к одному товару. Выбирайте требуемый уровень ОКПД2 и приложение перечня.</p>}
+    <div className="clarification-options">{clarification.options.map(option => {
+      const level = clarificationCodeLevel(option, clarification.options);
+      return <div className="clarification-option" key={option.optionId}>
         <button type="button" className="clarification-choice" disabled={sending !== null}
           onClick={() => void choose(option.optionId)}>
-          <strong>{option.code}</strong><span>{option.title}</span>
+          <strong>{option.code}{level &&
+            <span className="code-level">{CODE_LEVEL_LABEL[level]}</span>}</strong>
+          <span className="clarification-title">{option.title}</span>
+          {option.clauseRef && <small className="clarification-clause">{option.clauseRef}</small>}
           <small>{sending === option.optionId ? 'Сохраняем выбор…' : 'Выбрать этот вариант'}
             {option.catalogReviewRequired ? ' · потребуется сверка каталога' : ''}</small>
         </button>
         <SourceLink url={option.url}/>
-      </div>)}
+      </div>;
+    })}
     </div>
     {error && <p className="field-error" role="alert">{error} Обновите результат и попробуйте снова.</p>}
   </section>;
