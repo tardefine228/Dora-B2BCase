@@ -25,6 +25,7 @@
 
 - Backend: 1214 passed, 7 skipped, 3 xfailed (включая synthetic specifier stress; итог финального прогона указывается в PR).
 - Frontend: 43 unit-теста, 11 Chromium E2E, TypeScript и production build.
+- Ambiguity guard regression: 27/27 в lexical и TF-IDF режимах.
 - Lexical и TF-IDF quality gates: 233/233; 32/32 верных `not_found`; неверных `ok` — 2 вместо 7 в обоих baselines.
 - Полный HTTP TF-IDF аудит: 1123 запроса; 746 официальных названий, 103 generic-контроля, 233 quality; 0 расхождений.
 - Production E5 не запускался: deploy не выполнялся, production остаётся на прежнем commit.
