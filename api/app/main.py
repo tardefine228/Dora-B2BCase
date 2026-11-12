@@ -1124,8 +1124,8 @@ h1{{font-size:27px;line-height:1.35;margin:0 0 10px;letter-spacing:-.3px}}
 .meta{{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 22px;padding:0;list-style:none}}
 .meta li{{background:#fff;border:1px solid #dbe1ef;border-radius:10px;padding:7px 14px;
 font-size:14px;color:#4c5f94;font-weight:600}}
-.code-group{{margin:-6px 0 24px;padding:18px 20px;background:linear-gradient(135deg,#f2f3ff,#fafaff);
-border:1px solid #dfe2fa;border-radius:16px}}
+.code-group{{margin:-6px 0 24px;padding:18px 20px;
+background:linear-gradient(135deg,#f2f3ff,#fafaff);border:1px solid #dfe2fa;border-radius:16px}}
 .code-group h2{{margin:0 0 12px;font-size:14px;color:#657293;letter-spacing:.02em}}
 .code-group ul{{display:flex;flex-wrap:wrap;gap:9px;margin:0;padding:0;list-style:none}}
 .source-code{{padding:7px 12px;border:1px solid #dce0f5;border-radius:9px;background:#fff;

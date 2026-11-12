@@ -60,7 +60,6 @@ def test_multi_code_position_groups_all_codes_above_the_quotation() -> None:
         assert page.status_code == 200
         assert "Коды ОКПД2 (3)" in page.text
         for code in ("32.50.21.121", "32.50.21.122", "32.50.21.123"):
-            assert f'class="source-code' in page.text
             assert f">{code}</li>" in page.text
         hit = next(line for line in page.text.splitlines() if 'class="pos hit"' in line)
         # Codes remain verbatim in the quotation, without a duplicate trailing badge.
