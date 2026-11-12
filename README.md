@@ -577,9 +577,270 @@ curl -s localhost:8000/source/2-339-01 | python -m json.tool | head -20
 }
 ```
 
+<<<<<<< Updated upstream
 ## Тесты
 
 ```bash
+=======
+## Качество и проверки
+
+Основные метрики считаются на размеченном наборе
+[`eval/labeled_examples.csv`](eval/labeled_examples.csv): **274 запроса** — 201 с ожидаемым
+кодом, 32 проверенных «вне перечня», 41 спорная строка (в проценты не входит, пока по ней
+не выскажется юрист). Правила разметки —
+[`docs/labeling-doctrine.md`](docs/labeling-doctrine.md).
+
+| Метрика (отгруженные артефакты) | Значение |
+| --- | ---: |
+| Верное решение: код или уточнение с ожидаемым кодом (201) | **96.0 %** |
+| Из них прямой top-1 / корректных уточнений | **95.0 % / 2** |
+| Top-3 по товарам с кодом | **99.0 %** |
+| Верная тишина на 32 проверенных «вне перечня» | **96.9 %** |
+| Верное решение по всем оцениваемым строкам (233) | **96.1 %** |
+| Точные названия: код или необходимое уточнение (112) | **100 %** |
+| ECE калиброванной уверенности (без вопросов и `not_found`) | 0.030 |
+
+Замер: [`eval/eval_report.md`](eval/eval_report.md). ECE 0.031 — граница разрешения набора,
+а не деградация: один и тот же код с другим сидом обучения даёт 0.012…0.038, разница
+проверена парным бутстрэпом ([`eval/calibration_noise.md`](eval/calibration_noise.md)).
+
+**Приёмка на целевой машине** (26.10.2026, полный стек: E5 + Qdrant + PostgreSQL + Celery):
+
+| Критерий | Измерение |
+| --- | --- |
+| ≥85 % на 20 товарах | 18/20 = 90 %, строгое совпадение кода |
+| Каждый одиночный запрос < 5 с | максимум 0.157 с |
+| 100 товаров < 120 с | 7.59 с, получены все 100 результатов |
+| Обновление каталога без передеплоя | приняты 1 126 строк, API и worker подхватили правку |
+| Ссылка на пункт у найденных кодов | 60/60 ссылок открываются и содержат код |
+
+**Файлы клиента** (29.10.2026, восемь демонстрационных документов): 65 из 71 позиции
+распознаны верно, потерь строк нет, известные промахи задокументированы заранее —
+[`docs/client-files-check-2026-10-29.md`](docs/client-files-check-2026-10-29.md).
+
+**Неоднозначные запросы** (11.11.2026): отдельный набор `eval/ambiguity_examples.csv`
+содержит 9 вопросов и 16 негативных контролей. На lexical и TF‑IDF/memory: 25/25,
+0 навязанных кодов, 100 % recall уточнения и 100 % прохода однозначных контролей.
+Это небольшой экспертный регрессионный набор, а не оценка всех реальных закупок.
+В общем quality eval уточнение засчитывается только если среди минимум двух опций есть
+ожидаемый код; произвольный или неполный вопрос остаётся ошибкой. Прямой top-1 выводится
+отдельно, вопросы не попадают в ECE с искусственной нулевой уверенностью. Stress/calibration
+retrieval по-прежнему измеряют исходное решение модели из `clarification.original`.
+
+**Итоговый отчёт по закупке** вычисляет `api/app/services/procurement_report.py`, а не
+разные функции UI. Основные buckets взаимно исключают друг друга:
+`accepted = auto_accepted + specialist_resolved`, а
+`accepted + needs_review + not_found = total`. Причины могут пересекаться. Более высокий
+`risk_rank` означает более раннюю проверку: несколько кодов (100), исключение (95),
+неоднозначность (90), сверка каталога (85), отсутствие кода (80), низкая уверенность (70),
+не найдено (60). Batch API возвращает `report.summary` и `report.items`; CSV повторяет
+`report_bucket/risk_rank/report_reasons`, XLSX дополнительно содержит листы «Сводка» и
+«Требуют проверки». Resolve сохраняет строку атомарно, а следующий GET пересчитывает отчёт.
+
+Завершённый отчёт восстанавливается после reload и рестарта API (SQLite/PostgreSQL) по
+`job_id`. В браузере нет локальной истории названий; session snapshot нужен только для Back.
+Срок хранения ограничен `JOB_TTL_HOURS` (по умолчанию 30 дней), истёкший ID получает явное
+сообщение. «Закрыть отчёт» удаляет локальный marker, но не продлевает и не меняет серверный TTL.
+
+### Как воспроизвести
+
+```bash
+# полный отчёт: top-1/top-3, тишина, регрессия на точных названиях, свип порога, разбор ошибок
+PYTHONPATH=api python eval/run_eval.py                       # → eval/eval_report.md
+
+# приёмка по критериям задания на живом API (время, точность, ссылки)
+python scripts/check_acceptance.py eval/labeled_examples.csv --output acceptance-report.json
+
+# «глазами клиента»: восемь файлов и эталонные коды
+PYTHONPATH=api python -m pytest api/tests/test_client_files.py -q
+
+# guard: ни одного кода на ambiguous строках + негативные контроли
+PYTHONPATH=api python eval/run_ambiguity_eval.py
+VECTOR_STORE=memory EMBEDDER_BACKEND=tfidf VECTOR_SEARCH=true ALLOW_DEGRADE=false \
+  PYTHONPATH=api python eval/run_ambiguity_eval.py
+```
+
+Перед замером без кэша ответов перезапустите API и worker и дождитесь `/health/ready` —
+модели и индекс при этом уже загружены.
+
+CI не доверяет заголовочным процентам: `eval/quality_gate.py` сравнивает метрики **по строкам**
+с записанным замером (`eval/baselines/*.json`), пересобирает артефакт и проверяет, что
+отгруженный файл соответствует свежей сборке. Любая метрика может потерять не более одной
+строки из 201/233, `ok_precision` сравнивается по числу **неверных** уверенных ответов,
+ECE не может вырасти больше чем на 0.01.
+
+> **Оговорка про допуск векторного артефакта.** На исправленном каталоге (29.10.2026) гейт
+> вернул «отклонить» с явным waiver: в пуле четырёх прогонов тишина 122/128 против 123/128,
+> на отгруженных артефактах потери нет. Причина, выигрыш и план пересмотра записаны в
+> [`ml/artifacts/README.md`](ml/artifacts/README.md).
+
+40 экспериментов с числами, отвергнутыми гипотезами и разбором ошибок —
+[`eval/experiments.md`](eval/experiments.md).
+
+## API
+
+| Метод | Путь | Назначение |
+| --- | --- | --- |
+| POST | `/classify` | один товар → `ClassifyResponse` (контракт v2.0) |
+| POST | `/classify/resolve` | выбор `option_id` + `catalog_sha256` для одиночного уточнения |
+| POST | `/classify/batch` | до 100 товаров → фоновая задача |
+| POST | `/classify/file` | файл со списком → фоновая задача (форматы см. выше) |
+| GET | `/classify/batch/{job_id}` | статус и результаты задачи |
+| POST | `/classify/batch/{job_id}/items/{item_id}/resolve` | атомарно сохранить выбор для строки batch |
+| GET | `/classify/batch/{job_id}/events` | прогресс через SSE (`progress`, `done`) |
+| GET | `/classify/batch/{job_id}.csv` | результат батча в CSV (`;`, UTF-8 BOM) |
+| POST | `/feedback` | вердикт специалиста: `correct`, `incorrect` (+ код), `absent` |
+| GET | `/source/{record_id}` | фрагмент текста ПП № 1875 (JSON или HTML) |
+| GET | `/health`, `/health/ready` | liveness и readiness с фактической конфигурацией |
+| GET | `/metrics` | Prometheus text; JSON при `Accept: application/json` |
+| GET | `/` | редирект на `/ui/` |
+| GET / POST | `/admin/catalog` | сведения о каталоге / загрузка нового перечня |
+| GET | `/admin/catalog/export` | текущий `data.csv` для внешней копии |
+| GET | `/admin/catalog/versions` | снимки каталога, доступные для отката |
+| POST | `/admin/catalog/rollback` | вернуть предыдущую редакцию каталога |
+| POST | `/admin/reindex` | переиндексация Qdrant (нужна режиму `qdrant`) |
+| GET | `/admin/reindex/{job_id}` | статус переиндексации |
+| GET | `/admin/feedback/export` | выгрузка вердиктов (`csv` / `jsonl`) |
+| POST | `/admin/maintenance/purge` | применить сроки хранения журналов (`dry_run` — проверка) |
+
+Админ-эндпоинты требуют заголовок `X-Admin-API-Key`; без `ADMIN_API_KEY` они отключены.
+Полный контракт, инварианты и правила версионирования — [`docs/api-contract.md`](docs/api-contract.md);
+он закреплён тестами `api/tests/test_contract*.py`.
+
+```bash
+# пакет и его статус
+curl -s -X POST localhost:8000/classify/batch -H 'Content-Type: application/json' \
+  -d '{"items": ["Ноутбук Lenovo", "Мышь компьютерная"]}'
+curl -s localhost:8000/classify/batch/<job_id> | python -m json.tool
+
+# файл клиента (CSV/XLSX/DOCX/PDF/JSON/TXT)
+curl -s -X POST localhost:8000/classify/file -F "file=@frontend/examples/products.csv"
+```
+
+## Конфигурация
+
+Всё задаётся переменными окружения (или файлом `.env`, скопированным из [`.env.example`](.env.example) —
+там полный список с комментариями). Ключевые:
+
+| Переменная | По умолчанию | Что делает |
+| --- | --- | --- |
+| `CLASSIFIER_BACKEND` | `catalog` | `catalog` / `qdrant` / `mock` |
+| `CATALOG_PATH` / `DATA_DIR` | — / `data` | путь к `data.csv` и каталогу данных |
+| `VECTOR_SEARCH` | `true` | векторный слой в режиме `catalog` |
+| `VECTOR_STORE` | `memory` (в Docker `qdrant`) | где хранятся векторы; при сбое Qdrant — память |
+| `EMBEDDER_BACKEND` | `auto` | `sentence-transformers` / `spacy` / `tfidf`; явный выбор не откатывается молча |
+| `MODEL_NAME` / `MODEL_LOCAL_ONLY` | `/opt/models/embedder` / `true` | путь к модели эмбеддингов в образе |
+| `MODEL_MAX_SEQ_LENGTH` | `512` | обрезка входа по токенам (`0` — значение модели) |
+| `SEMANTIC_RERANKER` | `auto` | `auto` — артефакт под эмбеддер, `lexical` — откат на `reranker.json` |
+| `CATALOG_OK_FLOOR` / `CATALOG_REVIEW_FLOOR` | из артефакта | пороги решения для `catalog` |
+| `ALLOW_DEGRADE` | `false` | `false` — сбой ML-шага роняет сборку, отсутствие артефакта даёт 503 |
+| `JOB_STORE` | `sqlite` (в Docker `postgres`) | `postgres` / `sqlite` / `memory` |
+| `DATABASE_URL` | — | строка подключения PostgreSQL (нужна при `JOB_STORE=postgres`) |
+| `QUEUE_BACKEND` / `REDIS_URL` | `inprocess` (в Docker `celery`) | где выполняются пакеты |
+| `MAX_CONCURRENT_INFERENCES` | `1` | семафор фоновых инференсов; >1 не ускоряет CPU-bound пакет |
+| `ADMIN_API_KEY` | — | ключ `X-Admin-API-Key` для `/admin/*` |
+| `RATE_LIMIT_RPS` / `RATE_LIMIT_BURST` | `10` / `20` | лимит публичных эндпоинтов на клиента |
+| `RATE_LIMIT_FILE_RPS` / `_BURST` | `1` / `3` | отдельный лимит на `POST /classify/file` (в файлах) |
+| `TRUSTED_PROXIES` | — | IP/CIDR прокси, которым доверяем `X-Forwarded-For` |
+| `MAX_REQUEST_BODY_BYTES` | `1 000 000` | лимит тела запроса (413) |
+| `AUDIT_RETENTION_DAYS` | `90` | срок хранения журнала запросов (только PostgreSQL) |
+| `FEEDBACK_RETENTION_DAYS` | `0` | срок хранения вердиктов; `0` — вечно (обучающие данные) |
+| `LLM_VERIFIER_ENABLED` | `false` | третья ступень подтверждения кода |
+| `LLM_VERIFIER_BASE_URL` / `_MODEL` / `_API_KEY` | OpenAI-совместимый endpoint / — / — | провайдер LLM-верификатора |
+
+**Кто считается клиентом.** По умолчанию — адрес сокета, а `X-Forwarded-For` **игнорируется**:
+иначе любой клиент подставлял бы случайный адрес в заголовок и получал свежий бакет на каждый
+запрос. Заголовок читается только от адресов и CIDR из `TRUSTED_PROXIES`, и берётся **правый
+непроверенный хоп** — тот, который дописал ваш прокси. Опечатка в `TRUSTED_PROXIES` роняет
+старт, а не игнорируется молча; без него за прокси все клиенты попадут в один бакет.
+
+## Эксплуатация
+
+**Мониторинг.** Опциональный профиль поднимает Prometheus и Grafana с готовым дашбордом:
+
+```bash
+docker compose --profile monitoring up -d
+# Prometheus → http://127.0.0.1:9090 · Grafana → http://127.0.0.1:3000
+```
+
+Семь правил алертов: готовность классификатора, деградация эмбеддера и Qdrant, доля 5xx,
+p95 задержки, провалы пакетов, насыщение rate limit. Ключевые метрики:
+`dora_http_requests_total`, `dora_http_request_duration_seconds`, `dora_http_rate_limited_total`,
+`dora_classifications_total`, `dora_batch_jobs_total`, гейджи `dora_classifier_up`,
+`dora_embedder_up`, `dora_vector_store_up`, `dora_vector_positions`, `dora_build_info`.
+Логи в Docker — JSON, один объект на строку, с `request_id` и трейсбеками.
+Полный runbook — [`docs/observability.md`](docs/observability.md).
+
+> Счётчики классификаций, выполненных в Celery-воркере, в `/metrics` API не попадают:
+> прогресс пакетов смотрите в `GET /classify/batch/{job_id}`.
+
+**Резервное копирование.** `jobs`, журнал запросов и вердикты лежат в PostgreSQL:
+
+```bash
+bash scripts/pg_backup.sh          # дамп в backups/
+bash scripts/pg_restore_check.sh   # проверка восстановления в отдельную БД
+```
+
+Регламент и разбор — [`docs/backup-restore.md`](docs/backup-restore.md). В CI на каждом PR
+крутится джоба `postgres-restore`: миграции, дамп, восстановление и сверка ревизии и счётчиков.
+
+**Обновление каталога** — без передеплоя и без удаления тома:
+
+```bash
+python scripts/validate_catalog.py new_catalog.csv           # проверка файла без API
+curl -s -X POST localhost:8000/admin/catalog?dry_run=true \
+  -H "X-Admin-API-Key: $ADMIN_API_KEY" -F "file=@new_catalog.csv"
+```
+
+Каждая загрузка сохраняет снимок предыдущей редакции (хранится 10, `CATALOG_SNAPSHOT_KEEP`),
+откат — `POST /admin/catalog/rollback`. Регламент — [`docs/catalog-update.md`](docs/catalog-update.md).
+
+**Сроки хранения.** Планировщик раз в `MAINTENANCE_INTERVAL_HOURS` чистит журнал запросов
+(90 дней) и задачи (`JOB_TTL_HOURS=720`); вердикты специалистов по умолчанию не удаляются.
+Задачи, которые никто не трогал дольше `JOB_STALE_SECONDS` (воркер умер), помечаются `failed`,
+а не висят в `running` вечно.
+
+**Масштабирование.** Пакеты масштабируются воркерами Celery (`--concurrency`, число реплик),
+а не `MAX_CONCURRENT_INFERENCES`: на CPU-bound инференсе он не ускоряет стенку и портит
+латентность опроса (замеры — [`eval/api-load-test.md`](eval/api-load-test.md)).
+
+### Если что-то не работает
+
+| Симптом | Причина | Что делать |
+| --- | --- | --- |
+| `/health/ready` показывает `spacy-…` вместо `st-embedder` | устаревший `MODEL_NAME` в `.env` перекрывает путь `/opt/models/embedder` | убрать строку `MODEL_NAME` из `.env`, `docker compose up -d` (пересборка не нужна) |
+| Сборка падает на загрузке модели с `CERTIFICATE_VERIFY_FAILED` | TLS-инспекция антивируса/DLP/прокси; нужны `huggingface.co`, `*.hf.co`, `download.pytorch.org`, `pypi.org` | передать корневой сертификат `CORP_CA_PEM_B64` или собрать с `INSTALL_TRANSFORMER=false` |
+| Локальная установка падает на wheel `ru_core_news_md` | нет доступа к GitHub release assets | разрешить `github.com` или поставить остальные зависимости и запускать с `VECTOR_SEARCH=false` |
+| `/health/ready` → 503 | нет калиброванного артефакта или каталог не читается | смотреть лог старта; `ALLOW_DEGRADE=true` — только для диагностики |
+| Ответы 429 | сработал rate limit | за прокси задать `TRUSTED_PROXIES`, иначе все клиенты в одном бакете; для нагрузочных прогонов `RATE_LIMIT_ENABLED=false` |
+| Задачи висят в `queued` | воркер или Redis недоступны | `docker compose logs worker redis`; недоступная очередь отдаёт 503 |
+| `vector_health.degraded=true` | Qdrant недоступен, поиск ушёл в память | readiness не падает; проверить `docker compose ps qdrant` и том `qdrant_data` |
+
+## Разработка
+
+```text
+api/app/
+  main.py                 # FastAPI: роуты, lifespan, статика /ui
+  schemas.py              # контракт v2.0 (Pydantic)
+  services/classifier.py  # catalog / qdrant / mock, гибридный шорт-лист
+  services/               # catalog_io, file_items, source_lookup, llm_verifier, feedback_store
+  job_store*.py           # задачи: memory / sqlite / postgres
+  dispatch.py, tasks.py   # отправка и тело пакетной задачи
+  worker.py               # Celery-приложение (брокер Redis)
+  core/, middleware/      # конфигурация, логи, метрики, rate limit, лимит тела
+api/tests/                # 610 тестовых функций: API, контракт, каталог, очередь, БД, ML
+frontend/                 # React + TypeScript + Vite; собирается в dist и отдаётся на /ui/
+ml/                       # эмбеддеры, реранкер, лексикон, векторный поиск, обучение
+ml/artifacts/             # готовые артефакты модели (входят в образ)
+data/                     # перечень ПП № 1875: data.csv, data.json, source_text.txt
+eval/                     # размеченный набор, метрики, эксперименты, чек-листы
+docs/                     # контракт, обновление каталога, эксплуатация, исторические отчёты
+scripts/                  # build_model, download_model, validate_catalog, load_test, smoke
+```
+
+```bash
+# бэкенд: линт и тесты
+>>>>>>> Stashed changes
 python -m pip install -r api/requirements-dev.txt
 PYTHONPATH=api python -m pytest api/tests -q
 ```

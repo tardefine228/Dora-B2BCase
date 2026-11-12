@@ -72,6 +72,62 @@ class Alternative(APIModel):
     )
 
 
+<<<<<<< Updated upstream
+=======
+class ClarificationOption(APIModel):
+    """One server-issued interpretation; ``option_id`` is not a client-supplied code."""
+
+    option_id: str
+    code: str
+    title: str
+    okpd2_title: str | None = None
+    okpd2_context: str | None = None
+    okpd2_source: str | None = None
+    confidence: float = Field(ge=0, le=1)
+    clause_ref: str | None = None
+    clause_url: str | None = None
+    code_role: str | None = None
+    catalog_review_required: bool | None = None
+
+
+class OriginalDecision(APIModel):
+    """The model answer kept for audit before the ambiguity guard replaced it."""
+
+    code: str | None = None
+    title: str | None = None
+    status: Literal["ok", "review", "not_found"]
+    confidence: float = Field(ge=0, le=1)
+    confidence_raw: float | None = Field(default=None, ge=0, le=1)
+    alternatives: list[Alternative] = Field(default_factory=list)
+
+
+class Clarification(APIModel):
+    question: str
+    options: list[ClarificationOption] = Field(min_length=2)
+    catalog_sha256: str
+    original: OriginalDecision
+
+
+class Resolution(APIModel):
+    option_id: str
+    resolved_at: str
+    original: OriginalDecision
+
+
+class AttentionReason(APIModel):
+    code: Literal[
+        "ambiguous_name",
+        "multiple_codes",
+        "direct_title_match",
+        "curated_product_match",
+        "low_confidence",
+        "code_exception",
+        "catalog_review_required",
+    ]
+    message: str
+
+
+>>>>>>> Stashed changes
 class ClassifyResponse(APIModel):
     query: str
     code: str | None = None

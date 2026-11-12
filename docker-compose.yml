@@ -38,7 +38,7 @@ x-app-env: &app-env
   DATABASE_URL: "postgresql://dora:${POSTGRES_PASSWORD:-dora}@postgres:5432/dora"
   QUEUE_BACKEND: "celery"
   REDIS_URL: "redis://redis:6379/0"
-  JOB_TTL_HOURS: "${JOB_TTL_HOURS:-24}"
+  JOB_TTL_HOURS: "${JOB_TTL_HOURS:-720}"
   # Срок хранения двух журналов (BE-5). 0 = хранить вечно. Журнал запросов
   # содержит копии описаний закупок, поэтому чистится по умолчанию; вердикты —
   # это обучающие данные (ML-4), их не удаляем без явного решения.

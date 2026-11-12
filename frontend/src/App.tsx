@@ -1,11 +1,22 @@
+<<<<<<< Updated upstream
 import { useEffect, useRef, useState } from 'react';
 import { api, followBatch, type Job, type Result, type UploadAccepted, type Verdict } from './api';
+=======
+import { Fragment, useEffect, useRef, useState } from 'react';
+import { api, followBatch, type ClarificationOption, type Job, type ProcurementReport, type ReportBucket, type ReportReasonCode, type Result, type UploadAccepted, type Verdict } from './api';
+>>>>>>> Stashed changes
 import { exportResults, exportResultsCsv } from './files';
 import { procurementVerdict, PROCUREMENT_SCOPE, PROCUREMENT_SOURCE } from './procurement';
 import { STATUS_HELP, STATUS_LABEL, codeLabel, duplicateAppendixHint, notFoundHint, verifierNote } from './status';
 import { orderResults, type SortMode } from './rows';
 import { storage } from './storage';
 import { isRunningJob, navigationType, parseJobMarker, readStoredView, type StoredView } from './view';
+<<<<<<< Updated upstream
+=======
+import { BUCKET_LABEL, filterReportResults, REASON_LABEL, reportItem } from './report';
+import { clarificationCodeLevel, CODE_LEVEL_LABEL, groupClarificationTitles, clarificationGuide, distinctiveWords } from './clarification';
+import { addFileHistory, FILE_HISTORY_KEY, parseFileHistory, updateFileHistoryStatus, type FileHistoryEntry } from './history';
+>>>>>>> Stashed changes
 
 const ACTIVE_JOB_KEY = 'dora:active-job:v1';
 // Ключи удалённой локальной истории: их надо стирать у тех, кто успел включить
@@ -38,6 +49,101 @@ function Alternatives({ result }: { result: Result }) {
       </div>)}</div>
   </details>;
 }
+<<<<<<< Updated upstream
+=======
+function ClarificationBox({ result, onResolve, onResolved }: {
+  result: Result;
+  onResolve: (result: Result, optionId: string) => Promise<Result>;
+  onResolved: (original: Result, resolved: Result) => void;
+}) {
+  const [sending, setSending] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [deferred, setDeferred] = useState(false);
+  const [error, setError] = useState('');
+  const clarification = result.clarification;
+  if (!clarification) return null;
+  const hasCodeHierarchy = clarification.options.some(option =>
+    clarificationCodeLevel(option, clarification.options) !== null);
+  const titleGroups = groupClarificationTitles(clarification.options);
+  const hasMultipleCodes = titleGroups.some(group => group.codeGroups.length > 1);
+  const choose = async (optionId: string) => {
+    if (sending) return;
+    setSending(optionId); setError('');
+    try { onResolved(result, await onResolve(result, optionId)); }
+    catch (e) { setError(message(e)); }
+    finally { setSending(null); }
+  };
+  return <section className="clarification" aria-labelledby={`question-${result.itemId ?? 'single'}`}>
+    <h3 id={`question-${result.itemId ?? 'single'}`}>{clarification.question}</h3>
+    <p>{hasMultipleCodes ? 'Сравните назначение товара, затем подтвердите код по документации.'
+      : 'Выберите подходящее описание товара.'}</p>
+    {hasMultipleCodes && <details className="clarification-help"><summary>Как определить подходящий код?</summary>
+      <p className="clarification-warning">Не выбирайте наугад. Сверьте назначение, состав и комплектность
+        с техническим описанием производителя, а для медизделия — также с регистрационной документацией.
+        Одного общего названия недостаточно.</p>
+      <p>Если расшифровки нет, сравните позиции перечня и код в документации поставщика.
+        Выделенные слова показывают различия в названиях ОКПД2. Это подсказка для сравнения, а не автоматическое назначение кода.</p></details>}
+    {hasCodeHierarchy && <p className="clarification-hierarchy">Укрупнённый
+      и детальный код могут относиться к одному товару. Выбирайте требуемый уровень ОКПД2
+      и приложение перечня.</p>}
+    <div className="clarification-options">{titleGroups.map((group, groupIndex) => {
+      const titleId = `clarification-product-${result.itemId ?? 'single'}-${groupIndex}`;
+      const codeCount = group.codeGroups.length;
+      return <section className="clarification-option" key={group.key} aria-labelledby={titleId}>
+        <div className="clarification-product">
+          <div><span className="clarification-overline">Товар в перечне</span>
+            <h4 className="clarification-title" id={titleId}>{group.title}</h4></div>
+          <span className="clarification-count">{codeCount} {codeCount === 1 ? 'код' : codeCount < 5 ? 'кода' : 'кодов'}</span>
+        </div>
+        <div className="clarification-code-list">{group.codeGroups.map(codeGroup => {
+          const option = codeGroup.options[0];
+          const level = clarificationCodeLevel(option, clarification.options);
+          const guide = clarificationGuide(option);
+          const differences = distinctiveWords(guide?.title ?? '', group.codeGroups.filter(item => item.key !== codeGroup.key)
+            .map(item => item.options[0].okpd2Title ?? '').filter(Boolean));
+          const review = codeGroup.options.some(item => item.catalogReviewRequired);
+          return <div className="clarification-code-row" key={codeGroup.key}>
+            <button type="button" className="clarification-choice" disabled={sending !== null}
+              aria-pressed={selected === option.optionId}
+              aria-describedby={titleId} onClick={() => { setSelected(option.optionId); setDeferred(false); }}>
+              <span className="clarification-code-name">{guide && <span>{guide.title.split(/([а-яёa-z0-9]+)/ig).map((word, i) => differences.has(word.toLocaleLowerCase('ru'))
+                ? <mark key={i}>{word}</mark> : word)}</span>}<strong>{codeGroup.code}</strong></span>
+              <span className="clarification-code-info">
+                {option.okpd2Context && <small>Группа: {option.okpd2Context}</small>}
+                {level && <small className="code-level">{CODE_LEVEL_LABEL[level]}</small>}
+                {codeGroup.clauseRefs.length === 1 &&
+                  <small className="clarification-clause">{codeGroup.clauseRefs[0]}</small>}
+                {codeGroup.clauseRefs.length > 1 &&
+                  <small className="clarification-clause">Позиций в перечне: {codeGroup.clauseRefs.length}</small>}
+                {review && <small>Потребуется сверка каталога</small>}
+              </span>
+              <span className="clarification-select">{selected === option.optionId ? 'Выбрано' : 'Выбрать'}
+                <span aria-hidden="true">→</span></span>
+            </button>
+            {guide ? <p className="choice-hint">{level === 'group'
+              ? 'Общая категория: включает более детальные виды. Это не отдельная характеристика товара.'
+              : level === 'detail' ? 'Более точная категория внутри общего кода. Сверьте её с документацией товара.'
+              : guide.check}</p>
+              : <p className="choice-hint">Расшифровка этого кода отсутствует в справочнике. Проверьте код и описание по документации; различия не определены.</p>}
+            <SourcePositions options={codeGroup.options}/>
+            {guide?.source && <a className="guide-source" href={guide.source}>Расшифровка ОКПД2 ↗</a>}
+          </div>;
+        })}</div>
+      </section>;
+    })}
+    </div>
+    <div className="clarification-actions">
+      <button type="button" className="primary small" disabled={!selected || sending !== null}
+        onClick={() => selected && void choose(selected)}>{sending ? 'Сохраняем…' : 'Подтвердить выбор'}</button>
+      <button type="button" className="text-button small" disabled={sending !== null}
+        onClick={() => { setSelected(null); setDeferred(true); }}>Не знаю — оставить на проверку</button>
+    </div>
+    {selected && <p className="selection-note">Подтвердите, если описание и код соответствуют документации вашего товара.</p>}
+    {deferred && <p role="status" className="selection-note">Код не назначен. Позиция остаётся на проверке; уточните характеристики у поставщика.</p>}
+    {error && <p className="field-error" role="alert">{error} Обновите результат и попробуйте снова.</p>}
+  </section>;
+}
+>>>>>>> Stashed changes
 function Feedback({ result, onSaved }: { result: Result; onSaved: (r: Result, verdict: Verdict, corrected: string | null) => void }) {
   const [choice, setChoice] = useState<Verdict | null>(null);
   const [corrected, setCorrected] = useState('');
@@ -87,26 +193,42 @@ function ResultCard({ result, compact = false, onSaved }: { result: Result; comp
   const twin = duplicateAppendixHint(result);
   const verified = verifierNote(result);
   return <div className={compact ? 'compact-result' : ''}>
-    {compact ? <>
+    {compact && result.status === 'needs_clarification' ? null : compact ? <>
       <div className="nowrap">{result.code ?? '—'}</div><p>{result.title ?? "Название категории не указано"}</p><small>{resultStatus(result)}</small>
     </> : <>
       <div className="result-heading"><h2>Результат</h2><span className={`badge status-${result.status}`}>{resultStatus(result)}</span></div>
       <div className="result-grid">
-        <div><p className="muted">{codeLabel(result.status)}</p>
+        <div>{result.status !== 'needs_clarification' && <p className="muted">{codeLabel(result.status)}</p>}
           {result.status === 'not_found' ? <p className="title">Совпадение не найдено</p>
             : missingCode ? <p className="title">Сервис не вернул код — требуется проверка</p>
               : <><div className="code">{result.code}</div><p className="title">Категория: {result.title ?? "название не указано"}</p>
                 {result.clauseRef && <p className="muted">{result.clauseRef}</p>}</>}
         </div>
+<<<<<<< Updated upstream
         <div className="confidence"><strong>{percent(result.confidence)}</strong><p>Уверенность в подборе кода</p>
           {result.confidence !== null && <progress max={1} value={result.confidence} aria-label="Уверенность модели"/>}</div>
       </div>
     </>}
     <Procurement result={result}/>
     <p className="status-help">{missingCode ? 'Без кода нельзя считать результат уверенным.' : hint}{result.status === 'not_found' && ' Процент показывает уверенность в подборе кода, а не вероятность отсутствия товара в постановлении.'}</p>
+=======
+        {result.status === 'needs_clarification' ? null : result.decisionSource === 'specialist'
+          ? <div className="confidence"><strong>Ручной выбор</strong><p>Оценка модели не показывается</p></div>
+          : <div className="confidence"><strong>{percent(result.confidence)}</strong><p>Уверенность в подборе кода</p>
+            {result.confidence !== null && <progress max={1} value={result.confidence} aria-label="Уверенность модели"/>}</div>}
+      </div>
+    </>}
+    {result.status === 'needs_clarification' &&
+      <ClarificationBox result={result} onResolve={onResolve} onResolved={onResolved}/>}
+    {result.decisionSource === 'specialist' && result.resolution && <p className="resolution-note" role="status">
+      Выбрано специалистом. Исходный ответ модели: {result.resolution.original.code ?? 'без кода'} · {STATUS_LABEL[result.resolution.original.status]}.
+    </p>}
+    {result.status !== 'needs_clarification' && <Procurement result={result}/>}
+    {result.status !== 'needs_clarification' && <p className="status-help">{missingCode ? 'Без кода нельзя считать результат уверенным.' : hint}{result.status === 'not_found' && ' Процент показывает уверенность в подборе кода, а не вероятность отсутствия товара в постановлении.'}</p>}
+>>>>>>> Stashed changes
     {verified && <p className="status-help" role="note">{verified}</p>}
     {twin && <p className="status-help" role="note">{twin}</p>}
-    {!compact && <div className="source"><SourceLink url={result.url}/></div>}
+    {!compact && result.status !== 'needs_clarification' && <div className="source"><SourceLink url={result.url}/></div>}
     <Alternatives result={result}/>
     <details className="details"><summary>Сообщить об ошибке (для экспертов)</summary><Feedback key={`${result.name}-${result.code}`} result={result} onSaved={onSaved}/></details>
   </div>;
@@ -129,6 +251,14 @@ export default function App() {
   const [fileInfo, setFileInfo] = useState<UploadAccepted | null>(savedView.fileInfo ?? null);
   const [progress, setProgress] = useState<{ processed: number; total: number; state: 'running' | 'done' | 'failed' } | null>(savedView.progress ?? null);
   const [results, setResults] = useState<Result[]>(savedView.results ?? []);
+<<<<<<< Updated upstream
+=======
+  const [jobId, setJobId] = useState<string | null>(savedView.jobId ?? null);
+  const [report, setReport] = useState<ProcurementReport | null>(null);
+  const [bucketFilter, setBucketFilter] = useState<ReportBucket | 'all'>('all');
+  const [reasonFilter, setReasonFilter] = useState<ReportReasonCode | 'all'>('all');
+  const [expanded, setExpanded] = useState<Result | null>(null);
+>>>>>>> Stashed changes
   const [sort, setSort] = useState<SortMode>('original');
   const [drag, setDrag] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -157,6 +287,28 @@ export default function App() {
     setResult(old => old ? mark(old) : old);
     setResults(old => old.map(mark));
   }
+<<<<<<< Updated upstream
+=======
+  async function resolveClarification(original: Result, optionId: string): Promise<Result> {
+    if (jobId) {
+      const itemId = original.itemId ?? results.indexOf(original);
+      if (itemId < 0) throw new Error('Позиция не найдена в текущем списке. Загрузите файл повторно.');
+      return api.resolveBatch(jobId, itemId, original, optionId);
+    }
+    return api.resolve(original, optionId);
+  }
+  function clarificationResolved(original: Result, resolved: Result) {
+    setExpanded(current => current === original ? resolved : current);
+    setResult(current => current === original ? resolved : current);
+    setResults(current => current.map(item => item === original ? resolved : item));
+    setError('');
+    if (jobId) {
+      void api.getBatch(jobId).then(job => setReport(job.report)).catch((error: unknown) => {
+        setError(`Выбор сохранён, но сводку не удалось обновить: ${message(error)}`);
+      });
+    }
+  }
+>>>>>>> Stashed changes
   async function follow(jobId: string, total: number) {
     abort.current?.abort();
     const controller = new AbortController(); abort.current = controller;
@@ -311,6 +463,7 @@ export default function App() {
             </span>
           </div>
           <div className="table-scroll"><table><thead><tr><th scope="col" className="row-num">№</th><th scope="col">Товар</th><th scope="col">Код и статус</th><th scope="col">Условия закупки</th><th scope="col">Уверенность</th><th scope="col">Подробности</th></tr></thead>
+<<<<<<< Updated upstream
             <tbody>{sorted.map((r, index) => <tr key={results.indexOf(r)}>
               <td className="row-num">{index + 1}</td>
               <td>{r.name}</td><td>{r.code ?? '—'}{r.code && <span className="cell-status">Категория: {r.title ?? 'название не указано'}</span>}<span className="muted cell-status">{resultStatus(r)}</span></td>
@@ -318,6 +471,31 @@ export default function App() {
               <td>{percent(r.confidence)}{r.status === 'not_found' && <small className="muted">Код не подобран</small>}</td><td><SourceLink url={r.url}/>
                 <details className="details"><summary>Проверить результат</summary><ResultCard result={r} compact onSaved={saveVerdict}/></details></td>
             </tr>)}</tbody></table></div>
+=======
+            <tbody>{sorted.map((r, index) => {
+              const sourceIndex = results.indexOf(r);
+              const itemReport = reportItem(report, r, sourceIndex);
+              return <Fragment key={sourceIndex}><tr id={`report-item-${r.itemId ?? sourceIndex}`}
+                data-risk={itemReport && itemReport.bucket !== 'accepted' ? 'true' : undefined}>
+                <td className="row-num">{index + 1}</td>
+                <td>{r.name}{itemReport && <span className="report-reasons">{itemReport.reasons.map(reason =>
+                  <small key={reason.code}><strong>{REASON_LABEL[reason.code]}:</strong> {reason.message}</small>)}</span>}</td>
+                <td>{r.code ?? '—'}{r.code && <span className="cell-status">Категория: {r.title ?? 'название не указано'}</span>}<span className="muted cell-status">{resultStatus(r)}</span></td>
+                <td className="procurement-cell"><Procurement result={r} brief/></td>
+                <td>{percent(r.confidence)}{r.status === 'not_found' && <small className="muted">Код не подобран</small>}</td><td><SourceLink url={r.url}/>
+                  <button type="button" className="row-toggle" aria-expanded={expanded === r}
+                    aria-controls={`row-details-${sourceIndex}`} onClick={() => setExpanded(expanded === r ? null : r)}>
+                    {r.status === 'needs_clarification' ? 'Уточнить товар' : 'Проверить результат'}
+                    <span aria-hidden="true">{expanded === r ? '−' : '+'}</span></button></td>
+              </tr>
+              {expanded === r && <tr className="expanded-row" id={`row-details-${sourceIndex}`}><td colSpan={6}>
+                <div className="expanded-content"><h3>{r.name}</h3>
+                  <ResultCard result={r} compact onSaved={saveVerdict} onResolve={resolveClarification} onResolved={clarificationResolved}/>
+                </div>
+              </td></tr>}</Fragment>;
+            })}</tbody></table></div>
+          {sorted.length === 0 && <p className="hint">По выбранному фильтру позиций нет.</p>}
+>>>>>>> Stashed changes
         </section>}
       </div>
       <footer>{PROCUREMENT_SCOPE}<br/><a href={PROCUREMENT_SOURCE}>Основание: ПП № 1875, пункты 1 и 2</a></footer>

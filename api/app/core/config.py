@@ -222,7 +222,7 @@ class Settings:
         # lost (its worker died) and is failed instead of hanging forever.
         self.job_stale_seconds = _positive_int("JOB_STALE_SECONDS", 900)
         self.job_store_path = os.getenv("JOB_STORE_PATH", "data/jobs.sqlite").strip()
-        self.job_ttl_hours = _positive_int("JOB_TTL_HOURS", 24)
+        self.job_ttl_hours = _positive_int("JOB_TTL_HOURS", 720)
         self.job_max_active = _positive_int("JOB_MAX_ACTIVE", 16)
         self.job_max_stored = _positive_int("JOB_MAX_STORED", 512)
 

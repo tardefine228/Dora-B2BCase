@@ -10,6 +10,42 @@ export type Alternative = {
   clauseRef: string | null;
   url: string | null;
 };
+<<<<<<< Updated upstream
+=======
+export type ClarificationOption = {
+  okpd2Title?: string | null;
+  okpd2Context?: string | null;
+  okpd2Source?: string | null;
+  optionId: string;
+  code: string;
+  title: string;
+  confidence: number;
+  clauseRef: string | null;
+  url: string | null;
+  codeRole: string | null;
+  catalogReviewRequired: boolean | null;
+};
+export type OriginalDecision = {
+  code: string | null;
+  title: string | null;
+  status: Exclude<Status, 'needs_clarification'>;
+  confidence: number;
+  confidenceRaw: number | null;
+};
+export type Clarification = {
+  question: string;
+  options: ClarificationOption[];
+  catalogSha256: string;
+  original: OriginalDecision;
+};
+export type Resolution = {
+  optionId: string;
+  resolvedAt: string;
+  original: OriginalDecision;
+};
+export type AttentionReason = { code: string; message: string };
+export type DecisionSource = 'model' | 'specialist' | 'direct_code';
+>>>>>>> Stashed changes
 export type Result = {
   name: string;
   code: string | null;
@@ -54,6 +90,27 @@ type ApiAlternative = {
   code: string | null; title: string | null; confidence: number;
   clause_ref: string | null; clause_url: string | null;
 };
+<<<<<<< Updated upstream
+=======
+type ApiOriginalDecision = {
+  code: string | null; title: string | null;
+  status: Exclude<Status, 'needs_clarification'>;
+  confidence: number; confidence_raw: number | null;
+};
+type ApiClarificationOption = {
+  okpd2_title?: string | null;
+  okpd2_context?: string | null;
+  okpd2_source?: string | null;
+  option_id: string; code: string; title: string; confidence: number;
+  clause_ref: string | null; clause_url: string | null;
+  code_role: string | null; catalog_review_required: boolean | null;
+};
+type ApiClarification = {
+  question: string; options: ApiClarificationOption[]; catalog_sha256: string;
+  original: ApiOriginalDecision;
+};
+type ApiResolution = { option_id: string; resolved_at: string; original: ApiOriginalDecision };
+>>>>>>> Stashed changes
 type ApiClassify = {
   query: string; code: string | null; title: string | null;
   confidence: number; confidence_raw: number | null; status: Status;
@@ -128,6 +185,31 @@ function toResult(item: ApiClassify): Result {
     catalogReviewRequired: item.catalog_review_required ?? null,
     verifier: item.verifier ?? null,
     verifierNote: item.verifier_note ?? null,
+<<<<<<< Updated upstream
+=======
+    itemId: item.item_id ?? null,
+    catalogSha256: item.catalog_sha256 ?? null,
+    decisionSource,
+    attentionReasons: item.attention_reasons ?? [],
+    clarification: item.clarification ? {
+      question: item.clarification.question,
+      catalogSha256: item.clarification.catalog_sha256,
+      original: toOriginal(item.clarification.original),
+      options: item.clarification.options.map(option => ({
+        optionId: option.option_id, code: option.code, title: option.title,
+        confidence: option.confidence, clauseRef: option.clause_ref,
+        url: option.clause_url, codeRole: option.code_role,
+        catalogReviewRequired: option.catalog_review_required,
+        okpd2Context: option.okpd2_context ?? null,
+        okpd2Title: option.okpd2_title ?? null, okpd2Source: option.okpd2_source ?? null,
+      })),
+    } : null,
+    resolution: item.resolution ? {
+      optionId: item.resolution.option_id,
+      resolvedAt: item.resolution.resolved_at,
+      original: toOriginal(item.resolution.original),
+    } : null,
+>>>>>>> Stashed changes
     alternatives: (item.alternatives ?? []).slice(0, 3).map(alt => ({
       code: alt.code, title: alt.title, confidence: alt.confidence,
       clauseRef: alt.clause_ref, url: alt.clause_url,
