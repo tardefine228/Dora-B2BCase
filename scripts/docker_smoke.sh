@@ -64,10 +64,14 @@ revision=$($COMPOSE exec -T api python -c \
 echo "schema revision: $revision"
 
 log "4. Ответ API"
-curl -fsS "http://localhost:${API_PORT:-8000}/health" | head -c 300; echo
-curl -fsS -X POST "http://localhost:${API_PORT:-8000}/classify" \
+# Do not pipe curl into head under pipefail: head closes the stream early and
+# curl can fail the whole smoke job with exit 23 (failure writing output).
+health_response=$(curl -fsS "http://localhost:${API_PORT:-8000}/health")
+printf '%s\n' "${health_response:0:300}"
+classify_response=$(curl -fsS -X POST "http://localhost:${API_PORT:-8000}/classify" \
   -H 'Content-Type: application/json' \
-  -d '{"name":"Электрочайники"}' | head -c 400; echo
+  -d '{"name":"Электрочайники"}')
+printf '%s\n' "${classify_response:0:400}"
 ui_html=$(curl -fsS "http://localhost:${API_PORT:-8000}/ui/")
 grep -q 'id="root"' <<<"$ui_html" || {
   echo "FAIL: the demo UI was not served from /ui/"
@@ -100,7 +104,8 @@ for _ in $(seq 1 90); do
   curl -fsS "http://localhost:${API_PORT:-8000}/health" >/dev/null 2>&1 && break
   sleep 2
 done
-curl -fsS "http://localhost:${API_PORT:-8000}${status_url}" | head -c 120; echo
+restored_response=$(curl -fsS "http://localhost:${API_PORT:-8000}${status_url}")
+printf '%s\n' "${restored_response:0:120}"
 
 log "6. Размер образов"
 docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}' | grep -Ei 'api|qdrant|REPOSITORY' || true
