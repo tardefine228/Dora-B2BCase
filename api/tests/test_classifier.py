@@ -48,7 +48,7 @@ def test_catalog_not_found() -> None:
 
 def test_catalog_alternatives_present() -> None:
     classifier = CatalogClassifier(_catalog_path())
-    result = classifier.classify("Одежда")
+    result = classifier.classify("Аппараты телефонные прочие")
     assert result.code is not None
     assert isinstance(result.alternatives, list)
 

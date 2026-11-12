@@ -120,7 +120,7 @@ def test_headline_loss_beyond_tolerance_is_rejected():
         new=_copy(VECTOR, top1_expected=Counts(137 - ROW_TOLERANCE - 1, 166))
     )
     assert not verdict.keep
-    assert any("top-1 (с кодом)" in reason for reason in verdict.reasons)
+    assert any("код/уточнение" in reason for reason in verdict.reasons)
 
 
 def test_calibration_may_not_grow_beyond_the_tolerance():
@@ -166,7 +166,7 @@ def test_counts_reject_impossible_values():
 
 def test_report_explains_every_metric_and_the_verdict():
     table = _verdict().table()
-    for label in ("top-1 (с кодом)", "top-3 (с кодом)", "верный not_found", "ECE", "ПРИНЯТ"):
+    for label in ("код/уточнение", "top-3 (с кодом)", "верный not_found", "ECE", "ПРИНЯТ"):
         assert label in table
 
     rejection = _verdict(new=_copy(VECTOR, correct_silence=Counts(80, 108))).table()
@@ -259,7 +259,7 @@ def test_pooling_scales_the_headline_tolerance_with_the_runs() -> None:
     # −6 rows over two runs exceeds the −2 tolerance that two runs allow.
     verdict = evaluate_gate(base, new, base_ece=LEXICAL_ECE, new_ece=VECTOR_ECE, runs=2)
     assert verdict.keep is False
-    assert any("top-1" in reason for reason in verdict.reasons)
+    assert any("код/уточнение" in reason for reason in verdict.reasons)
 
 
 # --- pooled calibration ------------------------------------------------------

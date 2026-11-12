@@ -203,6 +203,54 @@ class PostgresJobStore:
                 ).rowcount
             )
 
+    def update_result_if_pending(
+        self, job_id: str, index: int, expected_catalog_sha256: str, result: dict
+    ) -> Job | None:
+        # FOR UPDATE plus the transaction opened by the pool makes resolution
+        # atomic across API replicas, not only across threads in one process.
+        with self._pool.connection() as conn:
+            with conn.transaction():
+                cursor = conn.execute(
+                    "SELECT * FROM jobs WHERE job_id = %s FOR UPDATE", (job_id,)
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    return None
+                columns = [column.name for column in cursor.description]
+                values = dict(zip(columns, row, strict=True))
+                if values["kind"] != "batch":
+                    return None
+                raw_results = values["results"] or []
+                if isinstance(raw_results, str):
+                    raw_results = json.loads(raw_results)
+                if not 0 <= index < len(raw_results):
+                    return None
+                current = ClassifyResponse.model_validate(raw_results[index])
+                pending_hash = (
+                    current.clarification.catalog_sha256 if current.clarification else None
+                )
+                if (
+                    current.status != "needs_clarification"
+                    or pending_hash != expected_catalog_sha256
+                ):
+                    return None
+                updated = ClassifyResponse.model_validate(result)
+                if (
+                    updated.status == "needs_clarification"
+                    or updated.decision_source != "specialist"
+                ):
+                    raise ValueError("В job можно сохранить только ответ специалиста")
+                results = list(raw_results)
+                results[index] = updated.model_dump(mode="json")
+                conn.execute(
+                    "UPDATE jobs SET results = %s::jsonb, updated_at = %s WHERE job_id = %s",
+                    (json.dumps(results, ensure_ascii=False), time.time(), job_id),
+                )
+                cursor = conn.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+                saved = cursor.fetchone()
+                columns = [column.name for column in cursor.description]
+                return self._row_to_job(saved, columns)
+
     def complete_batch(self, job_id: str) -> bool:
         with self._pool.connection() as conn:
             return bool(

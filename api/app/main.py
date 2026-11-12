@@ -51,6 +51,7 @@ from app.job_store import (
     create_reindex_job,
     fail_job,
     get_job,
+    get_store,
     init_job_store,
     start_job,
 )
@@ -67,6 +68,7 @@ from app.schemas import (
     CatalogUploadResponse,
     CatalogVersion,
     CatalogVersionsResponse,
+    ClarificationOption,
     ClassifyRequest,
     ClassifyResponse,
     FeedbackRequest,
@@ -75,8 +77,11 @@ from app.schemas import (
     MaintenanceReport,
     ReindexJobAccepted,
     ReindexJobStatusResponse,
+    ResolveClarificationRequest,
+    ResolveSingleClarificationRequest,
     SourceFragment,
 )
+from app.services.ambiguity import AmbiguityConflict
 from app.services.catalog_io import (
     CatalogVersion as CatalogVersionRecord,
 )
@@ -104,6 +109,7 @@ from app.services.file_items import (
     UnsupportedFileError,
     extract_items,
 )
+from app.services.procurement_report import build_procurement_report
 from app.services.source_lookup import (
     SourceUnavailableError,
     get_source_lookup,
@@ -194,7 +200,7 @@ app = FastAPI(
         "API классификатора товаров по ПП № 1875. "
         "Автоматическая классификация является подсказкой и не заменяет проверку специалиста."
     ),
-    version="0.4.0",
+    version="0.5.0",
     lifespan=lifespan,
 )
 app.add_middleware(
@@ -285,6 +291,7 @@ def _batch_status(job: BatchJob) -> BatchJobStatusResponse:
         completed=job.completed,
         progress_percent=progress_percent,
         results=job.results,
+        report=build_procurement_report(job.results),
         error=job.error,
     )
 
@@ -309,6 +316,14 @@ CSV_COLUMNS: tuple[str, ...] = (
     "alt2_title",
     "alt3_code",
     "alt3_title",
+    "decision_source",
+    "selected_option_id",
+    "clarification_question",
+    "clarification_options",
+    "catalog_sha256",
+    "report_bucket",
+    "risk_rank",
+    "report_reasons",
 )
 _CSV_ALTERNATIVES = 3
 # Excel on a Russian locale expects ";" separators and a BOM in an UTF-8 file.
@@ -323,11 +338,34 @@ SSE_POLL_SECONDS = 0.25
 SSE_HEARTBEAT_SECONDS = 15.0
 
 
+def _clarification_option_csv(
+    option: ClarificationOption,
+    options: list[ClarificationOption],
+) -> str:
+    """Keep official clause and structural code level visible in the audit export."""
+    others = [candidate for candidate in options if candidate.option_id != option.option_id]
+    has_parent = any(option.code.startswith(candidate.code + ".") for candidate in others)
+    has_child = any(candidate.code.startswith(option.code + ".") for candidate in others)
+    level = ""
+    if has_parent and has_child:
+        level = "Промежуточный уровень кода"
+    elif has_child:
+        level = "Укрупнённый код"
+    elif has_parent:
+        level = "Детальный код"
+    evidence = "; ".join(value for value in (option.clause_ref, level) if value)
+    suffix = f" [{evidence}]" if evidence else ""
+    return f"{option.option_id}: {option.code} — {option.title}{suffix}"
+
+
 def _build_batch_csv(results: list[ClassifyResponse]) -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
     writer.writerow(CSV_COLUMNS)
-    for result in results:
+    report = build_procurement_report(results)
+    report_by_id = {item.item_id: item for item in report.items}
+    for index, result in enumerate(results):
+        item_report = report_by_id[result.item_id if result.item_id is not None else index]
         row: list[str] = [
             result.query,
             result.code or "",
@@ -344,6 +382,27 @@ def _build_batch_csv(results: list[ClassifyResponse]) -> str:
         for alternative in alternatives:
             row.extend([alternative.code or "", alternative.title or ""])
         row.extend([""] * (2 * (_CSV_ALTERNATIVES - len(alternatives))))
+        clarification = result.clarification
+        options = (
+            " | ".join(
+                _clarification_option_csv(option, clarification.options)
+                for option in clarification.options
+            )
+            if clarification
+            else ""
+        )
+        row.extend(
+            [
+                result.decision_source,
+                result.resolution.option_id if result.resolution else "",
+                clarification.question if clarification else "",
+                options,
+                result.catalog_sha256 or "",
+                item_report.bucket,
+                str(item_report.risk_rank),
+                " | ".join(f"{reason.code}: {reason.message}" for reason in item_report.reasons),
+            ]
+        )
         writer.writerow(row)
     return BATCH_CSV_BOM + buffer.getvalue()
 
@@ -442,6 +501,20 @@ def _vector_info() -> dict:
     inner = getattr(get_classifier(), "_classifier", None)
     info = getattr(inner, "vector_info", None)
     return info if isinstance(info, dict) else {"enabled": False}
+
+
+@app.post("/classify/resolve", response_model=ClassifyResponse, tags=["classification"])
+def resolve_clarification(
+    body: ResolveSingleClarificationRequest,
+    classifier: Annotated[CachedClassifier, Depends(get_classifier)],
+) -> ClassifyResponse:
+    """Apply one server-issued interpretation; never accepts an arbitrary code."""
+    try:
+        return classifier.resolve_clarification(
+            body.query, body.option_id, body.catalog_sha256
+        )
+    except AmbiguityConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/health/ready", tags=["system"], summary="Readiness probe")
@@ -780,6 +853,49 @@ def get_batch_status(job_id: str) -> BatchJobStatusResponse:
     if not isinstance(job, BatchJob):
         raise HTTPException(status_code=404, detail="Задача классификации не найдена")
     return _batch_status(job)
+
+
+@app.post(
+    "/classify/batch/{job_id}/items/{item_id}/resolve",
+    response_model=ClassifyResponse,
+    tags=["classification"],
+    summary="Сохранить выбор уточнения для позиции пакета",
+)
+def resolve_batch_clarification(
+    job_id: str,
+    item_id: int,
+    body: ResolveClarificationRequest,
+    classifier: Annotated[CachedClassifier, Depends(get_classifier)],
+) -> ClassifyResponse:
+    """Resolve exactly one completed batch row and persist it in every store."""
+    job = get_job(job_id)
+    if not isinstance(job, BatchJob):
+        raise HTTPException(status_code=404, detail="Задача классификации не найдена")
+    if job.status != "completed":
+        raise HTTPException(status_code=409, detail="Дождитесь завершения пакетной обработки")
+    if item_id < 0 or item_id >= len(job.results):
+        raise HTTPException(status_code=404, detail="Позиция пакетной задачи не найдена")
+    pending = job.results[item_id]
+    if pending.status != "needs_clarification" or pending.clarification is None:
+        raise HTTPException(status_code=409, detail="Для этой позиции нет активного уточнения")
+    if pending.clarification.catalog_sha256 != body.catalog_sha256:
+        raise HTTPException(status_code=409, detail="Версия уточнения устарела. Повторите проверку")
+    try:
+        resolved = classifier.resolve_clarification(
+            pending.query, body.option_id, body.catalog_sha256
+        ).model_copy(update={"item_id": item_id})
+        saved = get_store().update_result_if_pending(
+            job_id, item_id, body.catalog_sha256, resolved.model_dump(mode="json")
+        )
+        if saved is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Позиция уже изменена или версия каталога устарела. Обновите отчёт",
+            )
+        assert isinstance(saved, BatchJob)
+        return saved.results[item_id]
+    except AmbiguityConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get(

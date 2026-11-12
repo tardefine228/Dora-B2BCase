@@ -20,6 +20,7 @@ a specialist, not a legal determination.
 from __future__ import annotations
 
 import csv
+import hashlib
 import logging
 import re
 import time
@@ -32,6 +33,7 @@ from typing import Protocol
 from app.core.config import settings
 from app.core.okpd2 import OKPD2_RE
 from app.schemas import Alternative, ClassifyResponse
+from app.services.ambiguity import AmbiguityConflict, AmbiguityGuard, load_catalog_rows
 from app.services.source_lookup import clause_url_for
 
 logger = logging.getLogger("dora.classifier")
@@ -554,6 +556,10 @@ class Classifier(Protocol):
     def classify(self, query: str) -> ClassifyResponse: ...
 
 
+def _apply_guard(guard: AmbiguityGuard, query: str, answer: ClassifyResponse) -> ClassifyResponse:
+    return guard.enrich_procurement(guard.apply(query, answer))
+
+
 class MockClassifier:
     """Deterministic placeholder for frontend development."""
 
@@ -612,6 +618,8 @@ class CatalogClassifier:
         self._load()
         if not self.index:
             raise ValueError(f"В каталоге нет записей: {self.catalog_path}")
+        self._catalog_sha256 = hashlib.sha256(self.catalog_path.read_bytes()).hexdigest()
+        self._ambiguity = AmbiguityGuard(self.index, self._catalog_sha256)
         self._dense = _build_dense_index(self.index) if dense == "auto" else dense
         tag = self._dense.tag if self._dense is not None else None
         # Same escape hatch as the qdrant backend: a wrong or untested artifact must
@@ -744,9 +752,16 @@ class CatalogClassifier:
         from ml.query import name_variants
 
         text = query.strip()
-        return _best_answer(
+        answer = _best_answer(
             self._classify_normalized(autocorrect(variant)) for variant in name_variants(text)
         ).model_copy(update={"query": text})
+        return _apply_guard(self._ambiguity, text, answer)
+
+    def resolve_clarification(
+        self, query: str, option_id: str, expected_catalog_sha256: str
+    ) -> ClassifyResponse:
+        answer = self.classify(query)
+        return self._ambiguity.resolve_answer(answer, option_id, expected_catalog_sha256)
 
     def classify_many(self, queries: list[str]) -> list[ClassifyResponse]:
         """Batch path (BE-7): one autocorrect pass, ONE batched encoding call.
@@ -779,7 +794,8 @@ class CatalogClassifier:
             for _variant in group:
                 scored.append(self._classify_normalized(to_encode[position]))
                 position += 1
-            answers.append(_best_answer(scored).model_copy(update={"query": text}))
+            answer = _best_answer(scored).model_copy(update={"query": text})
+            answers.append(_apply_guard(self._ambiguity, text, answer))
         return answers
 
     def _classify_normalized(self, normalized_query: str) -> ClassifyResponse:
@@ -801,6 +817,7 @@ class CatalogClassifier:
                         confidence=1.0,
                         confidence_raw=1.0,
                         status="ok",
+                        decision_source="direct_code",
                         clause_ref=row["clause_ref"],
                         clause_url=clause_url_for(row.get("record_id")),
                         alternatives=[],
@@ -830,18 +847,33 @@ class CatalogClassifier:
         if not fused:
             return _not_found(normalized_query)
 
-        return self._rank_to_response(normalized_query, fused)
+        response = self._rank_to_response(normalized_query, fused)
+        # Keep retrieval, encoding and reranker instrumentation intact, but do
+        # not let statistical ordering replace a complete catalog-title match.
+        # Multi-code titles are intercepted by the shared guard afterwards.
+        exact = self._ambiguity.exact_title_answer(normalized_query)
+        if exact is not None:
+            # The deterministic title chooses the position, while confidence
+            # remains the value produced by the calibrated scoring pipeline.
+            exact = exact.model_copy(
+                update={
+                    "confidence": response.confidence,
+                    "confidence_raw": response.confidence_raw,
+                }
+            )
+        return exact if exact is not None else response
 
     def _retrieve(self, query: str, query_tokens: set[str]) -> list[tuple[float, dict]]:
         """Lexical shortlist as ``(retrieval_score, row)`` pairs, best first."""
+        from app.services.ambiguity import observed_bridged_targets
         from ml.features import lexical_score_prepared, prepare_candidate, stem
-        from ml.lexicon import bridged_targets, expand_query
+        from ml.lexicon import expand_query
 
         prepared_query = prepare_candidate(expand_query(query), idf=self._idf)
         # A bridged product word ("принтер" -> "вывода") is a deliberate lexicon
         # decision: candidates containing the category word get a retrieval bonus
         # so abstract official names outrank stem-accidental junk ("печать" ~ "печи").
-        bridge_stems = {stem(target) for target in set(bridged_targets(query).values())}
+        bridge_stems = {stem(target) for target in set(observed_bridged_targets(query).values())}
         scored: list[tuple[float, dict]] = []
         for row in self.index:
             score = lexical_score_prepared(prepared_query, row["prepared"])
@@ -1026,27 +1058,49 @@ def _head_rescued_answer(
     """
     if status != "not_found" or not best.code:
         return None
+    rescued = best
     if best.probability < _HEAD_RESCUE_FLOOR or not _head_anchored(best, query):
-        return None
+        # An official position can be a deliberate lexicon match even when its
+        # title does not contain the everyday product word («мышь» → «устройства
+        # ввода»). Only a single canonical target is eligible, the candidate
+        # must already be retrieved. Statistical bridges keep the same floor;
+        # an explicit one-to-one observed alias may be weaker, but still yields
+        # only review, never ok. Ambiguous bridges never take this path.
+        from app.services.ambiguity import observed_canonical_codes, observed_review_codes
+
+        canonical_codes = observed_canonical_codes(query)
+        review_codes = observed_review_codes(query)
+        candidates = [
+            candidate
+            for candidate in ranked
+            if candidate.code in canonical_codes
+            and (
+                candidate.probability >= _HEAD_RESCUE_FLOOR
+                or candidate.code in review_codes
+            )
+        ]
+        if len(canonical_codes) != 1 or not candidates:
+            return None
+        rescued = max(candidates, key=lambda candidate: candidate.probability)
     logger.info(
         "Слабая подсказка показана как review: query=%r title=%r p=%.3f",
         query,
-        best.title,
-        best.probability,
+        rescued.title,
+        rescued.probability,
     )
-    code_role, review_required = _candidate_catalog_flags(best, classifier)
+    code_role, review_required = _candidate_catalog_flags(rescued, classifier)
     return _with_verifier(
         classifier,
         query,
         ClassifyResponse(
             query=query,
-            code=best.code,
-            title=best.title,
+            code=rescued.code,
+            title=rescued.title,
             confidence=round(_display_confidence(classifier._reranker, raw_confidence), 4),
             confidence_raw=raw_confidence,
             status="review",
-            clause_ref=best.clause_ref,
-            clause_url=clause_url_for(best.payload.get("record_id")),
+            clause_ref=rescued.clause_ref,
+            clause_url=clause_url_for(rescued.payload.get("record_id")),
             code_role=code_role,
             catalog_review_required=review_required,
             alternatives=_distinct_alternatives(ranked, "review", query_stems),
@@ -1211,6 +1265,11 @@ class QdrantClassifier:
         # Collections indexed before the catalog facts landed in the payload carry
         # no code_role/review_required; the CSV on the shared volume fills the gap.
         self._catalog_flags = _catalog_flags_lookup()
+        catalog_path = _resolve_catalog_path()
+        if catalog_path is None:
+            raise RuntimeError("Для проверки неоднозначности нужен активный data.csv")
+        catalog_rows, catalog_sha256 = load_catalog_rows(catalog_path)
+        self._ambiguity = AmbiguityGuard(catalog_rows, catalog_sha256)
         # How many points the collection holds (for /health). Counted once: a
         # reindex rebuilds the collection with the same number of rows, and a
         # probe must not turn into a network round trip on every poll.
@@ -1453,8 +1512,23 @@ class QdrantClassifier:
         for text, group in zip(originals, variants, strict=True):
             chunk = results[position : position + len(group)]
             position += len(group)
-            answers.append(_best_answer(chunk).model_copy(update={"query": text}))
+            answer = _best_answer(chunk).model_copy(update={"query": text})
+            exact = self._ambiguity.exact_title_answer(text)
+            if exact is not None:
+                answer = exact.model_copy(
+                    update={
+                        "confidence": answer.confidence,
+                        "confidence_raw": answer.confidence_raw,
+                    }
+                )
+            answers.append(_apply_guard(self._ambiguity, text, answer))
         return answers
+
+    def resolve_clarification(
+        self, query: str, option_id: str, expected_catalog_sha256: str
+    ) -> ClassifyResponse:
+        answer = self.classify(query)
+        return self._ambiguity.resolve_answer(answer, option_id, expected_catalog_sha256)
 
 
 def _resolve_catalog_path() -> Path | None:
@@ -1543,6 +1617,14 @@ class CachedClassifier:
                     result = self._classifier.classify(query)
                     self._save(key, result)
         return result.model_copy(update={"query": query})
+
+    def resolve_clarification(
+        self, query: str, option_id: str, expected_catalog_sha256: str
+    ) -> ClassifyResponse:
+        resolver = getattr(self._classifier, "resolve_clarification", None)
+        if not callable(resolver):
+            raise AmbiguityConflict("Этот backend не поддерживает уточнение запросов")
+        return resolver(query, option_id, expected_catalog_sha256)
 
     def classify_many(self, queries: list[str]) -> list[ClassifyResponse]:
         if not queries:

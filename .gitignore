@@ -59,6 +59,9 @@ eval_report_ci.md
 eval_report_ci.json
 eval_report_ci_dense.md
 eval_report_ci_dense.json
+catalog-production-audit.json
+catalog-production-audit.md
+audit-comment.json
 
 # Generated at runtime
 data/dense_cache/

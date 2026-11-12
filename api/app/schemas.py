@@ -1,6 +1,6 @@
 """Public request/response contracts; exposed automatically in OpenAPI.
 
-The classification result format is the team-agreed contract v1.0 (see
+The classification result format is the team-agreed contract v2.0 (see
 ``docs/api-contract.md``): new optional fields may be added, existing fields are
 never renamed or removed within a major version.
 """
@@ -9,7 +9,10 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-CONTRACT_VERSION = "1.0"
+CONTRACT_VERSION = "2.0"
+# Covers the longest official catalog title (1164 chars) with headroom while
+# keeping request work bounded; the HTTP body has its own independent 1 MB cap.
+PRODUCT_NAME_MAX_LENGTH = 2000
 
 
 class APIModel(BaseModel):
@@ -18,16 +21,29 @@ class APIModel(BaseModel):
 
 ProductName = Annotated[
     str,
-    StringConstraints(strip_whitespace=True, min_length=1, max_length=500),
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=PRODUCT_NAME_MAX_LENGTH,
+    ),
 ]
 
 
 class ClassifyRequest(APIModel):
     name: ProductName = Field(
-        description="Название товара или код ОКПД2; от 1 до 500 символов.",
+        description="Название товара или код ОКПД2; от 1 до 2000 символов.",
         examples=["Ноутбук Lenovo IdeaPad"],
     )
 
+
+
+class ResolveClarificationRequest(APIModel):
+    option_id: str = Field(min_length=1, max_length=160)
+    catalog_sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+
+class ResolveSingleClarificationRequest(ResolveClarificationRequest):
+    query: ProductName
 
 
 class FeedbackRequest(APIModel):
@@ -53,7 +69,7 @@ class BatchClassifyRequest(APIModel):
     items: list[ProductName] = Field(
         min_length=1,
         max_length=100,
-        description="От 1 до 100 названий товаров, каждое — до 500 символов.",
+        description="От 1 до 100 названий товаров, каждое — до 2000 символов.",
         examples=[["Ноутбук Lenovo", "Мышь компьютерная"]],
     )
 
@@ -72,6 +88,56 @@ class Alternative(APIModel):
     )
 
 
+class ClarificationOption(APIModel):
+    """One server-issued interpretation; ``option_id`` is not a client-supplied code."""
+
+    option_id: str
+    code: str
+    title: str
+    confidence: float = Field(ge=0, le=1)
+    clause_ref: str | None = None
+    clause_url: str | None = None
+    code_role: str | None = None
+    catalog_review_required: bool | None = None
+
+
+class OriginalDecision(APIModel):
+    """The model answer kept for audit before the ambiguity guard replaced it."""
+
+    code: str | None = None
+    title: str | None = None
+    status: Literal["ok", "review", "not_found"]
+    confidence: float = Field(ge=0, le=1)
+    confidence_raw: float | None = Field(default=None, ge=0, le=1)
+    alternatives: list[Alternative] = Field(default_factory=list)
+
+
+class Clarification(APIModel):
+    question: str
+    options: list[ClarificationOption] = Field(min_length=2)
+    catalog_sha256: str
+    original: OriginalDecision
+
+
+class Resolution(APIModel):
+    option_id: str
+    resolved_at: str
+    original: OriginalDecision
+
+
+class AttentionReason(APIModel):
+    code: Literal[
+        "ambiguous_name",
+        "multiple_codes",
+        "direct_title_match",
+        "curated_product_match",
+        "low_confidence",
+        "code_exception",
+        "catalog_review_required",
+    ]
+    message: str
+
+
 class ClassifyResponse(APIModel):
     query: str
     code: str | None = None
@@ -86,7 +152,7 @@ class ClassifyResponse(APIModel):
             "ok/review/not_found (confidence — та же величина на калиброванной шкале)."
         ),
     )
-    status: Literal["ok", "review", "not_found"]
+    status: Literal["ok", "review", "not_found", "needs_clarification"]
     clause_ref: str | None = None
     clause_url: str | None = Field(
         default=None,
@@ -125,6 +191,12 @@ class ClassifyResponse(APIModel):
         ),
     )
     alternatives: list[Alternative] = Field(default_factory=list)
+    clarification: Clarification | None = None
+    resolution: Resolution | None = None
+    decision_source: Literal["model", "specialist", "direct_code"] = "model"
+    attention_reasons: list[AttentionReason] = Field(default_factory=list)
+    catalog_sha256: str | None = None
+    item_id: int | None = Field(default=None, ge=0, le=99)
     latency_ms: float = Field(ge=0)
     contract_version: str = Field(
         default=CONTRACT_VERSION,
@@ -132,20 +204,29 @@ class ClassifyResponse(APIModel):
     )
 
     @model_validator(mode="after")
-    def _answered_statuses_require_code(self) -> "ClassifyResponse":
-        """Contract v1.0 invariant 5 (BE-9): ``ok``/``review`` are answers WITH a code.
+    def _decision_invariants(self) -> "ClassifyResponse":
+        """A code is mandatory for an answer and forbidden before clarification.
 
-        ``not_found`` is the only status allowed without ``code``: a catalog
-        position without an OKPD2 code («Не указан») can be a hint but never an
-        answer, so the classifier downgrades such results to ``not_found`` and
-        keeps the position in ``alternatives``. Enforcing it in the schema means
-        no code path (catalog, semantic, mock, future) can ship a violation.
+        Contract 2.0 adds ``needs_clarification``: several interpretations are a
+        question, not a weak top-1 answer. Such a response must carry at least
+        two server-issued options and no winning code/title. A specialist's
+        resolution is marked separately and never masquerades as model output.
         """
         if self.status in {"ok", "review"} and not (self.code or "").strip():
-            raise ValueError(
-                "status 'ok'/'review' требует непустой code (контракт v1.0, инвариант 5): "
-                "для позиции без кода используйте status 'not_found'"
-            )
+            raise ValueError("status 'ok'/'review' требует непустой code (контракт 2.0)")
+        if self.status == "needs_clarification":
+            if self.code or self.title or self.clarification is None:
+                raise ValueError(
+                    "needs_clarification требует code/title=null и clarification (контракт 2.0)"
+                )
+            if len(self.clarification.options) < 2:
+                raise ValueError("needs_clarification требует минимум две опции")
+        elif self.clarification is not None:
+            raise ValueError("clarification допустим только при needs_clarification")
+        if self.resolution is not None and self.decision_source != "specialist":
+            raise ValueError("resolution требует decision_source='specialist'")
+        if self.decision_source == "specialist" and self.resolution is None:
+            raise ValueError("ответ специалиста требует сохранённый resolution")
         return self
 
 
@@ -174,6 +255,45 @@ class FileBatchJobAccepted(BatchJobAccepted):
     warnings: list[str] = Field(default_factory=list)
 
 
+ReportBucket = Literal["accepted", "needs_review", "not_found"]
+ReportReasonCode = Literal[
+    "low_confidence",
+    "ambiguous_name",
+    "multiple_codes",
+    "code_exception",
+    "catalog_review_required",
+    "code_missing",
+    "not_found",
+]
+
+
+class ReportReason(APIModel):
+    code: ReportReasonCode
+    message: str
+
+
+class ProcurementReportItem(APIModel):
+    item_id: int = Field(ge=0, le=99)
+    bucket: ReportBucket
+    risk_rank: int = Field(ge=0, le=100)
+    reasons: list[ReportReason] = Field(default_factory=list)
+
+
+class ProcurementSummary(APIModel):
+    total: int = Field(ge=0, le=100)
+    accepted: int = Field(ge=0, le=100)
+    auto_accepted: int = Field(ge=0, le=100)
+    specialist_resolved: int = Field(ge=0, le=100)
+    needs_review: int = Field(ge=0, le=100)
+    not_found: int = Field(ge=0, le=100)
+    reason_counts: dict[ReportReasonCode, int] = Field(default_factory=dict)
+
+
+class ProcurementReport(APIModel):
+    summary: ProcurementSummary
+    items: list[ProcurementReportItem] = Field(default_factory=list)
+
+
 class BatchJobStatusResponse(APIModel):
     job_id: str
     status: Literal["queued", "running", "completed", "failed"]
@@ -181,6 +301,7 @@ class BatchJobStatusResponse(APIModel):
     completed: int = Field(ge=0, le=100)
     progress_percent: float = Field(ge=0, le=100)
     results: list[ClassifyResponse] = Field(default_factory=list)
+    report: ProcurementReport
     error: str | None = None
     contract_version: str = Field(
         default=CONTRACT_VERSION,

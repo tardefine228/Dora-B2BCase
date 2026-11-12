@@ -1,10 +1,11 @@
-# Контракт API v1.0
+# Контракт API v2.0
 
 Формат результата классификации, согласованный с фронтендом (`frontend/src`)
-и закреплённый тестами `api/tests/test_contract.py`. **Правила версионирования:**
-в рамках v1.x поля только добавляются (опциональные с дефолтом); переименование
-или удаление поля — только в v2 и с одновременным обновлением фронтенда.
-Поле `contract_version` присутствует в каждом ответе `/classify`.
+и закреплённый тестами `api/tests/test_contract.py`. Версия 2.0 добавляет четвёртый
+статус `needs_clarification`: при равнозначных толкованиях код не назначается до
+выбора специалиста. Это меняет enum и инварианты ответа, поэтому изменение не могло
+остаться обратносовместимым релизом 1.x. Поле `contract_version` присутствует в
+каждом ответе `/classify` и оболочках batch/SSE.
 
 ## Классификация
 
@@ -15,6 +16,10 @@
 ```json
 { "name": "Ноутбук Lenovo IdeaPad" }
 ```
+
+`name` содержит от 1 до 2000 символов после удаления краевых пробелов. Лимит покрывает
+самое длинное официальное составное название каталога (1164 символа); запросы длиннее
+2000 символов отклоняются с HTTP 422. Общий HTTP body limit остаётся самостоятельным.
 
 Ответ `ClassifyResponse`:
 
@@ -33,19 +38,25 @@
   "alternatives": [
     { "code": "26.20.17", "title": "Мониторы и проекторы ...", "confidence": 0.07, "clause_ref": "Приложение 2, позиция 174", "clause_url": "/source/2-201-01" }
   ],
+  "decision_source": "model",
+  "attention_reasons": [],
+  "catalog_sha256": null,
+  "clarification": null,
+  "resolution": null,
+  "item_id": null,
   "latency_ms": 1.2,
-  "contract_version": "1.0"
+  "contract_version": "2.0"
 }
 ```
 
 | Поле | Тип | Семантика |
 | --- | --- | --- |
 | `query` | string | исходный запрос (с пробелами, как прислал клиент) |
-| `code` | string\|null | вероятный код ОКПД2; `null` при `not_found` |
-| `title` | string\|null | наименование позиции перечня; `null` при `not_found` |
+| `code` | string\|null | вероятный код ОКПД2; `null` при `not_found` и `needs_clarification` |
+| `title` | string\|null | наименование позиции перечня; `null` при `not_found` и `needs_clarification` |
 | `confidence` | float 0..1 | уверенность модели в **top-1**, откалиброванная по реальному трафику (что показывать) |
 | `confidence_raw` | float 0..1 | сырая уверенность до калибровки — **по ней принимается `status`**; при `not_found` — `0.0` |
-| `status` | enum | `ok` — уверенная подсказка; `review` — проверить специалисту; `not_found` — надёжного совпадения нет |
+| `status` | enum | `ok` — уверенная подсказка; `review` — проверить специалисту; `not_found` — надёжного совпадения нет; `needs_clarification` — есть минимум две интерпретации, код ещё не назначен |
 | `code_role` | string\|null | роль кода в каталоге найденной позиции (`"Включён"`, `"Не указан"`, `"Исключение"`); `null` — каталог не говорит (нет кода / mock-режим) |
 | `catalog_review_required` | bool\|null | признак «требуется подтверждение» из строки каталога найденной позиции; `null` — каталог не говорит |
 | `clause_ref` | string\|null | где в перечне: «Приложение N, позиция M» (для дублей — перечисление) |
@@ -53,15 +64,21 @@
 | `verifier` | string\|null | кто подтвердил код, если ответ пришёл от проверяющей ступени: `"llm-top3"` — модель языка выбрала одну из трёх предложенных позиций; `null` — ответ дан классификатором (поле добавлено в 1.0 как необязательное, эксп. 32) |
 | `verifier_note` | string\|null | короткая пометка ступени: «код подтверждён по top-3» или «нет совпадений»; не юридическое заключение |
 | `alternatives` | array ≤3 | альтернативные позиции; `confidence` — оценка соответствия пары запрос/позиция; каждая несёт свои `clause_ref`/`clause_url` и флаги каталога |
+| `clarification` | object\|null | вопрос, минимум две опции, SHA-256 каталога и исходный ответ модели; заполнен только при `needs_clarification` |
+| `resolution` | object\|null | выбранный `option_id`, время и исходный ответ модели; заполнен после выбора специалиста |
+| `decision_source` | enum | `model`, `specialist` или `direct_code`; не даёт выдать выбор человека за автоматическую уверенность |
+| `attention_reasons` | array | машиночитаемые причины внимания (`ambiguous_name`, `multiple_codes`, `direct_title_match`, `curated_product_match`, `code_exception`, `catalog_review_required`, `low_confidence`) и пояснения |
+| `catalog_sha256` | string\|null | SHA-256 активного `data.csv`; связывает вопрос и выбор с одной версией каталога |
+| `item_id` | int\|null | стабильный индекс 0…99 в batch; остаётся тем же после сортировки UI |
 | `latency_ms` | float ≥0 | время обработки на сервере |
-| `contract_version` | string | версия контракта (`"1.0"`) |
+| `contract_version` | string | версия контракта (`"2.0"`) |
 
 **Инварианты** (проверяются тестами):
 
 1. `status = "not_found"` ⇒ `code = null`, `title = null`, `confidence = confidence_raw = 0.0`.
 2. `0.0 ≤ confidence ≤ 1.0`; уверенность — подсказка, не юридический вердикт.
 3. Прямая передача кода ОКПД2 в `name` ⇒ `confidence = confidence_raw = 1.0`, `status = "ok"`.
-4. `status` определяется только `confidence_raw`; `confidence` — монотонная калибровка сырой
+4. До ambiguity guard `status` определяется только `confidence_raw`; `confidence` — монотонная калибровка сырой
    шкалы под реальные запросы (Платт, если её сдвиг больше ошибки калибровочной площадки;
    иначе отгружается identity), поэтому статусы от неё не зависят
    (`python scripts/build_model.py` фитит карту на калибровочной площадке,
@@ -69,7 +86,13 @@
 5. `status in {ok, review}` ⇒ `code` и `title` непустые (BE-9). Инвариант
    зашит валидатором `ClassifyResponse` (`api/app/schemas.py`) и покрыт
    `api/tests/test_contract_invariants.py`; нарушение — дефект сервиса, а не
-   допустимый ответ.
+   допустимый ответ. Для `needs_clarification` действует обратный инвариант:
+   `code = title = null`, `confidence = confidence_raw = 0`, `alternatives = []`,
+   а `clarification.options` содержит минимум две разные пары «код + название».
+   Исходные `code/title/status/confidence/alternatives` модели не теряются, а
+   находятся в `clarification.original`. Guard выполняется после LLM и обоих
+   backend'ов, поэтому высокая уверенность или согласие верификатора не отменяет
+   необходимость уточнения.
 
    Одно исключение из инварианта 4, измеренное и узкое (эксп. 34): если модель
    посчитала совпадение ниже порога, но позиция несёт **головное слово строки**
@@ -89,13 +112,72 @@
    были предложены ступени. Проверяющая ступень (LLM) **не может** вернуть `ok`
    и **не может** назвать код, которого нет в шорт-листе: такой ответ
    отбрасывается, и результат остаётся прежним (`api/tests/test_llm_verifier.py`).
+7. `resolution` заполнен ⇔ `decision_source = "specialist"`. Resolver принимает
+   только ранее выданный `option_id` и текущий `catalog_sha256`; произвольный код
+   передать нельзя. Выбор позиции с `code_role != "Включён"` или
+   `catalog_review_required != false` остаётся `review`, а не становится `ok`.
+
+### Уточнение неоднозначного запроса
+
+Пример ответа на `{ "name": "автомобиль" }` (сокращённый):
+
+```json
+{
+  "query": "автомобиль",
+  "code": null,
+  "title": null,
+  "confidence": 0.0,
+  "confidence_raw": 0.0,
+  "status": "needs_clarification",
+  "clarification": {
+    "question": "Какой именно автомобиль закупается?",
+    "catalog_sha256": "<64 hex>",
+    "options": [
+      {"option_id": "1-92-01", "code": "29.10.2", "title": "Автомобили легковые", "confidence": 0.49},
+      {"option_id": "1-94-01", "code": "29.10.4", "title": "Средства автотранспортные грузовые", "confidence": 0.31}
+    ],
+    "original": {"code": "29.10.59.140", "title": "Автомобили пожарные", "status": "ok", "confidence": 0.82}
+  },
+  "decision_source": "model",
+  "attention_reasons": [{"code": "ambiguous_name", "message": "Общее название допускает несколько разных позиций перечня."}],
+  "contract_version": "2.0"
+}
+```
+
+Значения `confidence` в опциях — оценки соответствия из shortlist, а не вероятность
+того, что специалист должен выбрать вариант. Полный набор опций может быть длиннее
+трёх; это не `alternatives`, а допустимые для resolver идентификаторы.
+
+### `POST /classify/resolve`
+
+```json
+{
+  "query": "автомобиль",
+  "option_id": "1-92-01",
+  "catalog_sha256": "<hash из clarification>"
+}
+```
+
+Сервер повторно строит вопрос для `query`, проверяет опцию и версию каталога и
+возвращает обычный `ClassifyResponse` с кодом, `decision_source="specialist"` и
+`resolution`. Чужой `option_id`, запрос без активного вопроса и устаревший hash —
+409. Прямой ввод ОКПД2 остаётся отдельным сценарием `/classify`.
+
+### `POST /classify/batch/{job_id}/items/{item_id}/resolve`
+
+Тело: `{ "option_id": "1-92-01", "catalog_sha256": "<64 hex>" }`. `item_id` —
+индекс результата 0…N−1, а не номер после сортировки таблицы. Выбор атомарно
+сохраняется в Memory/SQLite/PostgreSQL store; повторный или конкурентный resolve
+не перезаписывает решение и возвращает 409. Последующие `GET batch`, SSE-снимок
+и CSV содержат сохранённый ответ специалиста.
 
 ### Флаги каталога (`code_role`, `catalog_review_required`)
 
 Каталог несёт два факта о позиции перечня: роль кода (`code_role` из колонки
 `code_role` — «Включён» / «Не указан» / «Исключение») и признак
-`review_required` («позицию нужно подтвердить»). Сервис отдаёт их **как есть,
-информационно**: они не меняют `status`, `confidence` и порядок альтернатив.
+`review_required` («позицию нужно подтвердить»). В автоматическом ответе сервис
+отдаёт их **как есть, информационно**: они не меняют `confidence` и порядок
+альтернатив. При выборе специалиста небезопасная строка остаётся `review`.
 Что делать с позициями-«Исключениями» (DA-6) и строками `review_required`
 (DA-7/PO-1) — продуктовое решение каталога; до него API не фильтрует и не
 демотирует такие позиции по флагам. Единственное исключение: если top-1
@@ -108,10 +190,10 @@
 ### `POST /classify/batch` → `GET /classify/batch/{job_id}`
 
 ```json
-{ "items": ["до 100 названий, ≤500 символов каждое"] }
+{ "items": ["до 100 названий, ≤2000 символов каждое"] }
 ```
 
-`202 Accepted` → `{job_id, status:"queued", total, status_url, contract_version:"1.0"}`.
+`202 Accepted` → `{job_id, status:"queued", total, status_url, contract_version:"2.0"}`.
 Тот же `contract_version` есть в оболочке ответа `GET status_url` и у принятого
 `/classify/file`; он идентифицирует версию batch-формата. Опрос `status_url`
 каждые ~300–500 мс:
@@ -119,11 +201,35 @@
 ```json
 { "job_id": "…", "status": "queued|running|completed|failed",
   "total": 2, "completed": 1, "progress_percent": 50.0,
-  "results": [ ClassifyResponse, … ], "error": null,
-  "contract_version": "1.0" }
+  "results": [ ClassifyResponse, … ],
+  "report": {
+    "summary": {
+      "total": 1, "accepted": 0, "auto_accepted": 0, "specialist_resolved": 0,
+      "needs_review": 1, "not_found": 0,
+      "reason_counts": {"ambiguous_name": 1}
+    },
+    "items": [{
+      "item_id": 0, "bucket": "needs_review", "risk_rank": 90,
+      "reasons": [{"code": "ambiguous_name", "message": "…"}]
+    }]
+  },
+  "error": null, "contract_version": "2.0" }
 ```
 
 `results` заполняются по мере обработки (порядок соответствует `items`).
+
+`report` вычисляется сервером на каждый ответ, включая состояние после resolve. Основной
+bucket строки ровно один: `accepted`, `needs_review` или `not_found`; причины могут
+пересекаться. `accepted=auto_accepted+specialist_resolved`, а сумма трёх buckets равна
+`summary.total` (числу уже обработанных строк; общий размер задачи — отдельное `total`).
+`ok` без блокирующих catalog flags → accepted; `review`, активное уточнение, исключение и
+`catalog_review_required=true` → needs_review; `not_found` → одноимённый bucket. Выбор
+специалиста со статусом `review` не принимается автоматически.
+
+`risk_rank`: 100 — несколько кодов, 95 — исключение/роль кода, 90 — неоднозначность,
+85 — сверка каталога, 80 — код отсутствует, 70 — низкая уверенность, 60 — не найдено,
+0 — принято. Сортировка по убыванию rank, ties разрешаются исходным `item_id`.
+UI и экспорты не пересчитывают эти решения самостоятельно.
 
 ### `GET /classify/batch/{job_id}/events` — прогресс по SSE
 
@@ -136,14 +242,20 @@ data: {"job_id": "...", "status": "running", "completed": 2, "total": 5, "progre
 event: done
 data: {"job_id": "...", "status": "completed", "total": 5, "completed": 5,
        "progress_percent": 100.0, "results": [ ClassifyResponse, ... ], "error": null,
-       "contract_version": "1.0"}
+       "contract_version": "2.0"}
 ```
 
+Событие `done` использует тот же `BatchJobStatusResponse`, включая актуальный `report`.
 Поток закрывается после `done`; раз в 15 с простоя приходит комментарий
 `: keep-alive`. Заголовки: `Cache-Control: no-cache`, `X-Accel-Buffering: no`
 (прокси не буферизует). Неизвестный `job_id` → 404 до начала стрима. Источник
 истины — хранилище задач, поэтому поток продолжается после рестарта API, если
 `JOB_STORE=sqlite`.
+
+Завершённый batch можно повторно получить тем же GET до истечения `JOB_TTL_HOURS`.
+UI хранит в localStorage только `{id,total,filename}` и после reload заново загружает
+результаты и report с сервера; локальной истории названий товаров нет. Неизвестный или
+удалённый по TTL ID → 404, UI показывает это явно и не подставляет устаревший snapshot.
 
 ### `GET /classify/batch/{job_id}.csv` — экспорт результата
 
@@ -154,7 +266,9 @@ data: {"job_id": "...", "status": "completed", "total": 5, "completed": 5,
 ```text
 query;code;title;status;confidence;confidence_raw;clause_ref;clause_url;
 code_role;catalog_review_required;
-alt1_code;alt1_title;alt2_code;alt2_title;alt3_code;alt3_title
+alt1_code;alt1_title;alt2_code;alt2_title;alt3_code;alt3_title;
+decision_source;selected_option_id;clarification_question;clarification_options;catalog_sha256;
+report_bucket;risk_rank;report_reasons
 ```
 
 Кавычки внутри значений удваиваются, поля с `;`/кавычками/переводами строк
@@ -163,7 +277,10 @@ alt1_code;alt1_title;alt2_code;alt2_title;alt3_code;alt3_title
 ячейка остаётся пустой. `code_role` пуст, когда каталог не говорит роль кода;
 `catalog_review_required` — пустая ячейка (`null`), `True` или `False`.
 Для задачи в статусе `queued`/`running` — 409, для неизвестного `job_id` — 404;
-у `failed` отдаются частичные результаты.
+у `failed` отдаются частичные результаты. У ожидающей строки `code/title` пустые,
+но заполнены `clarification_question` и `clarification_options`; после выбора
+`selected_option_id` и `decision_source=specialist` сохраняют аудит. Клиентские
+CSV/XLSX дополнительно содержат исходные `original_code/original_status`.
 
 ### `GET /source/{record_id}`
 
@@ -226,7 +343,7 @@ alt1_code;alt1_title;alt2_code;alt2_title;alt3_code;alt3_title
 | --- | --- | --- |
 | 403 | нет/неверный `X-Admin-API-Key` | строка |
 | 404 | неизвестная задача | строка |
-| 409 | переиндексация уже идёт | строка |
+| 409 | переиндексация уже идёт; batch ещё выполняется; чужая/устаревшая опция уточнения или повторный resolve | строка |
 | 413 | тело больше `MAX_REQUEST_BODY_BYTES` | строка |
 | 422 | валидация запроса/файла | список ошибок pydantic или строка |
 | 404 | неизвестный `record_id` в `/source/{id}` | строка |
@@ -351,7 +468,8 @@ version=0.0.4; charset=utf-8`) — скрейпится `prometheus`/`victoriame
 `comment` (до 1000 символов) — свободный комментарий специалиста. Ответ:
 `{"id":"uuid", "saved":true}`. Публичного эндпоинта просмотра всех отзывов
 **нет**: названия товаров могут содержать внутренние данные закупок. Клиент
-вердикты не сохраняет: локальная история проверок удалена.
+вердикты и названия товаров в локальной истории не сохраняет. История трёх файлов
+содержит только метаданные задания и загружает сами результаты с сервера.
 
 Для обучения вердикты выгружает администратор:
 `GET /admin/feedback/export?format=csv` (под `X-Admin-API-Key`). Колонки —

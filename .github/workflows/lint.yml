@@ -47,6 +47,14 @@ jobs:
         # shipped catalog hashes; it rotted once already because nothing ran it.
         run: python -m pytest api/tests eval/golden_1875/test_dataset.py -q
 
+      - name: Ambiguity guard regression
+        env:
+          PYTHONPATH: api
+        run: |
+          python eval/run_ambiguity_eval.py
+          VECTOR_STORE=memory EMBEDDER_BACKEND=tfidf VECTOR_SEARCH=true ALLOW_DEGRADE=false \
+            python eval/run_ambiguity_eval.py
+
   # Model quality gate: rebuild the reranker from the catalog deterministically, prove
   # that the shipped artifact still equals a fresh build, and compare the labeled-set
   # metrics row by row with a recorded measurement (eval/baselines/*.json). Floors on a
@@ -161,9 +169,14 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: Install browser
+      - name: Install packaged Chromium (no external browser CDN)
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        shell: bash
+        run: |
+          npm install --no-save --package-lock=false @sparticuz/chromium@153.0.0
+          chromium=$(node scripts/prepare-ci-chromium.mjs)
+          echo "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=${chromium}" >> "${GITHUB_ENV}"
+          echo "LD_LIBRARY_PATH=/tmp/al2023/lib:${LD_LIBRARY_PATH:-}" >> "${GITHUB_ENV}"
 
       - name: Browser and accessibility tests
         working-directory: frontend
@@ -284,6 +297,62 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build and exercise Compose services
         run: bash scripts/docker_smoke.sh --build
+      - name: Container logs
+        if: failure()
+        run: docker compose logs --tail=100
+      - name: Stop test containers
+        if: always()
+        run: docker compose down
+
+  # Full production serving audit. The lightweight smoke above deliberately uses
+  # TF-IDF; this separate push job builds the actual multilingual E5 image and
+  # checks every labeled query, exact catalog title and generic head through the
+  # public API with Qdrant/PostgreSQL/Celery. Pull requests do not pay for the
+  # duplicate transformer build because the push on the same commit runs it.
+  production-e5-audit:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # publish the compact audit as a commit comment
+    timeout-minutes: 60
+    env:
+      INSTALL_TRANSFORMER: "true"
+      EMBEDDER_BACKEND: auto
+      CATALOG_API_AUDIT: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production E5 stack and audit the complete catalog
+        run: bash scripts/docker_smoke.sh --build
+      - name: Upload production catalog audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-e5-catalog-audit
+          path: catalog-production-audit.json
+          if-no-files-found: warn
+      - name: Publish compact audit through the GitHub API
+        if: always() && hashFiles('catalog-production-audit.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat catalog-production-audit.md >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          run_url = (
+              f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}"
+              f"/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          )
+          body = Path("catalog-production-audit.md").read_text(encoding="utf-8")
+          Path("audit-comment.json").write_text(
+              json.dumps({"body": f"{body}\n[Workflow run]({run_url})\n"}),
+              encoding="utf-8",
+          )
+          PY
+          gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+            --input audit-comment.json
       - name: Container logs
         if: failure()
         run: docker compose logs --tail=100

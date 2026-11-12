@@ -72,7 +72,7 @@ def test_one_lost_row_is_noise_and_two_are_a_regression():
         _record(LEXICAL, LEXICAL_ECE), _with(top1_expected=(189 - ROW_TOLERANCE - 1, 201))
     )
     assert fatal.keep is False
-    assert any("top-1 (с кодом)" in reason and "−2 строк" in reason for reason in fatal.reasons)
+    assert any("код/уточнение" in reason and "−2 строк" in reason for reason in fatal.reasons)
 
 
 def test_lost_silence_is_reported_with_its_own_rows():
@@ -114,6 +114,26 @@ def test_calibration_tolerance_is_exclusive():
         _record(LEXICAL, LEXICAL_ECE), _record(LEXICAL, LEXICAL_ECE + ECE_TOLERANCE + 0.001)
     )
     assert fatal.keep is False
+
+
+def test_underconfidence_from_improved_accuracy_does_not_mask_overconfidence():
+    baseline = _record(LEXICAL, LEXICAL_ECE)
+    improved_but_underconfident = measurement(
+        {key: Counts(correct, total) for key, (correct, total) in LEXICAL.items()},
+        0.20,
+        overconfidence_ece=0.0,
+        underconfidence_ece=0.20,
+    )
+    verdict = evaluate_regression(baseline, improved_but_underconfident)
+    assert verdict.keep is True
+    assert "полный ECE" in verdict.table() and "недоуверенность" in verdict.table()
+
+    dangerous = dict(improved_but_underconfident)
+    dangerous["overconfidence_ece"] = LEXICAL_ECE + ECE_TOLERANCE + 0.001
+    dangerous["ece"] = dangerous["overconfidence_ece"] + 0.20
+    rejected = evaluate_regression(baseline, dangerous)
+    assert rejected.keep is False
+    assert any("переуверенности" in reason for reason in rejected.reasons)
 
 
 def test_different_dataset_is_an_error_not_a_regression():

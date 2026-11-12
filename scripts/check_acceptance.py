@@ -28,13 +28,21 @@ def valid_result(answer, query):
         answer.get("query") == query
         and type(confidence) in (float, int)
         and 0 <= confidence <= 1
-        and answer.get("status") in ("ok", "review", "not_found")
+        and answer.get("status") in ("ok", "review", "not_found", "needs_clarification")
         and (
             (answer["status"] == "not_found" and not answer.get("code"))
             or (
-                answer["status"] != "not_found"
+                answer["status"] in {"ok", "review"}
                 and bool(answer.get("code"))
                 and bool(answer.get("clause_url"))
+            )
+            or (
+                answer["status"] == "needs_clarification"
+                and not answer.get("code")
+                and not answer.get("title")
+                and isinstance(answer.get("clarification"), dict)
+                and len(answer["clarification"].get("options", [])) >= 2
+                and bool(answer["clarification"].get("catalog_sha256"))
             )
         )
     )

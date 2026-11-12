@@ -27,6 +27,7 @@ import json
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -123,16 +124,27 @@ def _check_result(result: Any, item: dict[str, Any]) -> list[str]:
     def fail(message: str) -> None:
         problems.append(f"«{item['query']}»: {message} | {item.get('note', '')}")
 
-    if item["codes"] is not None and result.code not in item["codes"]:
+    clarifying = result.status == "needs_clarification"
+    if item["codes"] is not None and not clarifying and result.code not in item["codes"]:
         fail(f"код {result.code!r}, ожидался один из {item['codes']}")
-    if result.status not in item["statuses"]:
+    if not clarifying and result.status not in item["statuses"]:
         fail(f"статус {result.status!r}, ожидался один из {item['statuses']}")
     if not 0.0 <= result.confidence <= 1.0:
         fail(f"confidence={result.confidence} вне диапазона 0..1")
-    if result.contract_version != "1.0":
+    if result.contract_version != "2.0":
         fail(f"contract_version={result.contract_version!r}")
 
-    if result.status == "not_found":
+    if clarifying:
+        if result.code is not None or result.title is not None:
+            fail("до уточнения код и наименование должны быть пустыми")
+        options = result.clarification.options if result.clarification else []
+        if len(options) < 2:
+            fail("уточнение должно содержать минимум два варианта")
+        if item["codes"] is not None:
+            option_codes = {option.code for option in options}
+            if not option_codes & set(item["codes"]):
+                fail(f"среди вариантов нет ожидаемого кода {item['codes']}")
+    elif result.status == "not_found":
         if result.code is not None or result.title is not None:
             fail("при статусе not_found код и наименование должны быть пустыми")
     else:
@@ -324,7 +336,7 @@ def test_upload_endpoint_recognises_every_item_of_the_file(path: Path, classifie
     assert accepted["format"] == spec["format"]
     assert accepted["source_column"] == spec["source_column"]
     assert accepted["truncated"] is False
-    assert accepted["contract_version"] == "1.0"
+    assert accepted["contract_version"] == "2.0"
 
     state = _wait_for_job(client, accepted["status_url"])
     assert state["status"] == "completed"
@@ -354,6 +366,14 @@ class _Row:
         self.confidence = row["confidence"]
         self.status = row["status"]
         self.contract_version = row["contract_version"]
+        clarification = row.get("clarification")
+        self.clarification = (
+            SimpleNamespace(
+                options=[SimpleNamespace(**option) for option in clarification["options"]]
+            )
+            if clarification
+            else None
+        )
 
 
 def test_api_and_offline_classifier_agree(classifier) -> None:
