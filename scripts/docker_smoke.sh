@@ -41,6 +41,14 @@ grep -q '"enabled":true' <<<"$ready" || { echo "FAIL: векторный пои�
 grep -q '"job_store":"postgres"' <<<"$ready" || { echo "FAIL: хранилище задач не PostgreSQL"; exit 1; }
 grep -q '"queue_backend":"celery"' <<<"$ready" || { echo "FAIL: очередь не Celery"; exit 1; }
 
+if [[ "${CATALOG_API_AUDIT:-0}" == "1" ]]; then
+  log "3b-full. Полный аудит catalog/quality через production API (E5/Qdrant)"
+  $COMPOSE exec -T api python scripts/catalog_api_audit.py \
+    --base-url http://localhost:8000 --require-e5 \
+    --output /tmp/catalog-production-audit.json
+  docker cp "$api_container":/tmp/catalog-production-audit.json ./catalog-production-audit.json
+fi
+
 log "3c. Схема БД: миграции применились сами (BE-5)"
 # Руками `alembic upgrade` на целевой машине никто не запускает: ревизию ставит
 # сам API при старте. Пустая строка в ответе = схема не под миграциями.

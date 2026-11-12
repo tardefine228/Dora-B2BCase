@@ -303,3 +303,34 @@ jobs:
       - name: Stop test containers
         if: always()
         run: docker compose down
+
+  # Full production serving audit. The lightweight smoke above deliberately uses
+  # TF-IDF; this separate push job builds the actual multilingual E5 image and
+  # checks every labeled query, exact catalog title and generic head through the
+  # public API with Qdrant/PostgreSQL/Celery. Pull requests do not pay for the
+  # duplicate transformer build because the push on the same commit runs it.
+  production-e5-audit:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      INSTALL_TRANSFORMER: "true"
+      EMBEDDER_BACKEND: auto
+      CATALOG_API_AUDIT: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production E5 stack and audit the complete catalog
+        run: bash scripts/docker_smoke.sh --build
+      - name: Upload production catalog audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-e5-catalog-audit
+          path: catalog-production-audit.json
+          if-no-files-found: warn
+      - name: Container logs
+        if: failure()
+        run: docker compose logs --tail=100
+      - name: Stop test containers
+        if: always()
+        run: docker compose down

@@ -58,6 +58,12 @@
 
 Это не устраняет недоуверенность модели и не заменяет model-quality admission при будущей перекалибровке. Настройка confidence на размеченном measurement-наборе не выполнялась.
 
+## Production E5 API audit
+
+Добавлен `scripts/catalog_api_audit.py`: он работает только через публичный `/classify`, поэтому не зависит от внутреннего Python backend. Каждый push на ветку запускает отдельный `production-e5-audit` с настоящим multilingual E5, Qdrant, PostgreSQL и Celery; прежний `docker-smoke` остаётся намеренно лёгким TF-IDF packaging test. Audit сохраняет все ответы как CI artifact и не отключает rate limiter.
+
+Локально тот же скрипт проверен через HTTP на TF-IDF: **1123 запроса**, 746 названий (653 `ok`, 84 обычных уточнения, 3 `validation_error`, 6 `not_found`), 103 generic-head (7/95/1) и 233/233 scored quality answers; failures 0. Три составных медицинских названия длиной 961–1164 символа отдельно проверяют публичный лимит 500 символов и не выдаются за классифицированные. Этот локальный прогон валидирует audit wiring, но не заменяет результат production E5 job.
+
 ## Граница результата
 
 100% на текущем labeled set не является доказательством идеальности всех закупочных формулировок. Полный E5/Qdrant/PostgreSQL sweep остаётся отдельной production-проверкой; локальные исчерпывающие измерения относятся к lexical и TF-IDF/in-memory.
