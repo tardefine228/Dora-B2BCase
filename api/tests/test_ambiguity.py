@@ -135,6 +135,113 @@ def test_meter_query_asks_about_the_measured_resource() -> None:
     }
 
 
+@pytest.mark.parametrize("vector_search", ["0", "1"])
+def test_new_generic_families_never_autoselect_a_random_branch(
+    vector_search: str, monkeypatch
+) -> None:
+    monkeypatch.setenv("VECTOR_SEARCH", vector_search)
+    classifier = CatalogClassifier(CATALOG)
+    expected = {
+        "Компрессор воздушный": {"1-34-01", "3-115-01", "3-116-01", "3-117-01", "3-118-01"},
+        "Состав": {"1-131-01", "2-59-01"},
+        "Платы": {"2-193-01", "2-194-01", "3-35-01", "3-36-01"},
+        "Труба": {"2-66-01", "2-71-01", "2-89-01", "3-252-01"},
+        "Камеры": {"1-57-01", "2-211-01"},
+        "Тетради": {"2-6-01", "2-7-01"},
+        "Принадлежности": {"2-8-01", "2-205-01", "1-66-01", "3-71-01"},
+        "Телефон": {"2-212-01", "2-213-01"},
+        "Телевизор": {"2-235-01", "2-236-01", "3-64-01"},
+        "Кабель": {"2-113-01", "2-326-01"},
+        "Лампа": {"2-191-01", "2-328-01", "2-332-01", "2-386-01"},
+        "Монитор": {"2-201-01", "2-240-01"},
+        "Микрофон": {"2-241-01", "3-68-01"},
+        "Стеллаж": {"1-138-01", "1-140-01"},
+        "Кресло": {"2-139-01", "2-394-01"},
+        "Системы": {"2-221-01", "2-228-01", "2-262-01", "2-302-01"},
+        "Установки": {"2-108-01", "3-158-01", "1-89-01", "2-255-01"},
+    }
+    for query, required_ids in expected.items():
+        answer = classifier.classify(query)
+        assert answer.status == "needs_clarification", (query, answer.model_dump())
+        assert answer.code is None and answer.title is None
+        assert answer.clarification is not None
+        option_ids = {option.option_id for option in answer.clarification.options}
+        assert required_ids <= option_ids, query
+
+
+@pytest.mark.parametrize("vector_search", ["0", "1"])
+def test_single_branch_generic_queries_require_review_not_autopass(
+    vector_search: str, monkeypatch
+) -> None:
+    monkeypatch.setenv("VECTOR_SEARCH", vector_search)
+    classifier = CatalogClassifier(CATALOG)
+    for query, code in {
+        "Трактор": "28.92.50.000",
+        "Посуда": "22.29.23",
+        "Кондиционер": "28.25.12.110",
+        "Посудомоечная машина": "28.29.50.000",
+    }.items():
+        answer = classifier.classify(query)
+        assert answer.status == "review", (query, answer.model_dump())
+        assert answer.code == code
+        assert any(reason.code == "ambiguous_name" for reason in answer.attention_reasons)
+
+
+@pytest.mark.parametrize("vector_search", ["0", "1"])
+def test_standalone_adjective_does_not_name_a_product(
+    vector_search: str, monkeypatch
+) -> None:
+    monkeypatch.setenv("VECTOR_SEARCH", vector_search)
+    answer = CatalogClassifier(CATALOG).classify("Медицинские")
+    assert answer.status == "not_found"
+    assert answer.code is None and answer.title is None
+    assert answer.alternatives == []
+
+
+@pytest.mark.parametrize("vector_search", ["0", "1"])
+def test_specific_controls_keep_the_same_code_on_both_backends(
+    vector_search: str, monkeypatch
+) -> None:
+    monkeypatch.setenv("VECTOR_SEARCH", vector_search)
+    classifier = CatalogClassifier(CATALOG)
+    expected = {
+        "Платы печатные смонтированные": "26.12.1",
+        "Трубы алюминиевые": "24.42.26",
+        "Трубы": "32.20.13.161",
+        "Компрессоры воздушные передвижные на колесных шасси": "28.13.24",
+        "Компрессоры поршневые объемные": "28.13.26",
+        "Трубы пластмассовые": "22.21.2",
+        "Камеры холодильные сборные": "28.25.13.112",
+        "Тетради различного назначения": "17.23.13.196",
+        "Аппараты телефонные прочие": "26.30.23",
+        "Тракторы гусеничные": "28.92.50.000",
+        "Посуда пластмассовая": "22.29.23",
+        "Телевизор с жидкокристаллическим экраном": "26.40.20.122",
+        "Кабели волоконно-оптические": "27.31.1",
+        "Кабели электрические": "27.32",
+        "Лампы-вспышки фотографические": "27.40.31",
+        "Микрофоны и подставки для них": "26.40.41.000",
+        "Кондиционеры промышленные": "28.25.12.110",
+        "Машины посудомоечные промышленного типа": "28.29.50.000",
+        "Системы тревожной сигнализации": "26.30.50.115",
+        "Установки генераторные электрические": "27.11.3",
+    }
+    for query, code in expected.items():
+        answer = classifier.classify(query)
+        assert answer.status == "ok", (query, answer.model_dump())
+        assert answer.code == code, query
+
+    for query, option_ids in {
+        "Платы звуковые": {"2-194-01", "3-36-01"},
+        "Мебель металлическая": {"3-231-01", "1-138-01"},
+        "Кресла-стулья с санитарным оснащением": {"2-394-01", "2-394-02"},
+    }.items():
+        answer = classifier.classify(query)
+        assert answer.status == "needs_clarification", (query, answer.model_dump())
+        assert answer.clarification is not None
+        assert option_ids <= {option.option_id for option in answer.clarification.options}
+
+
 def test_medical_lights_offer_their_two_codes_instead_of_household_lights() -> None:
     answer = CatalogClassifier(CATALOG).classify("Светильники медицинские")
     assert answer.status == "needs_clarification"
@@ -175,6 +282,41 @@ def test_specific_modifiers_and_direct_code_do_not_trigger_generic_rule() -> Non
         assert answer.status != "needs_clarification", query
         assert answer.code == code, query
     assert classifier.classify("29.10.59.160").decision_source == "direct_code"
+
+
+def test_every_multi_code_title_option_is_resolvable_by_a_specialist() -> None:
+    rows, digest = load_catalog_rows(CATALOG)
+    by_title: dict[str, list[dict]] = {}
+    for row in rows:
+        by_title.setdefault(" ".join(row["name"].casefold().split()), []).append(row)
+    groups = [
+        group
+        for group in by_title.values()
+        if len({row["okpd2"] for row in group if row.get("okpd2")}) > 1
+    ]
+    assert len(groups) == 87
+    guard = AmbiguityGuard(rows, digest)
+    checked = 0
+    expected_option_count = 0
+    for group in groups:
+        query = group[0]["name"]
+        pending = guard.apply(query, guard.exact_title_answer(query))
+        assert pending.status == "needs_clarification", query
+        assert pending.clarification is not None
+        options = pending.clarification.options
+        expected_option_count += len(options)
+        assert len({option.option_id for option in options}) == len(options)
+        expected_codes = {row["okpd2"] for row in group if row.get("okpd2")}
+        assert expected_codes <= {option.code for option in options}
+        for option in options:
+            resolved = guard.resolve_answer(pending, option.option_id, digest)
+            assert resolved.status in {"ok", "review"}
+            assert resolved.decision_source == "specialist"
+            assert resolved.code == option.code
+            assert resolved.resolution is not None
+            assert resolved.resolution.option_id == option.option_id
+            checked += 1
+    assert checked == expected_option_count >= 325
 
 
 def test_exact_title_with_multiple_codes_is_not_a_top1_answer() -> None:
@@ -469,14 +611,14 @@ def test_duplicate_code_and_title_is_one_interpretation_not_two_options() -> Non
         "a" * 64,
     )
     original = ClassifyResponse(
-        query="автомобиль",
+        query="Автомобили легковые",
         code="29.10.2",
         title="Автомобили легковые",
         confidence=0.9,
         status="ok",
         latency_ms=0,
     )
-    assert guard.apply("автомобиль", original).status == "ok"
+    assert guard.apply("Автомобили легковые", original).status == "ok"
 
 
 def test_sqlite_store_keeps_specialist_resolution(tmp_path) -> None:

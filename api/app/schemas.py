@@ -122,6 +122,7 @@ class AttentionReason(APIModel):
     code: Literal[
         "ambiguous_name",
         "multiple_codes",
+        "direct_title_match",
         "low_confidence",
         "code_exception",
         "catalog_review_required",

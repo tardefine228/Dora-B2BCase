@@ -38,6 +38,8 @@ from ml.query import split_purchase_query
 # Observed procurement aliases belong to the decision layer, not to the trained
 # feature space. Adding them to ml.lexicon changes every training pair and
 # requires model-quality admission; these aliases only retrieve existing rows.
+_NON_PRODUCT_HEADS = {stem("медицинский")}
+
 _OBSERVED_BRIDGES = {
     stem("смеситель"): ("смесительная", "28.14.11.160"),
     stem("вентиль"): ("арматура", "28.14.11"),
@@ -240,6 +242,164 @@ _register(
     ),
 )
 
+_register(
+    "состав",
+    _rule(
+        "Что закупается: подвижной состав или химический состав для обработки?",
+        "1-131-01 2-59-01",
+        "подвижной железнодорожный травление флюс химический катализатор",
+    ),
+)
+_register(
+    "плата",
+    _rule(
+        "Какие платы закупаются: печатные или звуковые/видео-/сетевые?",
+        "2-193-01 2-194-01 3-35-01 3-36-01",
+        "печатный смонтированный звуковой видео сетевой платформа",
+    ),
+)
+_register(
+    "труба",
+    _rule(
+        "Из какого материала и для какого назначения нужны трубы?",
+        "2-66-01 2-71-01 2-89-01 3-252-01",
+        "резиновый вулканизированный пластмассовый алюминиевый музыкальный",
+    ),
+)
+_register(
+    "камера",
+    _rule(
+        "Какая камера нужна: телевизионная, видео- или холодильная?",
+        "2-211-01 1-57-01",
+        "телевизионный видео холодильный морозильный медицинский",
+    ),
+)
+_register(
+    "тетрадь",
+    _rule(
+        "Какие тетради закупаются: школьные или различного назначения?",
+        "2-6-01 2-7-01",
+        "школьный ученический различный назначение",
+    ),
+)
+_register(
+    "принадлежности",
+    _rule(
+        "Для какого оборудования или назначения нужны принадлежности?",
+        "2-8-01 2-79-01 2-205-01 1-66-01 3-71-01",
+        "канцелярский школьный бумага картон пластмассовый вычислительный "
+        "компьютерный станок звуковой видео",
+    ),
+)
+_register(
+    "телефон",
+    _rule(
+        "Какой телефонный аппарат нужен: сотовый или другой?",
+        "2-212-01 2-213-01",
+        "сотовый смартфон беспроводный проводный прочий",
+    ),
+)
+_register(
+    "трактор",
+    _rule(
+        "Уточните тип трактора; в перечне отдельно указаны гусеничные тракторы.",
+        "1-84-01",
+        "гусеничный колесный",
+    ),
+)
+_register(
+    "посуда",
+    _rule(
+        "Уточните материал и назначение посуды; в перечне отдельно указана пластмассовая.",
+        "2-77-01",
+        "пластмассовый столовый кухонный стеклянный металлический керамический",
+    ),
+)
+_register(
+    "телевизор",
+    _rule(
+        "Какой телевизор нужен: с записью, без записи или с LCD/плазменной панелью?",
+        "2-235-01 2-236-01 3-64-01",
+        "запись воспроизведение жидкокристаллический lcd плазменный",
+    ),
+)
+_register(
+    "кабель",
+    _rule(
+        "Какой кабель нужен: волоконно-оптический или электрический?",
+        "2-326-01 3-101-01 3-102-01 2-113-01",
+        "волоконно оптический индивидуальный оболочка электрический электронный проводной",
+    ),
+)
+_register(
+    "лампа",
+    _rule(
+        "Какая лампа нужна: электронная, осветительная, фотовспышка или щелевая?",
+        "2-191-01 2-328-01 2-332-01 2-386-01",
+        "электронный вакуумный газонаполненный накаливание светодиодный дуговой "
+        "вспышка фотографический щелевой офтальмологический",
+    ),
+)
+_register(
+    "монитор",
+    _rule(
+        "Монитор нужен как периферия компьютера или как самостоятельное устройство?",
+        "2-201-01 2-240-01",
+        "периферийный компьютерный проектор самостоятельный",
+    ),
+)
+_register(
+    "микрофон",
+    _rule(
+        "Нужен отдельный микрофон или приёмная радиотелефонная аппаратура?",
+        "3-68-01 2-241-01",
+        "подставка радиотелефонный радиотелеграфный приемный громкоговоритель",
+    ),
+)
+_register(
+    "стеллаж",
+    _rule(
+        "Какой стеллаж нужен: общий металлический или медицинский?",
+        "1-138-01 1-140-01",
+        "металлический медицинский палата пациент эндоскоп",
+    ),
+)
+_register(
+    "кресло",
+    _rule(
+        "Какое кресло нужно: офисное или с санитарным оснащением?",
+        "2-139-01 2-394-01",
+        "офисный санитарный медицинский стул",
+    ),
+)
+_register(
+    "кондиционер",
+    _rule(
+        "Уточните тип кондиционера; в перечне отдельно указаны промышленные.",
+        "1-55-01",
+        "промышленный бытовой",
+    ),
+)
+_register(
+    "система",
+    _rule(
+        "Какого назначения нужна система: охранная, информационная, измерительная или медицинская?",
+        "2-221-01 2-228-01 2-262-01 2-302-01 2-255-01 2-258-01",
+        "тревожный сигнализация охранный информационный измерительный медицинский "
+        "томография дозиметрический радиометрический спектрометрический комбинированный",
+    ),
+)
+_register(
+    "установка",
+    _rule(
+        "Какого назначения нужна установка: генераторная, термообработка, "
+        "аддитивная или измерительная?",
+        "2-108-01 3-158-01 1-89-01 1-90-01 2-255-01",
+        "генераторный электрический температурный аддитивный экструзионный "
+        "струйный дозиметрический измерительный",
+    ),
+)
+
 # A phrase-level family is needed when the generic head is «аппарат», but its
 # modifier still leaves several real medical device types. More specific
 # modifiers disable the question and let the ordinary classifier answer.
@@ -256,6 +416,22 @@ _register_family(
         "Какой ультразвуковой аппарат закупается: для сканирования, терапии или хирургии?",
         "2-314-01 2-318-01 2-380-01",
         "сканирование диагностический терапия хирургический",
+    ),
+)
+_register_family(
+    "компрессор",
+    _rule(
+        "Какой компрессор закупается: общий, передвижной, турбокомпрессор, поршневой или прочий?",
+        "1-34-01 3-115-01 3-116-01 3-117-01 3-118-01",
+        "передвижной колесный шасси турбокомпрессор поршневой объемный прочий",
+    ),
+)
+_register_family(
+    "посудомоечная машина",
+    _rule(
+        "Уточните тип посудомоечной машины; в перечне отдельно указаны промышленные.",
+        "1-60-01",
+        "промышленный бытовой",
     ),
 )
 _register_family(
@@ -505,15 +681,131 @@ class AmbiguityGuard:
             latency_ms=0.0,
         )
 
+    def _review_single_option(
+        self, answer: ClassifyResponse, question: str, row: dict
+    ) -> ClassifyResponse:
+        """Do not autopass an underspecified query with one catalogued subtype."""
+        reasons = [
+            reason for reason in answer.attention_reasons if reason.code != "ambiguous_name"
+        ]
+        reasons.insert(0, AttentionReason(code="ambiguous_name", message=question))
+        return answer.model_copy(
+            update={
+                "code": row["okpd2"],
+                "title": row["name"],
+                "status": "review",
+                "clause_ref": row.get("clause_ref"),
+                "clause_url": clause_url_for(row.get("record_id")),
+                "code_role": row.get("code_role"),
+                "catalog_review_required": row.get("catalog_review_required"),
+                "catalog_sha256": self.catalog_sha256,
+                "alternatives": [],
+                "clarification": None,
+                "attention_reasons": reasons,
+            }
+        )
+
+    def _specific_title_answer(
+        self, query: str, answer: ClassifyResponse
+    ) -> ClassifyResponse | None:
+        """Resolve a specified official-title prefix, or expose competing titles.
+
+        Statistical retrieval can choose «музыкальные трубы» for «трубы
+        алюминиевые» even though the discriminator occurs in exactly one catalog
+        title. A unique stem-subset match is deterministic. Prefix matches are
+        stronger: when several titles remain («мебель металлическая»), the user
+        must choose instead of letting the backend select different codes.
+        """
+        query_stems = stems(query)
+        if len(query_stems) < 2:
+            return None
+        exact_rows = self._by_title.get(_norm(query), [])
+        exact_codes = {row["okpd2"] for row in exact_rows if row.get("okpd2")}
+        if _norm(answer.title) == _norm(query) and len(exact_codes) == 1:
+            return answer
+        query_set = set(query_stems)
+        prefixed: list[dict] = []
+        subset: list[dict] = []
+        for title, title_rows in self._by_title.items():
+            title_stems = stems(title)
+            if not title_stems or title_stems[0] != query_stems[0]:
+                continue
+            if title_stems[: len(query_stems)] == query_stems:
+                prefixed.extend(title_rows)
+            elif query_set <= set(title_stems):
+                subset.extend(title_rows)
+        rows = prefixed
+        if not rows and len({_norm(row["name"]) for row in subset}) == 1:
+            rows = subset
+        if not rows:
+            return None
+        titles = {_norm(row["name"]) for row in rows}
+        codes = {row["okpd2"] for row in rows if row.get("okpd2")}
+        if len(titles) > 1 or len(codes) > 1:
+            guarded = self._clarify(
+                answer,
+                "Уточните официальную позицию и код закупаемого товара.",
+                rows,
+                "multiple_codes" if len(titles) == 1 else "ambiguous_name",
+            )
+            return guarded if guarded.status == "needs_clarification" else None
+        row = next((row for row in rows if row.get("okpd2")), None)
+        if row is None:
+            return None
+        return answer.model_copy(
+            update={
+                "code": row["okpd2"],
+                "title": row["name"],
+                "status": "ok",
+                "clause_ref": row.get("clause_ref"),
+                "clause_url": clause_url_for(row.get("record_id")),
+                "code_role": row.get("code_role"),
+                "catalog_review_required": row.get("catalog_review_required"),
+                "catalog_sha256": self.catalog_sha256,
+                "alternatives": [],
+                "attention_reasons": [
+                    AttentionReason(
+                        code="direct_title_match",
+                        message="Ответ определён по конкретному официальному названию перечня.",
+                    )
+                ],
+            }
+        )
+
     def apply(self, query: str, answer: ClassifyResponse) -> ClassifyResponse:
         if answer.status == "needs_clarification" or answer.decision_source == "specialist":
             return answer
         # An explicit OKPD2 code is itself the disambiguator.
         if OKPD2_RE.fullmatch(query.strip().replace(" ", "")):
             return answer
+        literal_rows = self._by_title.get(_norm(query), [])
+        literal_codes = {row["okpd2"] for row in literal_rows if row.get("okpd2")}
+        if (
+            len(literal_codes) == 1
+            and _norm(answer.title) == _norm(query)
+            and answer.code in literal_codes
+        ):
+            # A complete official single-code title is itself specific enough
+            # («Трубы» as a musical instrument). Generic wording and all
+            # multi-code titles still go through the guards below.
+            return answer
 
         head, _ = split_purchase_query(query)
         head_stems = set(stems(head))
+        if len(head_stems) == 1 and next(iter(head_stems)) in _NON_PRODUCT_HEADS:
+            # A standalone adjective names no purchasable product. Offering
+            # refrigerators for «медицинские» is fluent but meaningless.
+            return answer.model_copy(
+                update={
+                    "code": None,
+                    "title": None,
+                    "status": "not_found",
+                    "confidence": 0.0,
+                    "confidence_raw": 0.0,
+                    "alternatives": [],
+                    "clarification": None,
+                }
+            )
         query_stems = set(stems(query))
         rule = GENERIC_RULES.get(next(iter(head_stems), "")) if len(head_stems) == 1 else None
         if rule is not None and not (query_stems & set(stems(rule.discriminators))):
@@ -525,6 +817,8 @@ class AmbiguityGuard:
             guarded = self._clarify(answer, rule.question, rows, "ambiguous_name")
             if guarded.status == "needs_clarification":
                 return guarded
+            if len(rows) == 1:
+                return self._review_single_option(answer, rule.question, rows[0])
 
         for required_stems, family_rule in QUERY_FAMILY_RULES:
             if not required_stems <= query_stems:
@@ -541,6 +835,12 @@ class AmbiguityGuard:
             )
             if guarded.status == "needs_clarification":
                 return guarded
+            if len(rows) == 1:
+                return self._review_single_option(answer, family_rule.question, rows[0])
+
+        specific = self._specific_title_answer(query, answer)
+        if specific is not None:
+            return specific
 
         # A title can have several codes even when the model is highly
         # confident. Looking only at its top-3 alternatives would hide this.
