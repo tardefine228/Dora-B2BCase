@@ -132,15 +132,7 @@ class ApiAudit:
         self.calls += 1
         if self.calls % 50 == 0:
             print(f"  classified {self.calls}", flush=True)
-        try:
-            answer = self.request("/classify", {"name": query})
-        except urllib.error.HTTPError as error:
-            if error.code != 422 or len(query) <= 500:
-                raise
-            # ProductName deliberately caps public input at 500 characters.
-            # Three composite medical titles are longer; record the validation
-            # contract explicitly instead of hiding them or weakening the cap.
-            answer = {"status": "validation_error", "code": None, "title": None}
+        answer = self.request("/classify", {"name": query})
         return {
             "query": query,
             "status": answer["status"],
@@ -158,8 +150,6 @@ class ApiAudit:
 
 
 def check_exact(answer: dict, expected_codes: set[str]) -> str | None:
-    if len(answer.get("query", "")) > 500 and answer["status"] == "validation_error":
-        return None
     if not expected_codes:
         if answer["status"] == "not_found":
             return None
@@ -204,6 +194,71 @@ def check_quality(answer: dict, row: dict) -> bool | None:
     return any(codes_match(option.get("code"), expected) for option in answer["options"])
 
 
+def render_comment(report: dict) -> str:
+    """Compact GitHub-visible result; failures stay reviewable without artifacts."""
+    summary = report["summary"]
+    readiness = summary["readiness"]
+    vector = readiness.get("vector_search") or {}
+    lines = [
+        "<!-- dora-production-e5-audit -->",
+        "## Production E5 catalog audit",
+        "",
+        f"- Embedder: `{vector.get('embedder')}`; store: `{vector.get('store')}`; "
+        f"positions: **{vector.get('positions')}**",
+        f"- Job store: `{readiness.get('job_store')}`; queue: "
+        f"`{readiness.get('queue_backend')}`",
+        f"- API calls: **{summary['calls']}**; audit time: **{summary['seconds']} s**",
+        "",
+        "| Набор | Итог | Ошибки |",
+        "| --- | --- | ---: |",
+    ]
+    exact = summary["exact"]
+    generic = summary["generic"]
+    quality = summary["quality"]
+    lines.extend(
+        [
+            f"| Официальные названия | {exact['total']}; "
+            f"{json.dumps(exact['statuses'], ensure_ascii=False)} | {exact['failures']} |",
+            f"| Generic heads | {generic['total']}; "
+            f"{json.dumps(generic['statuses'], ensure_ascii=False)} | {generic['failures']} |",
+            f"| Quality | {quality['correct']}/{quality['scored']} | "
+            f"{quality['failures']} |",
+        ]
+    )
+    sections = (
+        ("Официальные названия", "exact_failures"),
+        ("Generic heads", "generic_failures"),
+        ("Quality", "quality_failures"),
+    )
+    failure_total = sum(len(report[key]) for _, key in sections)
+    lines.append("")
+    if not failure_total:
+        lines.append("**Расхождений не обнаружено.** Все scored controls пройдены.")
+    for title, key in sections:
+        failures = report[key]
+        if not failures:
+            continue
+        lines.extend(["", f"### {title}: {len(failures)} ошибок", ""])
+        for row in failures[:20]:
+            query = row["query"].replace("\n", " ")[:240]
+            problem = row.get("problem") or (
+                f"ожидался {row.get('expected')}; получен {row.get('status')}/"
+                f"{row.get('code')}; options="
+                f"{[option.get('code') for option in row.get('options', [])]}"
+            )
+            lines.append(f"- `{query}` — {problem}")
+        if len(failures) > 20:
+            lines.append(f"- … ещё {len(failures) - 20}; см. полный JSON artifact.")
+    lines.extend(
+        [
+            "",
+            "Полный построчный JSON сохранён в artifact `production-e5-catalog-audit`.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://localhost:8000")
@@ -211,6 +266,7 @@ def main() -> int:
     parser.add_argument("--catalog", type=Path, default=ROOT / "data" / "data.csv")
     parser.add_argument("--labeled", type=Path, default=ROOT / "eval" / "labeled_examples.csv")
     parser.add_argument("--output", type=Path, default=Path("/tmp/catalog-production-audit.json"))
+    parser.add_argument("--comment-output", type=Path)
     parser.add_argument("--require-e5", action="store_true")
     args = parser.parse_args()
 
@@ -275,7 +331,6 @@ def main() -> int:
         "exact": {
             "total": len(exact),
             "statuses": dict(Counter(row["status"] for row in exact)),
-            "validation_only": sum(row["status"] == "validation_error" for row in exact),
             "failures": len(exact_failures),
         },
         "generic": {
@@ -289,22 +344,21 @@ def main() -> int:
             "failures": len(quality_failures),
         },
     }
+    report = {
+        "summary": summary,
+        "exact_failures": exact_failures,
+        "generic_failures": generic_failures,
+        "quality_failures": quality_failures,
+        "exact": exact,
+        "generic": generic,
+        "quality": quality,
+    }
     args.output.write_text(
-        json.dumps(
-            {
-                "summary": summary,
-                "exact_failures": exact_failures,
-                "generic_failures": generic_failures,
-                "quality_failures": quality_failures,
-                "exact": exact,
-                "generic": generic,
-                "quality": quality,
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
+        json.dumps(report, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    if args.comment_output:
+        args.comment_output.write_text(render_comment(report), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     print(f"Audit JSON: {args.output}")
     return int(bool(exact_failures or generic_failures or quality_failures))

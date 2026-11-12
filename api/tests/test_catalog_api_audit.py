@@ -41,13 +41,13 @@ def test_exact_audit_requires_every_sibling_code_and_real_single_code_answer():
     assert module.check_exact({"status": "review", "code": "15.2", "options": []}, {"15.2"})
     assert module.check_exact({"status": "ok", "code": "26.11.3", "options": []}, set())
     long_title = {
-        "query": "x" * 501,
-        "status": "validation_error",
+        "query": "x" * 1164,
+        "status": "needs_clarification",
         "code": None,
-        "options": [],
+        "options": [{"code": "26.11.3"}, {"code": "26.11.30"}],
     }
-    assert module.check_exact(long_title, {"26.11.3"}) is None
-    assert module.check_exact({**long_title, "query": "short"}, {"26.11.3"})
+    assert module.check_exact(long_title, {"26.11.3", "26.11.30"}) is None
+    assert module.check_exact({**long_title, "status": "validation_error"}, {"26.11.3"})
 
 
 def test_generic_and_quality_audit_do_not_accept_arbitrary_clarifications():
@@ -72,3 +72,45 @@ def test_generic_and_quality_audit_do_not_accept_arbitrary_clarifications():
     absent = {"expected_okpd2": "", "label_kind": "absent"}
     assert module.check_quality({**pending, "status": "not_found"}, absent) is True
     assert module.check_quality(pending, absent) is False
+
+
+def test_github_comment_contains_runtime_identity_and_actionable_failures():
+    module = _module()
+    failure = {
+        "query": "Генератор",
+        "expected": "27.90.40.150",
+        "status": "ok",
+        "code": "27.11.3",
+        "options": [],
+    }
+    report = {
+        "summary": {
+            "readiness": {
+                "vector_search": {
+                    "embedder": "st-multilingual-e5-test",
+                    "store": "qdrant",
+                    "positions": 984,
+                },
+                "job_store": "postgres",
+                "queue_backend": "celery",
+            },
+            "calls": 1123,
+            "seconds": 145.0,
+            "exact": {"total": 746, "statuses": {"ok": 653}, "failures": 0},
+            "generic": {"total": 103, "statuses": {"ok": 7}, "failures": 0},
+            "quality": {"scored": 233, "correct": 232, "failures": 1},
+        },
+        "exact_failures": [],
+        "generic_failures": [],
+        "quality_failures": [failure],
+    }
+    comment = module.render_comment(report)
+    assert "st-multilingual-e5-test" in comment
+    assert "postgres" in comment and "celery" in comment
+    assert "Генератор" in comment
+    assert "27.90.40.150" in comment and "27.11.3" in comment
+    assert len(comment) < 5000
+
+    report["quality_failures"] = []
+    report["summary"]["quality"] = {"scored": 233, "correct": 233, "failures": 0}
+    assert "Расхождений не обнаружено" in module.render_comment(report)

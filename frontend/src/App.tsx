@@ -9,6 +9,7 @@ import { isRunningJob, navigationType, parseJobMarker, readStoredView, type Stor
 import { BUCKET_LABEL, filterReportResults, REASON_LABEL, reportItem } from './report';
 
 const ACTIVE_JOB_KEY = 'dora:active-job:v1';
+const PRODUCT_NAME_MAX_LENGTH = 2000;
 // Ключи удалённой локальной истории: их надо стирать у тех, кто успел включить
 // галочку, иначе названия товаров останутся в браузере без всякого UI.
 const LEGACY_HISTORY_KEYS = ['dora:local-history:v1', 'dora:history-enabled:v1'];
@@ -344,7 +345,7 @@ export default function App() {
       <div className="forms">
         <form className="card single" onSubmit={e => { e.preventDefault(); void single(); }}>
           <h2>Один товар</h2><label htmlFor="product">Название товара</label>
-          <div className="input-wrap"><input id="product" value={name} maxLength={500} disabled={!!busy} placeholder="Ноутбук Lenovo IdeaPad 15.6 дюймов"
+          <div className="input-wrap"><input id="product" value={name} maxLength={PRODUCT_NAME_MAX_LENGTH} disabled={!!busy} placeholder="Ноутбук Lenovo IdeaPad 15.6 дюймов"
             onChange={e => { setName(e.target.value); setResult(null); }}/>
             <button type="button" className="clear" aria-label="Очистить название" disabled={!!busy || !name}
               onClick={() => { setName(''); setResult(null); }}>×</button></div>

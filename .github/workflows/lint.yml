@@ -312,6 +312,8 @@ jobs:
   production-e5-audit:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # publish the compact audit as a commit comment
     timeout-minutes: 60
     env:
       INSTALL_TRANSFORMER: "true"
@@ -328,6 +330,29 @@ jobs:
           name: production-e5-catalog-audit
           path: catalog-production-audit.json
           if-no-files-found: warn
+      - name: Publish compact audit through the GitHub API
+        if: always() && hashFiles('catalog-production-audit.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat catalog-production-audit.md >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          run_url = (
+              f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}"
+              f"/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          )
+          body = Path("catalog-production-audit.md").read_text(encoding="utf-8")
+          Path("audit-comment.json").write_text(
+              json.dumps({"body": f"{body}\n[Workflow run]({run_url})\n"}),
+              encoding="utf-8",
+          )
+          PY
+          gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+            --input audit-comment.json
       - name: Container logs
         if: failure()
         run: docker compose logs --tail=100

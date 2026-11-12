@@ -62,7 +62,11 @@
 
 Добавлен `scripts/catalog_api_audit.py`: он работает только через публичный `/classify`, поэтому не зависит от внутреннего Python backend. Каждый push на ветку запускает отдельный `production-e5-audit` с настоящим multilingual E5, Qdrant, PostgreSQL и Celery; прежний `docker-smoke` остаётся намеренно лёгким TF-IDF packaging test. Audit сохраняет все ответы как CI artifact и не отключает rate limiter.
 
-Локально тот же скрипт проверен через HTTP на TF-IDF: **1123 запроса**, 746 названий (653 `ok`, 84 обычных уточнения, 3 `validation_error`, 6 `not_found`), 103 generic-head (7/95/1) и 233/233 scored quality answers; failures 0. Три составных медицинских названия длиной 961–1164 символа отдельно проверяют публичный лимит 500 символов и не выдаются за классифицированные. Этот локальный прогон валидирует audit wiring, но не заменяет результат production E5 job.
+Первый локальный HTTP-прогон на TF-IDF выполнил **1123 запроса** и выявил три официальных составных названия длиной 961–1164 символа за пределами прежнего лимита 500 символов. После этого публичный лимит согласованно увеличен до 2000 в API, batch и UI. Теперь все три названия проходят через `/classify` как обычные многокодовые группы: validation exception из audit удалён, поэтому HTTP 422 больше не может быть скрыто засчитан как успех. Regression tests проверяют полные sibling-коды всех трёх групп, batch и границу 2000/2001.
+
+Повторный HTTP-audit после снятия validation exception: 746 официальных названий — **653 `ok` / 87 уточнений / 6 `not_found`**, 103 generic-head — **7/95/1**, quality — **233/233**, failures 0. Полный regression после изменений: **1162 passed, 7 skipped, 3 xfailed**; frontend — 41 test и успешная production-сборка.
+
+Для независимого доступа к production-результату audit формирует компактный Markdown с runtime identity E5/Qdrant/PostgreSQL/Celery, сводкой и построчными ошибками. Push-job публикует его комментарием к коммиту через GitHub API; полный JSON остаётся artifact. Это устраняет зависимость ручной проверки от скачивания Azure Blob Storage.
 
 ## Граница результата
 

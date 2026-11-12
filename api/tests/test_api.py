@@ -100,7 +100,7 @@ def test_request_body_size_limit() -> None:
 
 
 def test_classify_rejects_oversized_name_and_extra_fields() -> None:
-    too_long = client.post("/classify", json={"name": "x" * 501})
+    too_long = client.post("/classify", json={"name": "x" * 2001})
     assert too_long.status_code == 422
 
     extra_field = client.post("/classify", json={"name": "Ноутбук", "debug": True})
@@ -157,7 +157,7 @@ def test_batch_rejects_invalid_items() -> None:
     whitespace = client.post("/classify/batch", json={"items": [" \t "]})
     assert whitespace.status_code == 422
 
-    too_long = client.post("/classify/batch", json={"items": ["x" * 501]})
+    too_long = client.post("/classify/batch", json={"items": ["x" * 2001]})
     assert too_long.status_code == 422
 
 

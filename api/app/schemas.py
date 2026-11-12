@@ -10,6 +10,9 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 CONTRACT_VERSION = "2.0"
+# Covers the longest official catalog title (1164 chars) with headroom while
+# keeping request work bounded; the HTTP body has its own independent 1 MB cap.
+PRODUCT_NAME_MAX_LENGTH = 2000
 
 
 class APIModel(BaseModel):
@@ -18,13 +21,17 @@ class APIModel(BaseModel):
 
 ProductName = Annotated[
     str,
-    StringConstraints(strip_whitespace=True, min_length=1, max_length=500),
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=PRODUCT_NAME_MAX_LENGTH,
+    ),
 ]
 
 
 class ClassifyRequest(APIModel):
     name: ProductName = Field(
-        description="Название товара или код ОКПД2; от 1 до 500 символов.",
+        description="Название товара или код ОКПД2; от 1 до 2000 символов.",
         examples=["Ноутбук Lenovo IdeaPad"],
     )
 
@@ -62,7 +69,7 @@ class BatchClassifyRequest(APIModel):
     items: list[ProductName] = Field(
         min_length=1,
         max_length=100,
-        description="От 1 до 100 названий товаров, каждое — до 500 символов.",
+        description="От 1 до 100 названий товаров, каждое — до 2000 символов.",
         examples=[["Ноутбук Lenovo", "Мышь компьютерная"]],
     )
 
