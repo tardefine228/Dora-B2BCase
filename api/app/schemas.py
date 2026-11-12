@@ -336,10 +336,6 @@ class SourceFragment(APIModel):
     record_id: str
     name: str | None = None
     okpd2: str | None = None
-    okpd2_codes: list[str] = Field(
-        default_factory=list,
-        description="Все коды ОКПД2 исходной позиции перечня, без повторов.",
-    )
     clause_ref: str | None = None
     pages: SourcePages = Field(default_factory=SourcePages)
     text: str

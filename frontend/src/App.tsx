@@ -7,7 +7,7 @@ import { orderResults, type SortMode } from './rows';
 import { storage } from './storage';
 import { isRunningJob, navigationType, parseJobMarker, readStoredView, type StoredView } from './view';
 import { BUCKET_LABEL, filterReportResults, REASON_LABEL, reportItem } from './report';
-import { clarificationCodeLevel, CODE_LEVEL_LABEL, groupClarificationOptions } from './clarification';
+import { clarificationCodeLevel, CODE_LEVEL_LABEL, groupClarificationTitles } from './clarification';
 import { addFileHistory, FILE_HISTORY_KEY, parseFileHistory, updateFileHistoryStatus, type FileHistoryEntry } from './history';
 
 const ACTIVE_JOB_KEY = 'dora:active-job:v1';
@@ -73,6 +73,8 @@ function ClarificationBox({ result, onResolve, onResolved }: {
   if (!clarification) return null;
   const hasCodeHierarchy = clarification.options.some(option =>
     clarificationCodeLevel(option, clarification.options) !== null);
+  const titleGroups = groupClarificationTitles(clarification.options);
+  const hasMultipleCodes = titleGroups.some(group => group.codeGroups.length > 1);
   const choose = async (optionId: string) => {
     if (sending) return;
     setSending(optionId); setError('');
@@ -82,28 +84,47 @@ function ClarificationBox({ result, onResolve, onResolved }: {
   };
   return <section className="clarification" aria-labelledby={`question-${result.itemId ?? 'single'}`}>
     <h3 id={`question-${result.itemId ?? 'single'}`}>{clarification.question}</h3>
-    <p>Выберите один вариант. До выбора код ОКПД2 не назначается.</p>
-    {hasCodeHierarchy && <p className="clarification-hierarchy">Укрупнённый и детальный код
-      могут относиться к одному товару. Выбирайте требуемый уровень ОКПД2 и приложение перечня.</p>}
-    <div className="clarification-options">{groupClarificationOptions(clarification.options).map(group => {
-      const option = group.options[0];
-      const level = clarificationCodeLevel(option, clarification.options);
-      const review = group.options.some(item => item.catalogReviewRequired);
-      return <div className="clarification-option" key={group.key}>
-        <button type="button" className="clarification-choice" disabled={sending !== null}
-          onClick={() => void choose(option.optionId)}>
-          <strong>{group.code}{level &&
-            <span className="code-level">{CODE_LEVEL_LABEL[level]}</span>}</strong>
-          <span className="clarification-title">{group.title}</span>
-          {group.clauseRefs.length === 1 &&
-            <small className="clarification-clause">{group.clauseRefs[0]}</small>}
-          {group.clauseRefs.length > 1 &&
-            <small className="clarification-clause">Найден в {group.clauseRefs.length} позициях перечня</small>}
-          <small>{sending === option.optionId ? 'Сохраняем выбор…' : 'Выбрать этот код'}
-            {review ? ' · потребуется сверка каталога' : ''}</small>
-        </button>
-        <SourcePositions options={group.options}/>
-      </div>;
+    <p>{hasMultipleCodes
+      ? 'Если нужный код известен, выберите его ниже. Иначе оставьте позицию специалисту на проверку.'
+      : 'Выберите один вариант. До выбора код ОКПД2 не назначается.'}</p>
+    {hasMultipleCodes && <p className="clarification-warning">Одинаковое название не объясняет
+      разницу между кодами. Не выбирайте наугад: сверьте назначение и характеристики товара
+      с классификатором ОКПД2. До выбора код не назначается.</p>}
+    {hasCodeHierarchy && <p className="clarification-hierarchy">Укрупнённый
+      и детальный код могут относиться к одному товару. Выбирайте требуемый уровень ОКПД2
+      и приложение перечня.</p>}
+    <div className="clarification-options">{titleGroups.map((group, groupIndex) => {
+      const titleId = `clarification-product-${result.itemId ?? 'single'}-${groupIndex}`;
+      const codeCount = group.codeGroups.length;
+      return <section className="clarification-option" key={group.key} aria-labelledby={titleId}>
+        <div className="clarification-product">
+          <div><span className="clarification-overline">Товар в перечне</span>
+            <h4 className="clarification-title" id={titleId}>{group.title}</h4></div>
+          <span className="clarification-count">{codeCount} {codeCount === 1 ? 'код' : codeCount < 5 ? 'кода' : 'кодов'}</span>
+        </div>
+        <div className="clarification-code-list">{group.codeGroups.map(codeGroup => {
+          const option = codeGroup.options[0];
+          const level = clarificationCodeLevel(option, clarification.options);
+          const review = codeGroup.options.some(item => item.catalogReviewRequired);
+          return <div className="clarification-code-row" key={codeGroup.key}>
+            <button type="button" className="clarification-choice" disabled={sending !== null}
+              aria-describedby={titleId} onClick={() => void choose(option.optionId)}>
+              <strong>{codeGroup.code}</strong>
+              <span className="clarification-code-info">
+                {level && <small className="code-level">{CODE_LEVEL_LABEL[level]}</small>}
+                {codeGroup.clauseRefs.length === 1 &&
+                  <small className="clarification-clause">{codeGroup.clauseRefs[0]}</small>}
+                {codeGroup.clauseRefs.length > 1 &&
+                  <small className="clarification-clause">Позиций в перечне: {codeGroup.clauseRefs.length}</small>}
+                {review && <small>Потребуется сверка каталога</small>}
+              </span>
+              <span className="clarification-select">{sending === option.optionId ? 'Сохраняем…' : 'Выбрать'}
+                <span aria-hidden="true">→</span></span>
+            </button>
+            <SourcePositions options={codeGroup.options}/>
+          </div>;
+        })}</div>
+      </section>;
     })}
     </div>
     {error && <p className="field-error" role="alert">{error} Обновите результат и попробуйте снова.</p>}

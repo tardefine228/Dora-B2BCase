@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { clarificationCodeLevel, clarificationOptionExport, groupClarificationOptions } from '../src/clarification.ts';
+import { clarificationCodeLevel, clarificationOptionExport, groupClarificationOptions, groupClarificationTitles } from '../src/clarification.ts';
 
 const dumpParent = {
   optionId: '1-77-01', code: '28.92.29', title: 'Автомобили-самосвалы',
@@ -53,6 +53,17 @@ test('equal codes with different legal descriptions are never merged', () => {
   const other = { ...dumpParent, optionId: '2-999-01', title: 'Другой товар' };
   const groups = groupClarificationOptions([dumpParent, other]);
   assert.equal(groups.length, 2);
+});
+
+test('one official title becomes one card with nested code choices', () => {
+  const butter = { ...dumpParent, code: '10.51.30.100', title: 'Масло сливочное' };
+  const otherButter = { ...butter, optionId: '2-451-01', code: '10.51.30.110', clauseRef: 'Приложение 2, позиция 451' };
+  const groups = groupClarificationTitles([butter, otherButter, dumpParent]);
+  assert.equal(groups.length, 2);
+  const butterGroup = groups.find(group => group.title === 'Масло сливочное');
+  assert.equal(butterGroup.codeGroups.length, 2);
+  assert.deepEqual(butterGroup.codeGroups.map(group => group.code), ['10.51.30.100', '10.51.30.110']);
+  assert.equal(butterGroup.clauseRefs.length, 2);
 });
 
 test('already combined clause references are deduplicated inside one group', () => {

@@ -117,7 +117,7 @@ test('ambiguous single query has no code and resolves in one click', async ({ pa
   await expect(page.getByText('Какой именно автомобиль закупается?')).toBeVisible();
   const pendingAudit = await new AxeBuilder({ page }).analyze();
   expect(pendingAudit.violations.filter(v => ['critical', 'serious'].includes(v.impact ?? ''))).toEqual([]);
-  await page.getByRole('button', { name: /29\.10\.2.*Автомобили легковые/ }).click();
+  await page.locator('.clarification-choice').filter({ hasText: '29.10.2' }).click();
   await expect(page.locator('.code')).toHaveText('29.10.2');
   await expect(page.locator('.resolution-note')).toContainText('Выбрано специалистом');
   await expect(page.locator('.confidence')).toContainText('Ручной выбор');
@@ -152,7 +152,7 @@ test('batch clarification resolves the stable server item after sorting', async 
   await page.getByLabel('Сортировка').selectOption('name');
   const row = page.locator('tbody tr').filter({ hasText: 'автомобиль' });
   await row.getByText('Уточнить товар', { exact: true }).click();
-  await row.getByRole('button', { name: /29\.10\.2.*Автомобили легковые/ }).click();
+  await row.locator('.clarification-choice').filter({ hasText: '29.10.2' }).click();
   await expect(row.locator('td').nth(2)).toContainText('29.10.2');
   await expect(page.locator('.summary-accepted strong')).toHaveText('2');
   await expect(page.locator('.summary-needs_review strong')).toHaveText('0');
@@ -222,14 +222,15 @@ test('long clarification titles stay readable inside a desktop table cell', asyn
   await page.goto('/ui/');
   await page.locator('input[type=file]').setInputFiles({ name: 'goods.csv', mimeType: 'text/csv', buffer: Buffer.from('name\nМикроскопы медицинские') });
   await page.getByText('Уточнить товар', { exact: true }).click();
-  const choice = page.locator('.compact-result .clarification-choice').first();
-  const codeBox = await choice.locator('strong').boundingBox();
-  const titleBox = await choice.locator('.clarification-title').boundingBox();
-  expect(codeBox).not.toBeNull();
+  const card = page.locator('.compact-result .clarification-option');
+  const choice = card.locator('.clarification-choice').first();
+  const titleBox = await card.locator('.clarification-title').boundingBox();
   expect(titleBox).not.toBeNull();
-  expect(titleBox!.y).toBeGreaterThanOrEqual(codeBox!.y + codeBox!.height);
   expect(titleBox!.width).toBeGreaterThan(180);
+  await expect(card.locator('.clarification-code-row')).toHaveCount(2);
+  expect(await card.locator('.clarification-title').count()).toBe(1);
   expect(await choice.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  expect((await choice.boundingBox())!.width).toBeGreaterThan(280);
   await expect(page.locator('.compact-result .clarification-clause').first()).toHaveText('Приложение 2, позиция 379');
   await testInfo.attach('microscopes-clarification', { body: await page.screenshot(), contentType: 'image/png' });
 });
@@ -257,7 +258,7 @@ test('identical option titles expose their clause and structural code level', as
   await expect(page.locator('.clarification-clause').nth(1)).toHaveText('Приложение 3, позиция 175');
 });
 
-test('identical codes are grouped without losing their source positions', async ({ page }) => {
+test('identical product titles become one card with nested code choices', async ({ page }) => {
   const repeated = [
     { option_id: '1-10-01', code: '26.51.42', clause_ref: 'Приложение 1, позиция 10', clause_url: '/source/1-10-01' },
     { option_id: '2-20-01', code: '26.51.42', clause_ref: 'Приложение 2, позиция 20', clause_url: '/source/2-20-01' },
@@ -270,8 +271,11 @@ test('identical codes are grouped without losing their source positions', async 
   await page.goto('/ui/');
   await page.getByLabel('Название товара', { exact: true }).fill('Осциллограф');
   await page.getByLabel('Название товара', { exact: true }).press('Enter');
-  await expect(page.locator('.clarification-option')).toHaveCount(2);
-  await expect(page.locator('.clarification-option').first()).toContainText('Найден в 2 позициях перечня');
+  await expect(page.locator('.clarification-option')).toHaveCount(1);
+  await expect(page.locator('.clarification-code-row')).toHaveCount(2);
+  await expect(page.locator('.clarification-title')).toHaveCount(1);
+  await expect(page.locator('.clarification-option').first()).toContainText('Позиций в перечне: 2');
+  await expect(page.locator('.clarification-warning')).toContainText('Не выбирайте наугад');
   await page.getByText('Позиции перечня (2)', { exact: true }).click();
   await expect(page.locator('.clarification-sources li')).toHaveCount(2);
   await expect(page.locator('.clarification-sources a')).toHaveCount(2);

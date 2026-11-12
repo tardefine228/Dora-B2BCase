@@ -56,6 +56,34 @@ export function groupClarificationOptions(
   return [...groups.values()];
 }
 
+export type ClarificationTitleGroup = {
+  key: string;
+  title: string;
+  codeGroups: ClarificationOptionGroup[];
+  clauseRefs: string[];
+};
+
+/** One product card: code choices are nested instead of repeating the same title. */
+export function groupClarificationTitles(
+  options: readonly ClarificationOption[],
+): ClarificationTitleGroup[] {
+  const groups = new Map<string, ClarificationTitleGroup>();
+  for (const codeGroup of groupClarificationOptions(options)) {
+    const key = codeGroup.title.trim().toLocaleLowerCase('ru');
+    const existing = groups.get(key);
+    if (existing) {
+      existing.codeGroups.push(codeGroup);
+      existing.clauseRefs = [...new Set([...existing.clauseRefs, ...codeGroup.clauseRefs])];
+    } else {
+      groups.set(key, {
+        key, title: codeGroup.title, codeGroups: [codeGroup],
+        clauseRefs: [...codeGroup.clauseRefs],
+      });
+    }
+  }
+  return [...groups.values()];
+}
+
 export const CODE_LEVEL_LABEL: Record<CodeLevel, string> = {
   group: 'Укрупнённый код',
   detail: 'Детальный код',

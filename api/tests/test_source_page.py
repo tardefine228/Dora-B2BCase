@@ -54,19 +54,6 @@ def test_wrapped_appendix3_entry_keeps_code_at_the_end() -> None:
     assert 'class="code">30.20.31<' in html
 
 
-def test_multi_code_position_groups_all_codes_above_the_quotation() -> None:
-    with TestClient(app) as client:
-        page = client.get("/source/1-139-01", headers={"Accept": "text/html"})
-        assert page.status_code == 200
-        assert "Коды ОКПД2 (3)" in page.text
-        for code in ("32.50.21.121", "32.50.21.122", "32.50.21.123"):
-            assert f">{code}</li>" in page.text
-        hit = next(line for line in page.text.splitlines() if 'class="pos hit"' in line)
-        # Codes remain verbatim in the quotation, without a duplicate trailing badge.
-        assert 'class="code"' not in hit
-        assert "32.50.21.122" in hit and "32.50.21.123" in hit
-
-
 def test_source_endpoint_keeps_json_for_api_clients() -> None:
     with TestClient(app) as client:
         answer = client.get(f"/source/{RECORD_ID}", headers={"Accept": "application/json"})
