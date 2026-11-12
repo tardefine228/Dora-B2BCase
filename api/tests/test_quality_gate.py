@@ -116,6 +116,26 @@ def test_calibration_tolerance_is_exclusive():
     assert fatal.keep is False
 
 
+def test_underconfidence_from_improved_accuracy_does_not_mask_overconfidence():
+    baseline = _record(LEXICAL, LEXICAL_ECE)
+    improved_but_underconfident = measurement(
+        {key: Counts(correct, total) for key, (correct, total) in LEXICAL.items()},
+        0.20,
+        overconfidence_ece=0.0,
+        underconfidence_ece=0.20,
+    )
+    verdict = evaluate_regression(baseline, improved_but_underconfident)
+    assert verdict.keep is True
+    assert "полный ECE" in verdict.table() and "недоуверенность" in verdict.table()
+
+    dangerous = dict(improved_but_underconfident)
+    dangerous["overconfidence_ece"] = LEXICAL_ECE + ECE_TOLERANCE + 0.001
+    dangerous["ece"] = dangerous["overconfidence_ece"] + 0.20
+    rejected = evaluate_regression(baseline, dangerous)
+    assert rejected.keep is False
+    assert any("переуверенности" in reason for reason in rejected.reasons)
+
+
 def test_different_dataset_is_an_error_not_a_regression():
     """Adding labeled rows changes the measurement; silently passing would hide it."""
     bigger = dict(LEXICAL)

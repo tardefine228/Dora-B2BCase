@@ -142,6 +142,7 @@ def test_new_generic_families_never_autoselect_a_random_branch(
     monkeypatch.setenv("VECTOR_SEARCH", vector_search)
     classifier = CatalogClassifier(CATALOG)
     expected = {
+        "Генератор": {"2-106-01", "2-107-01", "2-108-01", "2-345-01"},
         "Компрессор воздушный": {"1-34-01", "3-115-01", "3-116-01", "3-117-01", "3-118-01"},
         "Состав": {"1-131-01", "2-59-01"},
         "Платы": {"2-193-01", "2-194-01", "3-35-01", "3-36-01"},
@@ -188,6 +189,58 @@ def test_single_branch_generic_queries_require_review_not_autopass(
 
 
 @pytest.mark.parametrize("vector_search", ["0", "1"])
+def test_curated_product_phrases_override_unsafe_statistical_choices(
+    vector_search: str, monkeypatch
+) -> None:
+    monkeypatch.setenv("VECTOR_SEARCH", vector_search)
+    classifier = CatalogClassifier(CATALOG)
+    expected = {
+        "Ножи кухонные": "25.71.11",
+        "Кухонный нож шеф-повара": "25.71.11",
+        "Станок токарный с ЧПУ": "28.41.2",
+        "Токарно-винторезный станок": "28.41.2",
+        "Набор ручных инструментов": "25.73.60",
+        "Свитер трикотажный мужской": "14.3",
+        "Беговая дорожка": "32.30.14.120",
+        "Пульт дистанционного управления": "26.51.20.130",
+        "Внешний жесткий диск": "26.20.2",
+        "Жесткий диск HDD 2 ТБ": "26.20.2",
+        "Весы промышленные": "28.29.31.110",
+    }
+    for query, code in expected.items():
+        answer = classifier.classify(query)
+        assert answer.status == "ok", (query, answer.model_dump())
+        assert answer.code == code, query
+        assert any(
+            reason.code == "curated_product_match" for reason in answer.attention_reasons
+        ), query
+
+
+@pytest.mark.parametrize("vector_search", ["0", "1"])
+def test_curated_product_rules_have_negative_controls(
+    vector_search: str, monkeypatch
+) -> None:
+    monkeypatch.setenv("VECTOR_SEARCH", vector_search)
+    classifier = CatalogClassifier(CATALOG)
+    expected = {
+        "Ножи для рыбы": "25.71.14",
+        "Устройства числового программного управления": "26.20.40.150",
+        "Лыжи беговые": "32.30.11.110",
+    }
+    for query, code in expected.items():
+        answer = classifier.classify(query)
+        assert answer.code == code, (query, answer.model_dump())
+        assert not any(
+            reason.code == "curated_product_match" for reason in answer.attention_reasons
+        ), query
+    for query in ("Весы кухонные", "Весы бытовые электронные"):
+        answer = classifier.classify(query)
+        assert answer.status == "not_found", query
+        assert answer.code is None and answer.title is None
+        assert answer.alternatives == []
+
+
+@pytest.mark.parametrize("vector_search", ["0", "1"])
 def test_standalone_adjective_does_not_name_a_product(
     vector_search: str, monkeypatch
 ) -> None:
@@ -208,6 +261,8 @@ def test_specific_controls_keep_the_same_code_on_both_backends(
         "Платы печатные смонтированные": "26.12.1",
         "Трубы алюминиевые": "24.42.26",
         "Трубы": "32.20.13.161",
+        "Генераторы сигналов электрические": "27.90.40.150",
+        "Генератор дизельный": "27.11.3",
         "Компрессоры воздушные передвижные на колесных шасси": "28.13.24",
         "Компрессоры поршневые объемные": "28.13.26",
         "Трубы пластмассовые": "22.21.2",

@@ -243,6 +243,16 @@ _register(
 )
 
 _register(
+    "генератор",
+    _rule(
+        "Какой генератор закупается: постоянного или переменного тока, "
+        "генераторная установка или генератор сигналов?",
+        "2-106-01 2-107-01 2-108-01 2-345-01",
+        "постоянный переменный синхронный дизель дизельный дгу "
+        "установка генераторная сигнал сигнальный",
+    ),
+)
+_register(
     "состав",
     _rule(
         "Что закупается: подвижной состав или химический состав для обработки?",
@@ -408,6 +418,35 @@ QUERY_FAMILY_RULES: list[tuple[frozenset[str], GenericRule]] = []
 
 def _register_family(required: str, rule: GenericRule) -> None:
     QUERY_FAMILY_RULES.append((frozenset(stems(required)), rule))
+
+
+@dataclass(frozen=True)
+class CuratedProductRule:
+    required: frozenset[str]
+    record_id: str
+    excluded: frozenset[str] = frozenset()
+
+
+def _product_rule(required: str, record_id: str, excluded: str = "") -> CuratedProductRule:
+    return CuratedProductRule(frozenset(stems(required)), record_id, frozenset(stems(excluded)))
+
+
+# Unambiguous everyday product phrases whose official catalog titles use a
+# broader description. These are application-layer decisions, not new training
+# features: the shipped model and its feature space remain untouched.
+_CURATED_PRODUCT_RULES = (
+    _product_rule("нож кухонный", "2-102-01", "рыба масло"),
+    _product_rule("станок токарный", "1-64-01"),
+    _product_rule("набор инструмент ручной", "1-24-01", "электрический механизированный"),
+    _product_rule("свитер трикотажный", "1-5-01"),
+    _product_rule("беговая дорожка", "2-169-01"),
+    _product_rule("пульт дистанционный управление", "2-251-01"),
+    _product_rule("жесткий диск", "2-203-01"),
+    _product_rule("весы промышленный", "2-127-01"),
+)
+_CURATED_ABSENT_PHRASES = tuple(
+    frozenset(stems(phrase)) for phrase in ("весы кухонные", "весы бытовые")
+)
 
 
 _register_family(
@@ -705,6 +744,43 @@ class AmbiguityGuard:
             }
         )
 
+    def _answer_from_row(
+        self, answer: ClassifyResponse, row: dict, reason: str, message: str
+    ) -> ClassifyResponse:
+        """Keep calibrated confidence but replace an unsafe statistical choice."""
+        return answer.model_copy(
+            update={
+                "code": row["okpd2"],
+                "title": row["name"],
+                "status": "ok",
+                "clause_ref": row.get("clause_ref"),
+                "clause_url": clause_url_for(row.get("record_id")),
+                "code_role": row.get("code_role"),
+                "catalog_review_required": row.get("catalog_review_required"),
+                "catalog_sha256": self.catalog_sha256,
+                "alternatives": [],
+                "attention_reasons": [AttentionReason(code=reason, message=message)],
+            }
+        )
+
+    def _curated_product_answer(
+        self, query: str, answer: ClassifyResponse
+    ) -> ClassifyResponse | None:
+        query_stems = set(stems(query))
+        for rule in _CURATED_PRODUCT_RULES:
+            if not rule.required <= query_stems or query_stems & rule.excluded:
+                continue
+            row = self._by_record.get(rule.record_id)
+            if row is None or not row.get("okpd2"):
+                return None
+            return self._answer_from_row(
+                answer,
+                row,
+                "curated_product_match",
+                "Ответ определён по проверенному правилу товарной позиции.",
+            )
+        return None
+
     def _specific_title_answer(
         self, query: str, answer: ClassifyResponse
     ) -> ClassifyResponse | None:
@@ -752,24 +828,11 @@ class AmbiguityGuard:
         row = next((row for row in rows if row.get("okpd2")), None)
         if row is None:
             return None
-        return answer.model_copy(
-            update={
-                "code": row["okpd2"],
-                "title": row["name"],
-                "status": "ok",
-                "clause_ref": row.get("clause_ref"),
-                "clause_url": clause_url_for(row.get("record_id")),
-                "code_role": row.get("code_role"),
-                "catalog_review_required": row.get("catalog_review_required"),
-                "catalog_sha256": self.catalog_sha256,
-                "alternatives": [],
-                "attention_reasons": [
-                    AttentionReason(
-                        code="direct_title_match",
-                        message="Ответ определён по конкретному официальному названию перечня.",
-                    )
-                ],
-            }
+        return self._answer_from_row(
+            answer,
+            row,
+            "direct_title_match",
+            "Ответ определён по конкретному официальному названию перечня.",
         )
 
     def apply(self, query: str, answer: ClassifyResponse) -> ClassifyResponse:
@@ -807,6 +870,21 @@ class AmbiguityGuard:
                 }
             )
         query_stems = set(stems(query))
+        if any(required <= query_stems for required in _CURATED_ABSENT_PHRASES):
+            # The catalog lists industrial weighing equipment only. A household
+            # modifier must not inherit that code (or a morphological collision
+            # with kitchen furniture).
+            return answer.model_copy(
+                update={
+                    "code": None,
+                    "title": None,
+                    "status": "not_found",
+                    "confidence": 0.0,
+                    "confidence_raw": 0.0,
+                    "alternatives": [],
+                    "clarification": None,
+                }
+            )
         rule = GENERIC_RULES.get(next(iter(head_stems), "")) if len(head_stems) == 1 else None
         if rule is not None and not (query_stems & set(stems(rule.discriminators))):
             rows = [
@@ -837,6 +915,10 @@ class AmbiguityGuard:
                 return guarded
             if len(rows) == 1:
                 return self._review_single_option(answer, family_rule.question, rows[0])
+
+        curated = self._curated_product_answer(query, answer)
+        if curated is not None:
+            return curated
 
         specific = self._specific_title_answer(query, answer)
         if specific is not None:

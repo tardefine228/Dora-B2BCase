@@ -63,7 +63,7 @@
 | `clarification` | object\|null | вопрос, минимум две опции, SHA-256 каталога и исходный ответ модели; заполнен только при `needs_clarification` |
 | `resolution` | object\|null | выбранный `option_id`, время и исходный ответ модели; заполнен после выбора специалиста |
 | `decision_source` | enum | `model`, `specialist` или `direct_code`; не даёт выдать выбор человека за автоматическую уверенность |
-| `attention_reasons` | array | машиночитаемые причины внимания (`ambiguous_name`, `multiple_codes`, `direct_title_match`, `code_exception`, `catalog_review_required`, `low_confidence`) и пояснения |
+| `attention_reasons` | array | машиночитаемые причины внимания (`ambiguous_name`, `multiple_codes`, `direct_title_match`, `curated_product_match`, `code_exception`, `catalog_review_required`, `low_confidence`) и пояснения |
 | `catalog_sha256` | string\|null | SHA-256 активного `data.csv`; связывает вопрос и выбор с одной версией каталога |
 | `item_id` | int\|null | стабильный индекс 0…99 в batch; остаётся тем же после сортировки UI |
 | `latency_ms` | float ≥0 | время обработки на сервере |

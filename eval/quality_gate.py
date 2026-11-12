@@ -18,7 +18,10 @@ with, and is compared row by row:
   0.6 / 0.4 p.p., i.e. below the resolution of this set;
 * ``ok_precision`` is compared by the number of *wrong* confident answers, because
   its denominator is chosen by the model itself;
-* ECE may not grow by more than ``ECE_TOLERANCE``;
+* dangerous overconfidence ECE may not grow by more than ``ECE_TOLERANCE``;
+  total and underconfidence ECE stay visible in the report. An old baseline has
+  only total ECE, which is used as a conservative upper bound of its
+  overconfidence component, so this split cannot admit more confident errors;
 * new rows or a different denominator mean the dataset changed: that is not a
   regression, it is a different measurement, and it is rejected as such.
 
@@ -54,12 +57,14 @@ def measurement(
     ece: float,
     *,
     config: dict | None = None,
+    overconfidence_ece: float | None = None,
+    underconfidence_ece: float | None = None,
 ) -> dict:
     """Serialisable measurement: counts, ECE and the configuration they belong to."""
     missing = set(METRIC_LABELS) - set(counts)
     if missing:
         raise ValueError(f"Нет измерений для метрик: {sorted(missing)}")
-    return {
+    payload = {
         "version": MEASUREMENT_VERSION,
         "config": config or {},
         "metrics": {
@@ -68,6 +73,11 @@ def measurement(
         },
         "ece": round(float(ece), 4),
     }
+    if overconfidence_ece is not None:
+        payload["overconfidence_ece"] = round(float(overconfidence_ece), 4)
+    if underconfidence_ece is not None:
+        payload["underconfidence_ece"] = round(float(underconfidence_ece), 4)
+    return payload
 
 
 def load_measurement(path: Path) -> dict:
@@ -135,10 +145,28 @@ def evaluate_regression(baseline: dict, actual: dict) -> GateVerdict:
                 verdict = "better" if lost < 0 else "equal"
         rows.append(GateRow(key, label, old, fresh, verdict))
 
-    base_ece = float(baseline["ece"])
-    new_ece = float(actual["ece"])
+    base_total_ece = float(baseline["ece"])
+    new_total_ece = float(actual["ece"])
+    split_calibration = "overconfidence_ece" in actual
+    # Old baselines carry only total ECE. It is a conservative upper bound for
+    # their overconfidence component, so the new policy is never more permissive
+    # toward dangerous confident errors than the old total-ECE threshold.
+    base_ece = float(baseline.get("overconfidence_ece", base_total_ece))
+    new_ece = float(actual.get("overconfidence_ece", new_total_ece))
     if new_ece > base_ece + ECE_TOLERANCE:
-        reasons.append(f"ECE вырос {base_ece:.3f} → {new_ece:.3f} (допуск +{ECE_TOLERANCE})")
+        label = "ECE переуверенности" if split_calibration else "ECE"
+        reasons.append(
+            f"{label} вырос {base_ece:.3f} → {new_ece:.3f} "
+            f"(допуск +{ECE_TOLERANCE})"
+        )
+    ece_note = None
+    if split_calibration:
+        new_under = float(actual.get("underconfidence_ece", new_total_ece - new_ece))
+        ece_note = (
+            f"полный ECE {base_total_ece:.3f} → {new_total_ece:.3f}; "
+            f"недоуверенность сейчас {new_under:.3f} "
+            "(показана в отчёте, не маскирует переуверенность)"
+        )
 
     return GateVerdict(
         keep=not reasons,
@@ -148,4 +176,10 @@ def evaluate_regression(baseline: dict, actual: dict) -> GateVerdict:
         new_ece=new_ece,
         labels=("В ПРЕДЕЛАХ", "РЕГРЕССИЯ"),
         columns=("база", "сейчас"),
+        ece_label=(
+            "ECE over (max)"
+            if split_calibration and "overconfidence_ece" not in baseline
+            else None
+        ),
+        ece_note=ece_note,
     )

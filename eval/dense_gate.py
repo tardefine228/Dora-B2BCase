@@ -130,6 +130,8 @@ class GateVerdict:
     labels: tuple[str, str] = ("ПРИНЯТ", "ОТКЛОНЁН")
     columns: tuple[str, str] = ("лексика", "вектор")
     runs: int = 1
+    ece_label: str | None = None
+    ece_note: str | None = None
 
     @property
     def headline_gains(self) -> dict[str, int]:
@@ -170,12 +172,16 @@ class GateVerdict:
             lines.append(
                 f"  {row.label:26s} {base:>22s} {new:>22s} {delta:>12s}  {row.verdict}"
             )
-        ece_label = "ECE (калибровка, пул)" if self.runs > 1 else "ECE (калибровка)"
+        ece_label = self.ece_label or (
+            "ECE (калибровка, пул)" if self.runs > 1 else "ECE (калибровка)"
+        )
         lines.append(
             f"  {ece_label:26s} {self.base_ece:>22.3f} {self.new_ece:>22.3f}"
             f" {self.new_ece - self.base_ece:>12.3f}  "
             f"{'ok' if self.new_ece <= self.base_ece + ECE_TOLERANCE else 'fatal'}"
         )
+        if self.ece_note:
+            lines.append(f"  {self.ece_note}")
         if self.runs > 1:
             lines.append(
                 f"  (счётчики объединены по {self.runs} прогонам; допуск на строку "

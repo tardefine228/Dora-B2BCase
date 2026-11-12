@@ -78,6 +78,19 @@ def test_pending_questions_are_not_fake_zero_confidence_calibration_rows():
     assert calibration([row])["ece"] == 0.0
 
 
+def test_deterministic_guard_answers_are_not_model_calibration_rows():
+    statistical = _row("26.20.11", False)
+    deterministic = _row("26.20.2", True)
+    deterministic["confidence"] = deterministic["confidence_raw"] = 0.05
+    deterministic["deterministic"] = True
+    info = calibration([statistical, deterministic])
+    assert info["answered"] == 1
+    assert info["deterministic_excluded"] == 1
+    assert info["ece"] == 0.9
+    assert info["overconfidence_ece"] == 0.9
+    assert info["underconfidence_ece"] == 0.0
+
+
 def test_counts_use_the_right_denominators():
     counts = metric_counts(_report())
     assert counts["top1_expected"].correct == 1 and counts["top1_expected"].total == 3

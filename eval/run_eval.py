@@ -278,6 +278,10 @@ def _classify_rows(classifier, rows: list[dict]) -> list[dict]:
                 "correct_top3": correct_top3,
                 "direct_top1": direct_top1,
                 "clarified_expected": clarified_expected,
+                "deterministic": any(
+                    reason.code in {"direct_title_match", "curated_product_match"}
+                    for reason in response.attention_reasons
+                ),
                 "label_kind": kind,
                 "disputed": disputed,
                 "title": response.title or "",
@@ -293,18 +297,33 @@ def calibration(results: list[dict], bins: int = ECE_BINS, key: str = "confidenc
     ``not_found`` answers report confidence 0 and are excluded: their
     correctness is a different question (was silence right?). A clarification
     has no code probability either, so including its artificial zero confidence
-    would make ECE measure the guard rather than the model. ECE is the
-    confidence-weighted mean |accuracy − mean confidence| over equal-width bins.
+    would make ECE measure the guard rather than the model. Deterministic title
+    and curated-product answers are excluded for the same reason: their final
+    code is not the model decision whose confidence is being calibrated. The
+    number of those answers is reported explicitly; decision metrics still
+    include every one of them. ECE is the confidence-weighted mean
+    |accuracy − mean confidence| over equal-width bins.
     """
-    answered = [
+    eligible = [
         r for r in results
         if r["status"] not in {"not_found", "needs_clarification"}
         and _row_kind(r) != "unclear"
     ]
+    deterministic = sum(bool(r.get("deterministic")) for r in eligible)
+    answered = [r for r in eligible if not r.get("deterministic")]
     if not answered:
-        return {"ece": 0.0, "bins": [], "answered": 0}
+        return {
+            "ece": 0.0,
+            "overconfidence_ece": 0.0,
+            "underconfidence_ece": 0.0,
+            "bins": [],
+            "answered": 0,
+            "deterministic_excluded": deterministic,
+        }
     table = []
     ece = 0.0
+    overconfidence_ece = 0.0
+    underconfidence_ece = 0.0
     for index in range(bins):
         low, high = index / bins, (index + 1) / bins
         members = [
@@ -315,7 +334,10 @@ def calibration(results: list[dict], bins: int = ECE_BINS, key: str = "confidenc
             continue
         mean_confidence = sum(r[key] for r in members) / len(members)
         accuracy = sum(1 for r in members if r["correct_top1"]) / len(members)
-        ece += len(members) / len(answered) * abs(accuracy - mean_confidence)
+        weight = len(members) / len(answered)
+        ece += weight * abs(accuracy - mean_confidence)
+        overconfidence_ece += weight * max(mean_confidence - accuracy, 0.0)
+        underconfidence_ece += weight * max(accuracy - mean_confidence, 0.0)
         table.append(
             {
                 "range": (low, high),
@@ -324,7 +346,14 @@ def calibration(results: list[dict], bins: int = ECE_BINS, key: str = "confidenc
                 "accuracy": round(accuracy, 3),
             }
         )
-    return {"ece": round(ece, 4), "bins": table, "answered": len(answered)}
+    return {
+        "ece": round(ece, 4),
+        "overconfidence_ece": round(overconfidence_ece, 4),
+        "underconfidence_ece": round(underconfidence_ece, 4),
+        "bins": table,
+        "answered": len(answered),
+        "deterministic_excluded": deterministic,
+    }
 
 
 def _row_kind(row: dict) -> str:
@@ -424,7 +453,10 @@ def summarize(report: dict) -> dict:
         1,
     ) if exact else 0.0
     summary["clarified_exact"] = sum(1 for r in exact if r.get("clarified_expected"))
-    summary["ece"] = calibration(results)["ece"]
+    calibrated = calibration(results)
+    summary["ece"] = calibrated["ece"]
+    summary["ece_overconfidence"] = calibrated["overconfidence_ece"]
+    summary["ece_underconfidence"] = calibrated["underconfidence_ece"]
     summary["ece_raw"] = calibration(results, key="confidence_raw")["ece"]
     return summary
 
@@ -466,7 +498,9 @@ def render_markdown(report: dict) -> str:
         f"| {summary['exact_top1']}% |",
         f"| Из них прямой top-1 / уточнений | {summary['direct_exact_top1']}% / "
         f"{summary['clarified_exact']} |",
-        f"| ECE уверенности, калиброванная шкала (отвеченные запросы) | {summary['ece']:.3f} |",
+        f"| ECE уверенности, калиброванная шкала (статистические ответы) | {summary['ece']:.3f} |",
+        f"| Из него: переуверенность / недоуверенность | {summary['ece_overconfidence']:.3f} / "
+        f"{summary['ece_underconfidence']:.3f} |",
         f"| ECE сырой уверенности (до калибровки, для сравнения) | {summary['ece_raw']:.3f} |",
         "",
         f"Распределение статусов: `{summary['status_distribution']}`",
@@ -534,7 +568,8 @@ def _render_calibration(results: list[dict]) -> list[str]:
     raw = calibration(results, key="confidence_raw")
     lines = [
         f"## Калибровка уверенности (ECE = {info['ece']:.3f}, "
-        f"сырая шкала = {raw['ece']:.3f}, отвечено: {info['answered']})",
+        f"сырая шкала = {raw['ece']:.3f}, статистических ответов: {info['answered']}; "
+        f"детерминированных guard-ответов исключено: {info['deterministic_excluded']})",
         "",
         "| Диапазон | Запросов | Средняя уверенность | Доля верных top-1 |",
         "| --- | ---: | ---: | ---: |",
@@ -624,7 +659,13 @@ def build_measurement(report: dict, classifier) -> dict:
         "artifact_sha256": artifacts,
         "measured_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
-    return measurement(counts, summary["ece"], config=config)
+    return measurement(
+        counts,
+        summary["ece"],
+        config=config,
+        overconfidence_ece=summary["ece_overconfidence"],
+        underconfidence_ece=summary["ece_underconfidence"],
+    )
 
 
 def compare_with_baseline(actual: dict, baseline_path: Path) -> str | None:

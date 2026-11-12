@@ -19,6 +19,7 @@ from ml.reranker import Calibration, ConfidenceModel, HeuristicReranker, load_re
 
 ROOT = Path(__file__).resolve().parents[2]
 LABELED = ROOT / "eval" / "labeled_examples.csv"
+DETERMINISTIC_REASONS = {"direct_title_match", "curated_product_match"}
 
 
 def _reranker():
@@ -74,7 +75,7 @@ def test_statuses_follow_the_raw_confidence_on_the_labeled_set() -> None:
         # Ambiguity is a separate post-model decision (contract 2.0). Calibration
         # is still checked against the preserved raw model answer.
         direct_title = any(
-            reason.code == "direct_title_match" for reason in response.attention_reasons
+            reason.code in DETERMINISTIC_REASONS for reason in response.attention_reasons
         )
         if response.clarification and (
             response.status == "needs_clarification"
@@ -86,7 +87,7 @@ def test_statuses_follow_the_raw_confidence_on_the_labeled_set() -> None:
         expected_status = reranker.confidence_model.status_for(response.confidence_raw)
         if response.status != expected_status:
             if direct_title:
-                assert response.status == "ok" and expected_status == "review"
+                assert response.status == "ok" and expected_status in {"review", "not_found"}
                 assert response.code
                 checked += 1
                 continue
@@ -231,6 +232,9 @@ def test_calibration_platform_mirrors_the_api_confidence() -> None:
     rescued = 0
     for query, _expected in cases[:: max(1, len(cases) // 30)]:
         response = classifier.classify(query)
+        deterministic = any(
+            reason.code in DETERMINISTIC_REASONS for reason in response.attention_reasons
+        )
         if response.clarification and (
             response.status == "needs_clarification"
             or any(reason.code == "ambiguous_name" for reason in response.attention_reasons)
@@ -238,6 +242,10 @@ def test_calibration_platform_mirrors_the_api_confidence() -> None:
             response = response.clarification.original
         raw, status, _code = calibration_confidence(reranker, index, query)
         if status != response.status:
+            if deterministic:
+                assert response.status == "ok" and status in {"review", "not_found"}
+                checked += 1
+                continue
             # The only allowed divergence is the documented head rescue
             # (эксп. 34, see test_statuses_follow_the_raw_confidence_on_the_labeled_set):
             # a below-threshold lead whose product word is written in the
