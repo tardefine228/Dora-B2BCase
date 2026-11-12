@@ -8,8 +8,15 @@ export function clarificationCodeLevel(
   options: readonly ClarificationOption[],
 ): CodeLevel | null {
   const others = options.filter(candidate => candidate.optionId !== option.optionId);
-  const hasParent = others.some(candidate => option.code.startsWith(`${candidate.code}.`));
-  const hasChild = others.some(candidate => candidate.code.startsWith(`${option.code}.`));
+  const isAncestor = (parent: string, child: string) => {
+    if (child.startsWith(`${parent}.`)) return true;
+    const last = parent.split('.').at(-1) ?? '';
+    if (last.length !== 1 || !child.startsWith(parent)) return false;
+    const suffix = child.slice(parent.length);
+    return /^\d(\..+)?$/.test(suffix);
+  };
+  const hasParent = others.some(candidate => isAncestor(candidate.code, option.code));
+  const hasChild = others.some(candidate => isAncestor(option.code, candidate.code));
   if (hasParent && hasChild) return 'intermediate';
   if (hasChild) return 'group';
   if (hasParent) return 'detail';

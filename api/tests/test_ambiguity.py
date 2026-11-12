@@ -14,6 +14,8 @@ from app.services.classifier import CatalogClassifier, reset_classifier
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from ml.okpd2 import is_code_ancestor, unique_detailed_code
+
 client = TestClient(app)
 CATALOG = Path(__file__).resolve().parents[2] / "data" / "data.csv"
 
@@ -69,7 +71,7 @@ def test_all_curated_product_groups_ask_instead_of_forcing_top1() -> None:
     [
         ("Клапан", {"3-120-01", "3-126-01", "3-122-01"}),
         ("Вентиль", {"3-120-01", "3-126-01", "3-122-01"}),
-        ("Аккумулятор", {"1-31-01", "2-190-01", "3-100-01"}),
+        ("Аккумулятор", {"3-98-01", "3-99-01", "3-100-01"}),
         ("Шкаф", {"1-56-01", "2-139-01", "1-138-01", "2-141-01"}),
         ("Перчатки", {"1-3-01", "3-16-01", "3-17-01", "3-18-01", "3-19-01"}),
         ("Подгузники", {"2-2-01", "2-362-01", "2-362-02", "2-362-03", "2-362-04"}),
@@ -145,7 +147,7 @@ def test_new_generic_families_never_autoselect_a_random_branch(
         "Генератор": {"2-106-01", "2-107-01", "2-108-01", "2-345-01"},
         "Компрессор воздушный": {"1-34-01", "3-115-01", "3-116-01", "3-117-01", "3-118-01"},
         "Состав": {"1-131-01", "2-59-01"},
-        "Платы": {"2-193-01", "2-194-01", "3-35-01", "3-36-01"},
+        "Платы": {"2-193-01", "3-35-01", "3-36-01"},
         "Труба": {"2-66-01", "2-71-01", "2-89-01", "3-252-01"},
         "Камеры": {"1-57-01", "2-211-01"},
         "Тетради": {"2-6-01", "2-7-01"},
@@ -259,6 +261,7 @@ def test_specific_controls_keep_the_same_code_on_both_backends(
     classifier = CatalogClassifier(CATALOG)
     expected = {
         "Платы печатные смонтированные": "26.12.1",
+        "Платы звуковые": "26.12.20",
         "Трубы алюминиевые": "24.42.26",
         "Трубы": "32.20.13.161",
         "Генераторы сигналов электрические": "27.90.40.150",
@@ -287,7 +290,6 @@ def test_specific_controls_keep_the_same_code_on_both_backends(
         assert answer.code == code, query
 
     for query, option_ids in {
-        "Платы звуковые": {"2-194-01", "3-36-01"},
         "Мебель металлическая": {"3-231-01", "1-138-01"},
         "Кресла-стулья с санитарным оснащением": {"2-394-01", "2-394-02"},
     }.items():
@@ -339,7 +341,7 @@ def test_specific_modifiers_and_direct_code_do_not_trigger_generic_rule() -> Non
     assert classifier.classify("29.10.59.160").decision_source == "direct_code"
 
 
-def test_every_multi_code_title_option_is_resolvable_by_a_specialist() -> None:
+def test_multi_code_titles_collapse_only_a_single_safe_hierarchy_leaf() -> None:
     rows, digest = load_catalog_rows(CATALOG)
     by_title: dict[str, list[dict]] = {}
     for row in rows:
@@ -352,26 +354,52 @@ def test_every_multi_code_title_option_is_resolvable_by_a_specialist() -> None:
     assert len(groups) == 87
     guard = AmbiguityGuard(rows, digest)
     checked = 0
+    collapsed = 0
     expected_option_count = 0
     for group in groups:
         query = group[0]["name"]
-        pending = guard.apply(query, guard.exact_title_answer(query))
-        assert pending.status == "needs_clarification", query
-        assert pending.clarification is not None
-        options = pending.clarification.options
+        answer = guard.apply(query, guard.exact_title_answer(query))
+        expected_codes = {row["okpd2"] for row in group if row.get("okpd2")}
+        detailed = unique_detailed_code(expected_codes)
+        safe = all(
+            row.get("code_role") == "Включён"
+            and row.get("catalog_review_required") is False
+            for row in group
+        )
+        if detailed is not None and safe:
+            assert answer.status == "ok", query
+            assert answer.code == detailed
+            assert answer.clarification is None
+            for row in group:
+                assert row["clause_ref"] in (answer.clause_ref or "")
+            collapsed += 1
+            continue
+        assert answer.status == "needs_clarification", query
+        assert answer.clarification is not None
+        options = answer.clarification.options
         expected_option_count += len(options)
         assert len({option.option_id for option in options}) == len(options)
-        expected_codes = {row["okpd2"] for row in group if row.get("okpd2")}
-        assert expected_codes <= {option.code for option in options}
+        expected_offered = expected_codes
+        if safe:
+            expected_offered = {
+                code for code in expected_codes
+                if not any(
+                    is_code_ancestor(code, other)
+                    for other in expected_codes
+                    if other != code
+                )
+            }
+        assert expected_offered <= {option.code for option in options}
         for option in options:
-            resolved = guard.resolve_answer(pending, option.option_id, digest)
+            resolved = guard.resolve_answer(answer, option.option_id, digest)
             assert resolved.status in {"ok", "review"}
             assert resolved.decision_source == "specialist"
             assert resolved.code == option.code
             assert resolved.resolution is not None
             assert resolved.resolution.option_id == option.option_id
             checked += 1
-    assert checked == expected_option_count >= 325
+    assert collapsed == 10
+    assert checked == expected_option_count >= 300
 
 
 def test_exact_title_with_multiple_codes_is_not_a_top1_answer() -> None:
@@ -392,11 +420,7 @@ def test_exact_title_with_multiple_codes_is_not_a_top1_answer() -> None:
         ("Холодильник", "2-350-01"),
         ("Мебель медицинская (кровать больничная и пр.)", "1-140-01"),
         ("Мебель медицинская, хирургическая", "2-179-01"),
-        ("Самосвал", "1-77-01"),
         ("Аккумулятор", "2-190-01"),
-        ("Сыры и творог", "2-454-01"),
-        ("Автомобили-самосвалы (бездорожье)", "1-77-01"),
-        ("Аккумуляторы свинцовые прочие", "2-190-01"),
         ("Микроскопы медицинские", "2-379-01"),
     ],
 )
@@ -422,7 +446,11 @@ def test_selected_multi_code_title_is_clarified_for_query_wordings(
     expected_codes = {
         row["okpd2"] for row in rows if row["name"] == selected["name"] and row["okpd2"]
     }
-    assert expected_codes <= {option.code for option in answer.clarification.options}
+    expected_offered = {
+        code for code in expected_codes
+        if not any(is_code_ancestor(code, other) for other in expected_codes if other != code)
+    }
+    assert expected_offered <= {option.code for option in answer.clarification.options}
     assert {reason.code for reason in answer.attention_reasons} <= {
         "ambiguous_name",
         "multiple_codes",
@@ -452,7 +480,9 @@ def test_clarification_contains_every_code_of_each_offered_title(
         row["okpd2"] for row in rows if row["name"] == selected["name"] and row["okpd2"]
     }
     assert len(expected_codes) >= 2
-    assert {option.code for option in offered} == expected_codes
+    detailed = unique_detailed_code(expected_codes)
+    expected_offered = {detailed} if detailed is not None else expected_codes
+    assert {option.code for option in offered} == expected_offered
     assert len({option.option_id for option in offered}) == len(offered)
 
 
@@ -613,8 +643,9 @@ def test_pending_batch_csv_contains_question_and_options_without_code() -> None:
     assert row["code"] == row["title"] == ""
     assert "Какой именно автомобиль" in row["clarification_question"]
     assert "29.10.2" in row["clarification_options"]
-    assert "Приложение 1, позиция 77; Укрупнённый код" in row["clarification_options"]
-    assert "Приложение 3, позиция 175; Детальный код" in row["clarification_options"]
+    assert "3-175-01: 28.92.29.000" in row["clarification_options"]
+    assert "Приложение 3, позиция 175" in row["clarification_options"]
+    assert "1-77-01: 28.92.29 —" not in row["clarification_options"]
     assert row["decision_source"] == "model"
 
 

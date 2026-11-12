@@ -24,9 +24,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from ml.features import stems, tokens  # noqa: E402
+from ml.okpd2 import is_code_ancestor, unique_detailed_code  # noqa: E402
 
 GENERIC_OK = {"ткани", "одежда", "обувь", "лифты", "трубы", "видеокамеры", "вина"}
-GENERIC_NOT_FOUND = {"медицинские"}
+GENERIC_NOT_FOUND = {"медицинские", "комплектующие"}
 GENERIC_STOP = {
     "для",
     "и",
@@ -63,8 +64,8 @@ def codes_match(predicted: str | None, expected: str) -> bool:
         return False
     return (
         predicted == expected
-        or predicted.startswith(expected + ".")
-        or expected.startswith(predicted + ".")
+        or is_code_ancestor(expected, predicted)
+        or is_code_ancestor(predicted, expected)
     )
 
 
@@ -149,17 +150,35 @@ class ApiAudit:
         }
 
 
-def check_exact(answer: dict, expected_codes: set[str]) -> str | None:
+def check_exact(
+    answer: dict, expected_codes: set[str], *, allow_collapse: bool = False
+) -> str | None:
     if not expected_codes:
         if answer["status"] == "not_found":
             return None
         return "ожидался not_found для бескодовой строки"
     option_codes = {option["code"] for option in answer["options"] if option.get("code")}
     if len(expected_codes) > 1:
+        detailed = unique_detailed_code(expected_codes) if allow_collapse else None
+        if detailed is not None:
+            if answer["status"] != "ok" or answer["code"] != detailed:
+                return f"ожидался автоматический детальный код {detailed}"
+            return None
         if answer["status"] != "needs_clarification":
             return f"ожидалось уточнение кодов {sorted(expected_codes)}"
-        if not expected_codes <= option_codes:
-            return f"не все sibling-коды: нет {sorted(expected_codes - option_codes)}"
+        required_codes = expected_codes
+        if allow_collapse:
+            required_codes = {
+                code
+                for code in expected_codes
+                if not any(
+                    is_code_ancestor(code, other)
+                    for other in expected_codes
+                    if other != code
+                )
+            }
+        if not required_codes <= option_codes:
+            return f"не все sibling-коды: нет {sorted(required_codes - option_codes)}"
         return None
     expected = next(iter(expected_codes))
     if answer["status"] != "ok" or answer["code"] != expected:
@@ -290,9 +309,18 @@ def main() -> int:
     started = time.monotonic()
     exact = []
     exact_failures = []
+    rows_by_title: dict[str, list[dict]] = defaultdict(list)
+    for row in rows:
+        if row.get("name"):
+            rows_by_title[norm(row["name"])].append(row)
     for query, expected_codes in exact_queries(rows):
         answer = api.classify(query)
-        problem = check_exact(answer, expected_codes)
+        allow_collapse = all(
+            row.get("code_role") == "Включён"
+            and str(row.get("review_required", "")).strip().casefold() not in {"true", "1"}
+            for row in rows_by_title[norm(query)]
+        )
+        problem = check_exact(answer, expected_codes, allow_collapse=allow_collapse)
         record = {**answer, "expected_codes": sorted(expected_codes), "problem": problem}
         exact.append(record)
         if problem:

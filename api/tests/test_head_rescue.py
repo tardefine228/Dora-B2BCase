@@ -100,15 +100,12 @@ def test_spec_heavy_line_answers_with_its_position(classifier, query, code):
     assert answer.code == code
 
 
-def test_multi_code_spec_heavy_line_offers_both_codes(classifier):
+def test_single_safe_leaf_resolves_spec_heavy_line(classifier):
     answer = classifier.classify("Самосвал карьерный трехосный")
-    assert answer.status == "needs_clarification"
-    assert answer.code is None and answer.title is None
-    assert answer.clarification is not None
-    assert {option.code for option in answer.clarification.options} == {
-        "28.92.29",
-        "28.92.29.000",
-    }
+    assert answer.status == "ok"
+    assert answer.code == "28.92.29.000"
+    assert answer.clause_ref == "Приложение 1, позиция 77; Приложение 3, позиция 175"
+    assert answer.clarification is None
 
 
 @pytest.mark.parametrize(
@@ -140,9 +137,10 @@ def test_rescue_never_claims_ok(classifier):
             assert answer.confidence_raw is not None
 
 
-def test_rescue_keeps_runner_up_positions(classifier):
+def test_specific_product_rule_can_resolve_a_lexical_rescue(classifier):
     answer = classifier.classify("Станок фрезерный с ЧПУ вертикальный")
-    assert answer.status == "review"
+    assert answer.status == "ok"
+    assert answer.code == "28.41.2"
     assert answer.alternatives or answer.code
 
 

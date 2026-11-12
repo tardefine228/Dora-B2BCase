@@ -556,6 +556,10 @@ class Classifier(Protocol):
     def classify(self, query: str) -> ClassifyResponse: ...
 
 
+def _apply_guard(guard: AmbiguityGuard, query: str, answer: ClassifyResponse) -> ClassifyResponse:
+    return guard.enrich_procurement(guard.apply(query, answer))
+
+
 class MockClassifier:
     """Deterministic placeholder for frontend development."""
 
@@ -751,7 +755,7 @@ class CatalogClassifier:
         answer = _best_answer(
             self._classify_normalized(autocorrect(variant)) for variant in name_variants(text)
         ).model_copy(update={"query": text})
-        return self._ambiguity.apply(text, answer)
+        return _apply_guard(self._ambiguity, text, answer)
 
     def resolve_clarification(
         self, query: str, option_id: str, expected_catalog_sha256: str
@@ -791,7 +795,7 @@ class CatalogClassifier:
                 scored.append(self._classify_normalized(to_encode[position]))
                 position += 1
             answer = _best_answer(scored).model_copy(update={"query": text})
-            answers.append(self._ambiguity.apply(text, answer))
+            answers.append(_apply_guard(self._ambiguity, text, answer))
         return answers
 
     def _classify_normalized(self, normalized_query: str) -> ClassifyResponse:
@@ -1517,7 +1521,7 @@ class QdrantClassifier:
                         "confidence_raw": answer.confidence_raw,
                     }
                 )
-            answers.append(self._ambiguity.apply(text, answer))
+            answers.append(_apply_guard(self._ambiguity, text, answer))
         return answers
 
     def resolve_clarification(

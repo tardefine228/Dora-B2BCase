@@ -33,10 +33,16 @@ def test_exact_audit_requires_every_sibling_code_and_real_single_code_answer():
     pending = {
         "status": "needs_clarification",
         "code": None,
-        "options": [{"code": "26.11.3"}, {"code": "26.11.30"}],
+        "options": [{"code": "26.11.30"}, {"code": "26.11.31"}],
     }
-    assert module.check_exact(pending, {"26.11.3", "26.11.30"}) is None
+    assert module.check_exact(pending, {"26.11.30", "26.11.31"}) is None
     assert "sibling" in module.check_exact(pending, {"26.11.3", "26.11.30", "26.11.31"})
+    automatic = {"status": "ok", "code": "26.11.30", "options": []}
+    assert module.check_exact(
+        automatic, {"26.11.3", "26.11.30"}, allow_collapse=True
+    ) is None
+    assert module.check_exact(automatic, {"26.11.3", "26.11.30"})
+    assert module.check_exact({**automatic, "code": "26.11.3"}, {"26.11.3", "26.11.30"})
     assert module.check_exact({"status": "ok", "code": "15.2", "options": []}, {"15.2"}) is None
     assert module.check_exact({"status": "review", "code": "15.2", "options": []}, {"15.2"})
     assert module.check_exact({"status": "ok", "code": "26.11.3", "options": []}, set())
@@ -44,9 +50,9 @@ def test_exact_audit_requires_every_sibling_code_and_real_single_code_answer():
         "query": "x" * 1164,
         "status": "needs_clarification",
         "code": None,
-        "options": [{"code": "26.11.3"}, {"code": "26.11.30"}],
+        "options": [{"code": "26.11.30"}, {"code": "26.11.31"}],
     }
-    assert module.check_exact(long_title, {"26.11.3", "26.11.30"}) is None
+    assert module.check_exact(long_title, {"26.11.30", "26.11.31"}) is None
     assert module.check_exact({**long_title, "status": "validation_error"}, {"26.11.3"})
 
 
