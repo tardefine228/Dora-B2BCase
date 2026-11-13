@@ -85,6 +85,30 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+# Run description of an artifact: everything that ties a file to one training run and
+# is machine-independent (the weights' last digits are BLAS noise, and a hash alone
+# cannot tell a rebuild of the same code from a file left over from an older trainer).
+RUN_DESCRIPTION_KEYS = (
+    "seed",
+    "train_pairs",
+    "train_queries",
+    "validation_queries",
+    "split_strategy",
+    "confidence_candidates",
+    "pair_thresholds",
+    "confidence_thresholds",
+    "confidence_calibration",
+    "corpus_rows",
+    "embedder",
+)
+
+
+def _run_description(path: Path) -> dict:
+    """Machine-independent description of the run that produced ``path``."""
+    meta = json.loads(path.read_text(encoding="utf-8")).get("meta") or {}
+    return {key: meta.get(key) for key in RUN_DESCRIPTION_KEYS if key in meta}
+
+
 def _lexical_baseline(
     models_dir: Path, seed: int, max_queries: int, baseline_artifact: Path | None
 ) -> tuple[Path, tempfile.TemporaryDirectory | None]:
@@ -247,6 +271,10 @@ def gate_dense(
                 "sha256": _sha256(baseline_path),
                 "trained_in_run": scratch is not None,
                 "path": None if scratch is not None else str(baseline_path),
+                # The hash of a rebuild moves with the BLAS build, so the report also
+                # carries the run description: the test compares that with the shipped
+                # lexical artifact instead of a hash frozen on one machine.
+                "meta": _run_description(baseline_path),
             },
             "labeled_rows": max(pool["top1_all"].total for pool in pools_base),
             "seeds": [seed, *extra_seeds],

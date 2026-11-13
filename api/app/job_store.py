@@ -90,6 +90,10 @@ class JobStore(Protocol):
 
     def add_batch_result(self, job_id: str, result: ClassifyResponse) -> bool: ...
 
+    def update_result_if_pending(
+        self, job_id: str, index: int, expected_catalog_sha256: str, result: dict
+    ) -> Job | None: ...
+
     def complete_batch(self, job_id: str) -> bool: ...
 
     def complete_reindex(self, job_id: str, total: int) -> bool: ...
@@ -191,6 +195,24 @@ class MemoryJobStore:
             job.completed += 1
             job.updated_at = time.time()
             return True
+
+    def update_result_if_pending(
+        self, job_id: str, index: int, expected_catalog_sha256: str, result: dict
+    ) -> Job | None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not isinstance(job, BatchJob) or not 0 <= index < len(job.results):
+                return None
+            current = job.results[index]
+            pending_hash = current.clarification.catalog_sha256 if current.clarification else None
+            if current.status != "needs_clarification" or pending_hash != expected_catalog_sha256:
+                return None
+            updated = ClassifyResponse.model_validate(result)
+            if updated.status == "needs_clarification" or updated.decision_source != "specialist":
+                raise ValueError("В job можно сохранить только ответ специалиста")
+            job.results[index] = updated
+            job.updated_at = time.time()
+            return deepcopy(job)
 
     def complete_batch(self, job_id: str) -> bool:
         with self._lock:
@@ -433,6 +455,49 @@ class SqliteJobStore:
             )
             self._connection.commit()
             return True
+
+    def update_result_if_pending(
+        self, job_id: str, index: int, expected_catalog_sha256: str, result: dict
+    ) -> Job | None:
+        with self._lock:
+            # IMMEDIATE takes the SQLite write reservation before reading, so two
+            # worker processes cannot both resolve the same pending row.
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._fetch_locked(job_id)
+                if row is None or row["kind"] != "batch":
+                    self._connection.commit()
+                    return None
+                results = json.loads(row["results"] or "[]")
+                if not 0 <= index < len(results):
+                    self._connection.commit()
+                    return None
+                current = ClassifyResponse.model_validate(results[index])
+                pending_hash = (
+                    current.clarification.catalog_sha256 if current.clarification else None
+                )
+                if (
+                    current.status != "needs_clarification"
+                    or pending_hash != expected_catalog_sha256
+                ):
+                    self._connection.commit()
+                    return None
+                updated = ClassifyResponse.model_validate(result)
+                if (
+                    updated.status == "needs_clarification"
+                    or updated.decision_source != "specialist"
+                ):
+                    raise ValueError("В job можно сохранить только ответ специалиста")
+                results[index] = updated.model_dump(mode="json")
+                self._connection.execute(
+                    "UPDATE jobs SET results = ?, updated_at = ? WHERE job_id = ?",
+                    (json.dumps(results, ensure_ascii=False), time.time(), job_id),
+                )
+                self._connection.commit()
+                return self._row_to_job(self._fetch_locked(job_id))
+            except Exception:
+                self._connection.rollback()
+                raise
 
     def complete_batch(self, job_id: str) -> bool:
         with self._lock:

@@ -3,7 +3,7 @@
   "limit": 150,
   "config": {
     "reranker": "reranker.json",
-    "artifact_sha256": "34c9cfffe998d0316e33f9e873dfaa5e292cd139dbbfdb72498bcf6a18214cae",
+    "artifact_sha256": "0863430621afe96eba09ac7181429e84842e081849601e9049735abea07f3c0f",
     "catalog_rows": 1126,
     "labeled_rows": 274
   },

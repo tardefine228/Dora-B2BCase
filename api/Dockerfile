@@ -21,6 +21,35 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Corporate TLS interception (antivirus, DLP, web proxy) breaks HTTPS inside the build
+# with "CERTIFICATE_VERIFY_FAILED: self-signed certificate in certificate chain" while
+# fetching the transformer from huggingface.co. Pass the interception root CA — the
+# base64 of the certificate file (PEM or DER) — to trust it for the whole build:
+#   PowerShell: $env:CORP_CA_PEM_B64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\certs\corp-root.cer"))
+#   bash:       CORP_CA_PEM_B64=$(base64 -w0 corp-root.cer)
+# Empty (the default) changes nothing: the stock CA bundle is used as before.
+ARG CORP_CA_PEM_B64=""
+RUN if [ -n "$CORP_CA_PEM_B64" ]; then \
+      echo "$CORP_CA_PEM_B64" | base64 -d > /tmp/corp-ca.pem \
+        || { echo "ERROR: CORP_CA_PEM_B64 is not valid base64"; exit 1; }; \
+      if ! grep -q "BEGIN CERTIFICATE" /tmp/corp-ca.pem; then \
+        { echo "-----BEGIN CERTIFICATE-----"; echo "$CORP_CA_PEM_B64"; \
+          echo "-----END CERTIFICATE-----"; } > /tmp/corp-ca.pem; \
+      fi; \
+      cp /tmp/corp-ca.pem /usr/local/share/ca-certificates/corp-root.crt \
+        && update-ca-certificates \
+        || { echo "ERROR: corporate CA is not a readable X.509 certificate"; exit 1; }; \
+      echo "Installed the corporate root CA into the system bundle"; \
+    fi
+# pip, requests/httpx (huggingface_hub) and urllib read these instead of certifi's own
+# copy, so the corporate CA above also covers model downloads. HF_HUB_DISABLE_XET: the
+# Rust xet downloader keeps its own root store and would still reject an intercepted
+# certificate; the plain HTTPS path honours SSL_CERT_FILE.
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    HF_HUB_DISABLE_XET=1
+
 # Embeddings for vector search. true (default): a multilingual transformer is installed
 # and downloaded during the build and a reranker is trained for it. If anything in that
 # step fails, the build fails. ALLOW_DEGRADE=true explicitly permits a fallback;

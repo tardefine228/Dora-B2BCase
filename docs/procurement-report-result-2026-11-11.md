@@ -48,7 +48,7 @@ batch progress. Причины независимы и их счётчики м�
 ## Возврат к отчёту и privacy
 
 `GET /classify/batch/{job_id}` остаётся источником истины до истечения `JOB_TTL_HOURS`
-(по умолчанию 30 дней). В localStorage сохраняются только `{id,total,filename}`; названия
+(по умолчанию 24 часа). В localStorage сохраняются только `{id,total,filename}`; названия
 товаров и коды там не записываются. Session snapshot по-прежнему служит только для Back.
 После reload или закрытия/открытия страницы UI повторно запрашивает серверный report.
 SQLite/PostgreSQL позволяют пережить рестарт API/worker; Memory store такой гарантии не даёт.

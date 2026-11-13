@@ -88,8 +88,6 @@ test('procurement verdict shows both appendices and the supplied flag on mobile'
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 
-<<<<<<< Updated upstream
-=======
 test('ambiguous single query has no code and resolves after confirmation', async ({ page }) => {
   let resolution: any;
   await page.route('**/classify', r => r.fulfill({ json: pending() }));
@@ -187,7 +185,6 @@ test('procurement summary filters risks and completed report survives reload', a
   expect(audit.violations.filter(v => ['critical', 'serious'].includes(v.impact ?? ''))).toEqual([]);
 });
 
->>>>>>> Stashed changes
 test('exception result never displays the ordinary prohibition verdict', async ({ page }) => {
   await page.route('**/classify', r => r.fulfill({ json: {
     ...result('Исключение', '26.20.11'), clause_ref: 'Приложение 1, позиция 1', code_role: 'Исключение', catalog_review_required: false,
@@ -198,8 +195,6 @@ test('exception result never displays the ordinary prohibition verdict', async (
   await expect(page.locator('.procurement strong')).toHaveText('Условия закупки требуют проверки');
   await expect(page.locator('.procurement')).toContainText('исключение из позиции');
 });
-<<<<<<< Updated upstream
-=======
 
 test('long clarification titles stay readable inside a desktop table cell', async ({ page }, testInfo) => {
   const title = 'Микроскопы медицинские; микроскопы для клинической лабораторной диагностики; микроскопы биологические';
@@ -375,4 +370,3 @@ test('butter uses reference names and marks the broader category', async ({ page
   await expect(page.locator('.choice-hint').first()).toContainText('Общая категория');
   await expect(page.getByRole('button', { name: 'Подтвердить выбор' })).toBeDisabled();
 });
->>>>>>> Stashed changes

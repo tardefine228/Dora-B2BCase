@@ -18,6 +18,7 @@ import csv
 import io
 import json
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -58,6 +59,7 @@ JSON_NAME_KEYS = ("name", "title", "product", "item", "наименование"
 
 _LIST_MARKER = re.compile(r"^\s*(?:[-–—•*·▪●]+|\(?\d{1,4}[.)]|\d{1,4}\s*[-–]\s)\s*")
 _ONLY_NUMBERS = re.compile(r"^[\d\s.,;:%№/\\()+\-–—]*$")
+_MD_HEADING = re.compile(r"^\s{0,3}#{1,6}(\s|$)")
 
 
 class FileParseError(ValueError):
@@ -167,18 +169,89 @@ def _lines(text: str) -> list[str]:
     return text.splitlines()
 
 
+def _read_text(content: bytes, result: ExtractedItems, filename: str) -> list[str]:
+    """Plain text: one item per line.
+
+    Markdown gets one extra rule: a heading (``# Компьютерная техника``,
+    ``## Перечень позиций``) is a document structure line, never a product — a
+    client's check-list keeps its goods in list items. Without this rule the
+    heading is classified as a product and can even come back with a confident
+    ``ok`` on a random catalogue position.
+    """
+    lines = _lines(_decode(content))
+    if not filename.lower().endswith((".md", ".markdown")):
+        return lines
+    kept: list[str] = []
+    for line in lines:
+        if _MD_HEADING.match(line):
+            if line.strip():
+                result.skipped += 1
+            continue
+        kept.append(line)
+    if result.skipped:
+        result.warnings.append(
+            f"Пропущено заголовков Markdown: {result.skipped} — они относятся к структуре "
+            "документа, а не к товарам."
+        )
+    return kept
+
+
 # --- format readers ----------------------------------------------------------
+
+
+_CSV_DELIMITERS = (";", ",", "\t", "|")
+
+
+def _row_widths(sample: str, delimiter: str) -> list[int]:
+    """Filled-cell count of every non-empty row parsed with ``delimiter``."""
+    widths: list[int] = []
+    for row in csv.reader(io.StringIO(sample), delimiter=delimiter):
+        filled = sum(1 for cell in row if cell.strip())
+        if filled:
+            widths.append(filled)
+    return widths
+
+
+def detect_csv_delimiter(text: str) -> str:
+    """Pick the delimiter that makes the widest *consistent* table.
+
+    ``csv.Sniffer`` alone misreads the usual Russian exports: a semicolon table
+    with decimal commas (``1;Ноутбук;3;89 900,00``) looks comma-separated to it,
+    and the whole row becomes one "product name". So candidates are scored by
+    the modal column count and how many rows agree with it; the sniffer's answer
+    only breaks ties.
+    """
+    sample = text[:4096]
+    try:
+        sniffer = csv.Sniffer().sniff(sample, delimiters="".join(_CSV_DELIMITERS))
+    except csv.Error:
+        sniffed: str | None = None
+    else:
+        sniffed = sniffer.delimiter
+
+    best: str | None = None
+    best_score: tuple[float, float, bool, int] | None = None
+    for index, delimiter in enumerate(_CSV_DELIMITERS):
+        widths = _row_widths(sample, delimiter)
+        if not widths:
+            continue
+        counts = Counter(widths)
+        width, repeats = counts.most_common(1)[0]
+        if width < 2:
+            continue
+        score = (width, repeats / len(widths), delimiter == sniffed, -index)
+        if best_score is None or score > best_score:
+            best, best_score = delimiter, score
+    if best is not None:
+        return best
+    if sniffed is not None:
+        return sniffed
+    return ";" if text.count(";") >= text.count(",") else ","
 
 
 def _read_csv(content: bytes, result: ExtractedItems, filename: str) -> list[str]:
     text = _decode(content)
-    if filename.lower().endswith(".tsv"):
-        delimiter = "\t"
-    else:
-        try:
-            delimiter = csv.Sniffer().sniff(text[:4096], delimiters=";,\t|").delimiter
-        except csv.Error:
-            delimiter = ";" if text.count(";") >= text.count(",") else ","
+    delimiter = "\t" if filename.lower().endswith(".tsv") else detect_csv_delimiter(text)
     rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
     return _pick_from_table(rows, result)
 
@@ -302,7 +375,7 @@ def extract_items(filename: str, content: bytes, max_items: int = 100) -> Extrac
         raise FileParseError("Файл пустой")
     result = ExtractedItems(format=kind)
     if kind == "text":
-        raw = _lines(_decode(content))
+        raw = _read_text(content, result, filename)
     elif kind == "csv":
         raw = _read_csv(content, result, filename)
     elif kind == "json":

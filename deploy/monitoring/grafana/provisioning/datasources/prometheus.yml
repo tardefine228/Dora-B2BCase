@@ -1,0 +1,11 @@
+# Grafana auto-provisions the Prometheus datasource on first start.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: dora-prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

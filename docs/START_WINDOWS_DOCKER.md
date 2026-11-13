@@ -139,6 +139,7 @@ docker compose up -d
 | `Cannot connect to Docker daemon` | Docker Desktop не запущен, WSL 2 выключен или не готов |
 | Долго строится образ | Сначала `INSTALL_TRANSFORMER=false`; для полного режима нужны дополнительные большие загрузки |
 | `npm ci` / `pip install` не скачивает пакеты | Проверить доступ к registry.npmjs.org, pypi.org и proxy/DNS |
+| `CERTIFICATE_VERIFY_FAILED: self-signed certificate in certificate chain` при сборке | Антивирус/DLP/прокси подменяет TLS. См. раздел «Корпоративный антивирус или прокси» ниже |
 | Порт 8000 занят | Измените `API_PORT=8001` в `.env`, затем откройте `http://localhost:8001/ui/` |
 | Сайт открывается, но есть 503 | `docker compose logs --tail 100 api worker`; проверить `/health/ready`, модель и каталог |
 | Файл не загрузился | До 9,5 МБ для фронтенда, серверный лимит `MAX_UPLOAD_BYTES`; допустимые типы: .xlsx/.xlsm/.csv/.tsv/.pdf/.docx/.json/.txt/.md |
@@ -147,6 +148,71 @@ docker compose up -d
 | `POST /feedback` возвращает 503 | Проверьте доступ к PostgreSQL и `docker compose logs --tail 100 api` |
 | `cannot start a paused container, try unpause instead` | Контейнер стоит на паузе (`Ctrl+Z` в прикреплённом `up`, пауза из Docker Desktop или сон/гибернация Windows с WSL 2). Лечится разделом «Последствия паузы» ниже |
 | `docker compose ps` показывает `(Paused)` | То же самое: `docker compose unpause`, затем `docker compose up -d` |
+
+### Корпоративный антивирус или прокси: `CERTIFICATE_VERIFY_FAILED`
+
+Сборка падает на шаге загрузки модели:
+
+```
+Не удалось получить список файлов модели intfloat/multilingual-e5-small:
+[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed:
+self-signed certificate in certificate chain
+```
+
+Это не ошибка проекта: Kaspersky/ESET/Dr.Web, DLP или корпоративный прокси
+расшифровывают HTTPS и подставляют свой сертификат, которому контейнер не доверяет.
+Torch и pip при этом успевают скачаться — падает только обращение к huggingface.co.
+
+**Вариант 1 — быстрее всего, без модели (2–3 минуты сборки).** Рантайм останется на
+spaCy-векторах `ru_core_news_md`, которые уже есть в образе; каталог, API и сайт
+работают полностью, часть подсказок будет менее уверенной.
+
+```powershell
+# в .env: INSTALL_TRANSFORMER=false   (или разово, только для этой сборки)
+$env:INSTALL_TRANSFORMER = "false"
+docker compose up --build -d
+```
+
+Проверьте, что сервис поднялся и чем он считает векторы:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/health/ready | ConvertTo-Json -Depth 4
+```
+
+**Вариант 2 — доверить корпоративный корневой сертификат (сборка с моделью).**
+Нужен корневой сертификат, которым антивирус подписывает трафик:
+
+1. `Win + R` → `certmgr.msc` → *Доверенные корневые центры сертификации* → *Сертификаты*.
+2. Найдите сертификат антивируса/прокси (в колонке «Кем выдан» — Kaspersky, ESET, Zscaler…).
+3. Правой кнопкой → *Все задачи* → *Экспорт* → «Нет, не экспортировать закрытый ключ» →
+   **«Файл X.509 в кодировке Base64 (.CER)»** → сохраните, например, `C:\certs\corp-root.cer`.
+4. Передайте сертификат в сборку (по умолчанию переменная пуста и ничего не меняет):
+
+```powershell
+$env:CORP_CA_PEM_B64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\certs\corp-root.cer"))
+$env:INSTALL_TRANSFORMER = "true"
+docker compose build
+docker compose up -d
+```
+
+В логе сборки должно появиться `Installed the corporate root CA into the system bundle`.
+Сертификат в base64 можно также положить одной строкой в `.env` (`CORP_CA_PEM_B64=...`),
+тогда он будет использоваться при каждой сборке. Значение не является секретом —
+это публичный корневой сертификат, но `.env` в git всё равно не коммитьте.
+
+**Вариант 3 — попросить сисадмина исключить хосты из проверки HTTPS:**
+`huggingface.co`, `*.hf.co`, `cdn-lfs.huggingface.co`, `download.pytorch.org`,
+`pypi.org`, `files.pythonhosted.org`, `registry.npmjs.org`, `github.com`,
+`objects.githubusercontent.com`.
+
+Во всех вариантах после старта проверяйте, что подхватился нужный эмбеддер:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/health/ready | Select-Object -ExpandProperty vector_search
+```
+
+Если там `spacy-ru_core_news_md` вместо `sentence-transformers/multilingual-e5-small`,
+модель не загрузилась и сервис работает в резервном режиме.
 
 ### Последствия паузы: `cannot start a paused container`
 

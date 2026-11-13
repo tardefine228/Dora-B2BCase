@@ -115,6 +115,21 @@ def test_result_contract_rejects_false_confidence_or_missing_clause():
     )
 
 
+def test_result_contract_accepts_only_a_well_formed_clarification():
+    answer = {
+        "query": "автомобиль", "status": "needs_clarification",
+        "code": None, "title": None, "confidence": 0,
+        "clarification": {
+            "catalog_sha256": "a" * 64,
+            "options": [{"code": "29.10.2"}, {"code": "29.10.4"}],
+        },
+    }
+    assert probe.valid_result(answer, "автомобиль")
+    assert not probe.valid_result({**answer, "code": "29.10.2"}, "автомобиль")
+    malformed = {**answer, "clarification": {"catalog_sha256": "a" * 64, "options": []}}
+    assert not probe.valid_result(malformed, "автомобиль")
+
+
 def test_batch_accuracy_cannot_hide_incorrect_single_answers(monkeypatch):
     report = exercise(monkeypatch, single_wrong=True)
     assert report["accuracy"]["pass"]

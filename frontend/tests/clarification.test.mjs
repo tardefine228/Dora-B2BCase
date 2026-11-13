@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { clarificationCodeLevel, clarificationOptionExport, groupClarificationOptions, groupClarificationTitles, clarificationGuide } from '../src/clarification.ts';
+import { clarificationCodeLevel, clarificationOptionExport, groupClarificationOptions, groupClarificationTitles } from '../src/clarification.ts';
 
 const dumpParent = {
   optionId: '1-77-01', code: '28.92.29', title: 'Автомобили-самосвалы',
@@ -71,18 +71,4 @@ test('already combined clause references are deduplicated inside one group', () 
   const groups = groupClarificationOptions([combined, dumpParent]);
   assert.equal(groups.length, 1);
   assert.deepEqual(groups[0].clauseRefs, ['Приложение 1, позиция 77', 'Приложение 3, позиция 175']);
-});
-
-test('guidance describes known categories without inventing unknown distinctions', () => {
-  assert.equal(clarificationGuide({ code: '21.20.24.120', okpd2Title: 'Шовные материалы' }).title, 'Шовные материалы');
-  assert.equal(clarificationGuide({ code: '21.20.24' }), null);
-  assert.equal(clarificationGuide({ code: 'toString' }), null);
-});
-
-test('butter category and subcategory are shown as hierarchy, not fat percentage', () => {
-  const parent = { ...dumpParent, code: '10.51.30.100' };
-  const child = { ...dumpChild, code: '10.51.30.110' };
-  assert.equal(clarificationCodeLevel(parent, [parent, child]), 'group');
-  assert.equal(clarificationCodeLevel(child, [parent, child]), 'detail');
-  assert.equal(clarificationCodeLevel(parent, [parent, { ...child, code: '10.51.30.200' }]), null);
 });

@@ -72,7 +72,7 @@ def test_one_lost_row_is_noise_and_two_are_a_regression():
         _record(LEXICAL, LEXICAL_ECE), _with(top1_expected=(189 - ROW_TOLERANCE - 1, 201))
     )
     assert fatal.keep is False
-    assert any("top-1 (с кодом)" in reason and "−2 строк" in reason for reason in fatal.reasons)
+    assert any("код/уточнение" in reason and "−2 строк" in reason for reason in fatal.reasons)
 
 
 def test_lost_silence_is_reported_with_its_own_rows():
@@ -114,6 +114,26 @@ def test_calibration_tolerance_is_exclusive():
         _record(LEXICAL, LEXICAL_ECE), _record(LEXICAL, LEXICAL_ECE + ECE_TOLERANCE + 0.001)
     )
     assert fatal.keep is False
+
+
+def test_underconfidence_from_improved_accuracy_does_not_mask_overconfidence():
+    baseline = _record(LEXICAL, LEXICAL_ECE)
+    improved_but_underconfident = measurement(
+        {key: Counts(correct, total) for key, (correct, total) in LEXICAL.items()},
+        0.20,
+        overconfidence_ece=0.0,
+        underconfidence_ece=0.20,
+    )
+    verdict = evaluate_regression(baseline, improved_but_underconfident)
+    assert verdict.keep is True
+    assert "полный ECE" in verdict.table() and "недоуверенность" in verdict.table()
+
+    dangerous = dict(improved_but_underconfident)
+    dangerous["overconfidence_ece"] = LEXICAL_ECE + ECE_TOLERANCE + 0.001
+    dangerous["ece"] = dangerous["overconfidence_ece"] + 0.20
+    rejected = evaluate_regression(baseline, dangerous)
+    assert rejected.keep is False
+    assert any("переуверенности" in reason for reason in rejected.reasons)
 
 
 def test_different_dataset_is_an_error_not_a_regression():
@@ -180,9 +200,11 @@ def test_table_states_the_verdict_and_the_numbers():
         # те же, «ok» точнее — 183/190 против 175/181. ECE 0.0192 → 0.0124 не
         # потому, что модель стала лучше, а потому, что показная шкала больше не
         # перекалибровывается на шум площадки (identity, см. CALIBRATION_SHIFT_SIGMAS).
+        # эксп. 37 (2026-10-25): векторный артефакт пересобран тем же тренером и тем же
+        # правилом калибровки — 193/201 top-1 против 192, ECE 0.031 против 0.029.
         # База — это замер отгруженной конфигурации, поэтому обновляется вместе с ней.
         ("lexical.json", "reranker.json", (191, 201), 0.0124),
-        ("dense-tfidf.json", "reranker.tfidf.json", (192, 201), 0.0286),
+        ("dense-tfidf.json", "reranker.tfidf.json", (193, 201), 0.0311),
     ),
 )
 def test_shipped_baselines_describe_the_shipped_configuration(name, reranker, top1, ece):
@@ -229,15 +251,21 @@ def test_baselines_can_be_compared_with_each_other_row_by_row():
     lexical = load_measurement(BASELINES / "lexical.json")
     dense = load_measurement(BASELINES / "dense-tfidf.json")
     verdict = evaluate_regression(lexical, dense)
-    assert verdict.headline_gains["top1_expected"] == 1
+    assert verdict.headline_gains["top1_expected"] == 2
     assert verdict.headline_gains["top3_expected"] == 1
-    # Every row metric is equal or better …
+    # Every row metric is equal or better: the vector path buys rows without
+    # giving up silence, literal names or confident-answer precision.
     assert [row.verdict for row in verdict.rows if row.verdict not in {"equal", "better"}] == []
-    # … and the only fatal line is the ECE, which after эксп. 36 does not compare
-    # like with like: `dense-tfidf.json` was measured 2026-10-24, when the display
-    # scale was a fitted Platt map, while the lexical file now ships the identity
-    # map (the platform's shift is inside its own noise). Retraining the vector
-    # artifact under the current rule is the open item — see docs/next-steps.md —
-    # and until then this comparison reads the row metrics, not the ECE.
+    # … and the only line that does not compare is the ECE. After эксп. 37 both
+    # artifacts are calibrated by the same rule (identity unless the platform's
+    # shift clears its own noise), so this is no longer "old map against new
+    # rule" — it is the resolution of the set: one build's ECE is quantised over
+    # ~200 answered rows, and the difference +0.019 has a paired-bootstrap
+    # interval of −0.005…+0.025 on *these* rows (eval/calibration_noise.md).
+    # Admission therefore compares reliability tables pooled over four training
+    # runs (0.0232 against 0.0242 in ml/artifacts/dense-gate.json), not two
+    # single-run ECEs; this cross-check deliberately keeps the strict 0.01
+    # tolerance so the unresolved number stays visible instead of being rounded
+    # into a pass.
     assert verdict.keep is False
     assert len(verdict.reasons) == 1 and "ECE" in verdict.reasons[0]

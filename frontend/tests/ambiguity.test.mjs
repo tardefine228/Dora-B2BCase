@@ -7,7 +7,6 @@ import { sanitizeView } from '../src/view.ts';
 const original = { code: '29.10.59.140', title: 'Автомобили пожарные', status: 'ok', confidence: 0.8, confidence_raw: 0.8 };
 const option = {
   option_id: '1-92-01', code: '29.10.2', title: 'Автомобили легковые', confidence: 0.4,
-  okpd2_title: 'Автомобили легковые', okpd2_source: 'https://classifikators.ru/okpd/29.10.2',
   clause_ref: 'Приложение 1, позиция 92', clause_url: '/source/1-92-01',
   code_role: 'Включён', catalog_review_required: false,
 };
@@ -29,8 +28,6 @@ test('API keeps needs_clarification without turning it into review or a code ans
   assert.equal(answer.code, null);
   assert.equal(answer.confidence, null);
   assert.equal(answer.clarification.options.length, 2);
-  assert.equal(answer.clarification.options[0].okpd2Title, 'Автомобили легковые');
-  assert.equal(answer.clarification.options[0].okpd2Source, option.okpd2_source);
   assert.equal(answer.clarification.original.code, '29.10.59.140');
 });
 

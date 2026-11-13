@@ -1,0 +1,24 @@
+# Prometheus scrape configuration for the Dora B2B stack.
+# Started only with the optional compose profile:
+#   docker compose --profile monitoring up --build
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    project: dora-b2bcase
+
+rule_files:
+  - /etc/prometheus/rules/dora-alerts.yml
+
+scrape_configs:
+  - job_name: dora-api
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - api:8000
+        labels:
+          service: dora-api
+
+# The Celery worker exposes no HTTP endpoint: its in-process counters are visible
+# in its own (JSON) logs. Batch lifecycle events emitted by the worker are also
+# recorded through the API surface as dora_batch_jobs_total on job state changes.

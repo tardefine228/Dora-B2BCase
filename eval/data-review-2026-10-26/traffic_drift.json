@@ -1,0 +1,442 @@
+{
+  "config": {
+    "embedder": "tfidf",
+    "vector_search": "true"
+  },
+  "files": [
+    {
+      "name": "classification-results (18).csv",
+      "rows": 100,
+      "sha256": "e07b3e76d9457a6dcf1e438ac6e849f5bfa4c889fb543f1fd207391b108b0060"
+    },
+    {
+      "name": "classification-results (19).csv",
+      "rows": 100,
+      "sha256": "874bd59b0ab9668ab9cb3fa7395bded889820fe3347f777a2b8f4a0b22c5a977"
+    },
+    {
+      "name": "classification-results (20).csv",
+      "rows": 100,
+      "sha256": "85ce5681c92fd2c29e3f7d31f6fb551e6de70d4893aeccd950c234a596477def"
+    },
+    {
+      "name": "classification-results (21).csv",
+      "rows": 100,
+      "sha256": "a394b569f30848bd1fa5d3954b62723ebd9c946620c625ff100135e84a25582a"
+    }
+  ],
+  "diff": {
+    "rows": 400,
+    "status_then": {
+      "ok": 163,
+      "review": 172,
+      "not_found": 65
+    },
+    "status_now": {
+      "ok": 168,
+      "review": 194,
+      "not_found": 38
+    },
+    "transitions": {
+      "not_found -> ok": 2,
+      "not_found -> review": 25,
+      "ok -> review": 4,
+      "review -> ok": 7
+    },
+    "unchanged_answers": 353,
+    "code_changes": [
+      {
+        "query": "Стол офисный 120-сантиметровый прямой с деревянной столешницей",
+        "old_code": "31.01.1",
+        "old_status": "review",
+        "new_code": "31.01.12",
+        "new_status": "review",
+        "confidence": 0.6548,
+        "source_file": "classification-results (18).csv",
+        "source_row": 55
+      },
+      {
+        "query": "Плита ДСП 12-миллиметровая шлифованная размером 2750×1830 мм, древесно-стружечная, без ламинированного покрытия, класс эмиссии E1, ровная поверхность, прямоугольная форма, поставка листами на поддоне",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "16.21.13",
+        "new_status": "review",
+        "confidence": 0.3097,
+        "source_file": "classification-results (18).csv",
+        "source_row": 89
+      },
+      {
+        "query": "Плита МДФ 8-миллиметровая шлифованная размером 2800×2070 мм, древесно-волокнистая средней плотности, без декоративного покрытия, однородная структура, ровные кромки, поставка листами в защитной упаковке",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "16.21.14",
+        "new_status": "review",
+        "confidence": 0.3158,
+        "source_file": "classification-results (18).csv",
+        "source_row": 91
+      },
+      {
+        "query": "Линейка пластиковая 20-сантиметровая прозрачная с миллиметровой шкалой",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "22.21.2",
+        "new_status": "review",
+        "confidence": 0.6424,
+        "source_file": "classification-results (18).csv",
+        "source_row": 92
+      },
+      {
+        "query": "Кран автомобильный 25-тонный с телескопической стрелой и гидроприводом, дизельное шасси, выносные опоры, кабина оператора с отоплением, ограничитель грузоподъемности, крюковая подвеска",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "28.22.14.125",
+        "new_status": "review",
+        "confidence": 0.2842,
+        "source_file": "classification-results (18).csv",
+        "source_row": 94
+      },
+      {
+        "query": "Ножницы канцелярские 150-миллиметровые с пластиковыми ручками и стальными лезвиями",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "22.21.2",
+        "new_status": "review",
+        "confidence": 0.64,
+        "source_file": "classification-results (18).csv",
+        "source_row": 95
+      },
+      {
+        "query": "Прицеп бортовой двухосный автомобильный с откидными металлическими бортами, стальной сварной каркас, противоскользящее покрытие пола, сцепное устройство, стояночный тормоз, светотехника, опорная стойка",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "31.01.1",
+        "new_status": "review",
+        "confidence": 0.6319,
+        "source_file": "classification-results (18).csv",
+        "source_row": 96
+      },
+      {
+        "query": "Творог натуральный 180-граммовый",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "10.51.4",
+        "new_status": "review",
+        "confidence": 0.4106,
+        "source_file": "classification-results (18).csv",
+        "source_row": 97
+      },
+      {
+        "query": "Аппарат УЗИ тележечный с цветовым допплеровским картированием",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "26.60.13.180",
+        "new_status": "review",
+        "confidence": 0.2915,
+        "source_file": "classification-results (19).csv",
+        "source_row": 83
+      },
+      {
+        "query": "Томаты свежие желтые столовые первого сорта в ящиках",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "01.13.34",
+        "new_status": "review",
+        "confidence": 0.3653,
+        "source_file": "classification-results (19).csv",
+        "source_row": 84
+      },
+      {
+        "query": "Плита ДСП 16-миллиметровая",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "22.21.3",
+        "new_status": "review",
+        "confidence": 0.3893,
+        "source_file": "classification-results (19).csv",
+        "source_row": 85
+      },
+      {
+        "query": "Плита МДФ 10-миллиметровая",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "16.21.13",
+        "new_status": "review",
+        "confidence": 0.3128,
+        "source_file": "classification-results (19).csv",
+        "source_row": 87
+      },
+      {
+        "query": "Линейка пластиковая 25-сантиметровая прозрачная с миллиметровой шкалой, прямоугольный профиль, гладкие края, стойкая печатная разметка, начало шкалы от края, материал полистирол",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "22.21.2",
+        "new_status": "review",
+        "confidence": 0.5889,
+        "source_file": "classification-results (19).csv",
+        "source_row": 88
+      },
+      {
+        "query": "Пенал пластиковый красный школьный с одним отделением, жесткий корпус, откидная крышка на защелке, гладкая поверхность, размер 210×80×35 мм, без наполнения",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "22.21.2",
+        "new_status": "review",
+        "confidence": 0.5937,
+        "source_file": "classification-results (19).csv",
+        "source_row": 90
+      },
+      {
+        "query": "Кран автомобильный 32-тонный с телескопической стрелой и гидроприводом, дизельное шасси, выносные опоры, кабина оператора с отоплением, ограничитель грузоподъемности, крюковая подвеска",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "28.22.14.125",
+        "new_status": "review",
+        "confidence": 0.2826,
+        "source_file": "classification-results (19).csv",
+        "source_row": 91
+      },
+      {
+        "query": "Прицеп бортовой трехосный автомобильный с откидными металлическими бортами, стальной сварной каркас, противоскользящее покрытие пола, сцепное устройство, стояночный тормоз, светотехника, опорная стойка",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "31.01.1",
+        "new_status": "review",
+        "confidence": 0.5544,
+        "source_file": "classification-results (19).csv",
+        "source_row": 93
+      },
+      {
+        "query": "Машина стиральная 7-килограммовая бытовая автоматическая с фронтальной загрузкой, скорость отжима 1200 об/мин, электронное управление, защита от протечек, блокировка от детей",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "27.51.13",
+        "new_status": "review",
+        "confidence": 0.308,
+        "source_file": "classification-results (19).csv",
+        "source_row": 95
+      },
+      {
+        "query": "Соль пищевая 750-граммовая поваренная йодированная мелкого помола",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "10.84.30.130",
+        "new_status": "ok",
+        "confidence": 0.9134,
+        "source_file": "classification-results (19).csv",
+        "source_row": 101
+      },
+      {
+        "query": "Коньки ледовые размера 39 фигурные с ботинками на шнуровке",
+        "old_code": "15.2",
+        "old_status": "ok",
+        "new_code": "32.30.11.131",
+        "new_status": "review",
+        "confidence": 0.6356,
+        "source_file": "classification-results (20).csv",
+        "source_row": 31
+      },
+      {
+        "query": "Прицеп бортовой четырехосный",
+        "old_code": "29.20.23.190",
+        "old_status": "review",
+        "new_code": "29.20.23.130",
+        "new_status": "review",
+        "confidence": 0.4134,
+        "source_file": "classification-results (20).csv",
+        "source_row": 70
+      },
+      {
+        "query": "Автомобиль снегоочистительный полноприводный",
+        "old_code": "29.10.59.140",
+        "old_status": "review",
+        "new_code": "29.10.2",
+        "new_status": "review",
+        "confidence": 0.4626,
+        "source_file": "classification-results (20).csv",
+        "source_row": 72
+      },
+      {
+        "query": "Стерилизатор хирургический 60-литровый паровой с автоматическим управлением, камера из нержавеющей стали, предварительное вакуумирование, сушка инструментов, контроль температуры и давления, блокировка двери",
+        "old_code": "25.12.10.000",
+        "old_status": "review",
+        "new_code": "32.50.12",
+        "new_status": "review",
+        "confidence": 0.2685,
+        "source_file": "classification-results (20).csv",
+        "source_row": 78
+      },
+      {
+        "query": "Машина подметальная шарнирно-сочлененная",
+        "old_code": "28.92.12.130",
+        "old_status": "review",
+        "new_code": "28.23.23",
+        "new_status": "review",
+        "confidence": 0.3299,
+        "source_file": "classification-results (20).csv",
+        "source_row": 83
+      },
+      {
+        "query": "Томаты свежие оранжевые столовые первого сорта в ящиках",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "01.13.34",
+        "new_status": "review",
+        "confidence": 0.3607,
+        "source_file": "classification-results (20).csv",
+        "source_row": 88
+      },
+      {
+        "query": "Плита ДСП 18-миллиметровая шлифованная размером 2750×1830 мм",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "24.42.24",
+        "new_status": "review",
+        "confidence": 0.3851,
+        "source_file": "classification-results (20).csv",
+        "source_row": 90
+      },
+      {
+        "query": "Плита МДФ 12-миллиметровая шлифованная размером 2800×2070 мм",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "24.42.24",
+        "new_status": "review",
+        "confidence": 0.3237,
+        "source_file": "classification-results (20).csv",
+        "source_row": 92
+      },
+      {
+        "query": "Машина стиральная 8-килограммовая бытовая автоматическая с фронтальной загрузкой, скорость отжима 1200 об/мин, электронное управление, защита от протечек, блокировка от детей",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "27.51.13",
+        "new_status": "review",
+        "confidence": 0.3068,
+        "source_file": "classification-results (20).csv",
+        "source_row": 97
+      },
+      {
+        "query": "Соль пищевая 1-килограммовая поваренная йодированная мелкого помола",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "10.84.30.130",
+        "new_status": "ok",
+        "confidence": 0.9119,
+        "source_file": "classification-results (20).csv",
+        "source_row": 101
+      },
+      {
+        "query": "Коньки ледовые размера 40 фигурные с ботинками на шнуровке",
+        "old_code": "15.2",
+        "old_status": "ok",
+        "new_code": "32.30.11.131",
+        "new_status": "review",
+        "confidence": 0.5586,
+        "source_file": "classification-results (21).csv",
+        "source_row": 40
+      },
+      {
+        "query": "Сахар белый 10-килограммовый свекловичный кристаллический без вкусовых добавок, сыпучий, без посторонних примесей, белого цвета, без ароматизаторов и красителей, упаковка с защитой от влаги",
+        "old_code": "14.1",
+        "old_status": "review",
+        "new_code": "10.81.12",
+        "new_status": "review",
+        "confidence": 0.3601,
+        "source_file": "classification-results (21).csv",
+        "source_row": 62
+      },
+      {
+        "query": "Соль пищевая 1.5-килограммовая поваренная йодированная мелкого помола, с добавлением йодата калия, без посторонних примесей, белого цвета, сыпучая консистенция, влагозащитная упаковка",
+        "old_code": "14.1",
+        "old_status": "review",
+        "new_code": "10.84.30.130",
+        "new_status": "review",
+        "confidence": 0.575,
+        "source_file": "classification-results (21).csv",
+        "source_row": 65
+      },
+      {
+        "query": "Стерилизатор хирургический 80-литровый паровой с автоматическим управлением, камера из нержавеющей стали, предварительное вакуумирование, сушка инструментов, контроль температуры и давления, блокировка двери",
+        "old_code": "25.12.10.000",
+        "old_status": "review",
+        "new_code": "32.50.12",
+        "new_status": "review",
+        "confidence": 0.2676,
+        "source_file": "classification-results (21).csv",
+        "source_row": 75
+      },
+      {
+        "query": "Электрокардиограф медицинский портативный с термопринтером и аккумулятором, регистрация стандартных отведений ЭКГ, цветной дисплей, сохранение результатов во внутреннюю память, комплект электродов для взрослых",
+        "old_code": "26.60.12.111",
+        "old_status": "review",
+        "new_code": "27.20.22",
+        "new_status": "review",
+        "confidence": 0.483,
+        "source_file": "classification-results (21).csv",
+        "source_row": 83
+      },
+      {
+        "query": "Плита ДСП 22-миллиметровая шлифованная размером 2750×1830 мм",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "24.42.24",
+        "new_status": "review",
+        "confidence": 0.383,
+        "source_file": "classification-results (21).csv",
+        "source_row": 85
+      },
+      {
+        "query": "Говядина охлажденная поясничная бескостная в вакуумной упаковке 1 кг, мякоть без крупных сухожилий, без посторонних запахов, температура хранения от 0 до плюс 4 °C",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "10.11.11.110",
+        "new_status": "review",
+        "confidence": 0.3717,
+        "source_file": "classification-results (21).csv",
+        "source_row": 86
+      },
+      {
+        "query": "Плита МДФ 16-миллиметровая шлифованная размером 2800×2070 мм",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "24.42.24",
+        "new_status": "review",
+        "confidence": 0.3764,
+        "source_file": "classification-results (21).csv",
+        "source_row": 88
+      },
+      {
+        "query": "Свинина охлажденная поясничная бескостная в вакуумной упаковке 2 кг, мякоть без костных осколков, без посторонних запахов, температура хранения от 0 до плюс 4 °C",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "10.11.12",
+        "new_status": "review",
+        "confidence": 0.3253,
+        "source_file": "classification-results (21).csv",
+        "source_row": 89
+      },
+      {
+        "query": "Сканер планшетный сетевой цветной с оптическим разрешением 1200 dpi, интерфейс USB, автоматическое определение размера оригинала, сканирование бумажных документов и фотографий",
+        "old_code": "",
+        "old_status": "not_found",
+        "new_code": "26.20.16",
+        "new_status": "review",
+        "confidence": 0.6661,
+        "source_file": "classification-results (21).csv",
+        "source_row": 98
+      }
+    ],
+    "confidence_bands": {
+      ">=0.8": 168,
+      "0.6–0.8": 90,
+      "<0.6": 104,
+      "молчание": 38
+    },
+    "confidence_delta_on_unchanged": {
+      "n": 315,
+      "max": 0.1139,
+      "median": 0.0148,
+      "exact_matches": 0
+    }
+  }
+}

@@ -17,6 +17,7 @@ export type StoredView = {
   fileInfo?: UploadAccepted | null;
   progress?: Progress | null;
   results?: Result[];
+  jobId?: string | null;
 };
 
 type ViewStorage = Pick<Storage, 'getItem' | 'removeItem'>;
@@ -44,7 +45,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-const STATUSES = new Set(['ok', 'review', 'not_found']);
+const STATUSES = new Set(['ok', 'review', 'not_found', 'needs_clarification']);
 
 /** Результат из хранилища в том виде, в котором его можно рендерить. */
 function sanitizeResult(value: unknown): Result | null {
@@ -53,7 +54,17 @@ function sanitizeResult(value: unknown): Result | null {
   const alternatives = Array.isArray(value.alternatives)
     ? value.alternatives.filter(isObject) as Result['alternatives']
     : [];
-  return { ...value, alternatives } as Result;
+  if (value.status === 'needs_clarification') {
+    if (!isObject(value.clarification) || !Array.isArray(value.clarification.options)
+      || value.clarification.options.length < 2 || typeof value.clarification.catalogSha256 !== 'string') return null;
+  }
+  return {
+    ...value,
+    alternatives,
+    decisionSource: value.decisionSource === 'specialist' || value.decisionSource === 'direct_code'
+      ? value.decisionSource : 'model',
+    attentionReasons: Array.isArray(value.attentionReasons) ? value.attentionReasons.filter(isObject) : [],
+  } as Result;
 }
 
 /** Сведения о разборе файла: UI читает их списком, поэтому массив обязателен. */
@@ -88,6 +99,7 @@ export function sanitizeView(value: unknown): StoredView {
   const view: StoredView = {};
   if (typeof value.name === 'string') view.name = value.name;
   if (typeof value.filename === 'string') view.filename = value.filename;
+  if (typeof value.jobId === 'string') view.jobId = value.jobId;
   const fileInfo = sanitizeFileInfo(value.fileInfo);
   if (fileInfo) view.fileInfo = fileInfo;
   const progress = sanitizeProgress(value.progress);
@@ -126,9 +138,9 @@ export function readStoredView(storage: ViewStorage, type: string): StoredView |
 /**
  * Что делать с заданием, найденным при открытии страницы.
  *
- * Задание хранится в localStorage, потому что обработка переживает закрытие
- * вкладки. Возобновлять его надо только если оно ещё идёт: завершённое задание —
- * это чужой (для этой сессии) результат, и показывать его нельзя.
+ * В localStorage хранится только opaque id, размер и имя файла, но не товары.
+ * Идущая обработка возобновляется; завершённый отчёт заново загружается с сервера
+ * по этому id. Так reload не показывает устаревший локальный снимок данных.
  */
 export type JobMarker = { id: string; total: number; filename?: string };
 

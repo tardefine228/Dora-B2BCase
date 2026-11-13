@@ -52,9 +52,15 @@ def run_batch_job(job_id: str, classifier_provider: Callable[[], object]) -> Non
             results = classifier.classify_many(names)
             per_item_latency = (time.perf_counter() - started) * 1000 / max(len(names), 1)
             published = []
-            for name, result in zip(names, results, strict=True):
+            for index, (name, result) in enumerate(
+                zip(names, results, strict=True), start=offset
+            ):
                 item = result.model_copy(
-                    update={"query": name, "latency_ms": round(per_item_latency, 3)}
+                    update={
+                        "query": name,
+                        "item_id": index,
+                        "latency_ms": round(per_item_latency, 3),
+                    }
                 )
                 add_batch_result(job_id, item)
                 published.append(item)

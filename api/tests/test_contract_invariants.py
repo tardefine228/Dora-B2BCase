@@ -211,7 +211,9 @@ def test_csv_export_carries_the_catalog_flags() -> None:
     assert header[8] == "code_role"
     assert header[9] == "catalog_review_required"
     assert rows[1][8] == "Включён"
-    assert rows[1][9] == "True"
+    # Row 2-33-01 was verified against PDF page 44 on 2026-10-26, so its flag is
+    # off — the CSV must repeat the catalog fact, not a hardcoded verdict.
+    assert rows[1][9] == "False"
 
 
 # --- semantic backend (stubs, no server) -------------------------------------
@@ -290,10 +292,37 @@ def test_qdrant_flags_come_from_the_point_payload(qdrant_classifier) -> None:
         )
     ]
     result = classifier.classify("Сыры")
-    assert result.status == "ok"
-    assert result.code == "10.51.40.120"
-    assert result.code_role == "Исключение"
-    assert result.catalog_review_required is True
+    assert result.status == "needs_clarification"
+    assert result.code is None and result.title is None
+    assert result.clarification is not None
+    selected = next(
+        option for option in result.clarification.options if option.code == "10.51.40.120"
+    )
+    assert selected.code_role == "Исключение"
+    assert selected.catalog_review_required is True
+
+
+def test_qdrant_exact_title_is_not_reordered_and_multi_code_still_clarifies(
+    qdrant_classifier,
+) -> None:
+    classifier, hits = qdrant_classifier
+    hits["Клапан запорный"] = [
+        _hit("28.14.11.130", "Арматура обратная", 0.99, record_id="3-122-01")
+    ]
+    exact = classifier.classify("Клапан запорный")
+    assert exact.status == "ok"
+    assert exact.code == "28.14.13.110"
+    assert exact.title == "Клапаны запорные"
+
+    title = "Сыры, продукты сырные и творог"
+    hits[title] = [_hit("10.51.40.120", title, 0.99, record_id="2-454-02")]
+    multiple = classifier.classify(title)
+    assert multiple.status == "needs_clarification"
+    assert multiple.clarification is not None
+    assert {option.code for option in multiple.clarification.options} == {
+        "10.51.4",
+        "10.51.40.120",
+    }
 
 
 def test_qdrant_flags_fall_back_to_the_catalog_csv(qdrant_classifier) -> None:

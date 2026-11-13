@@ -17,7 +17,7 @@ const savedResults = [
   { name: 'Ноутбук Lenovo', code: '26.20.11', title: null, confidence: 0.9, confidenceRaw: 0.9, status: 'ok', clauseRef: null, url: null, alternatives: [] },
 ];
 
-test('a fresh site launch does not show the previously analysed file', () => {
+test('reload ignores the session snapshot and uses the server job marker instead', () => {
   // Баг: sessionStorage переживал перезапуск браузера, и страница открывалась с
   // уже разобранным файлом, который в этой сессии не запускали.
   for (const type of ['navigate', 'reload', 'prerender']) {
@@ -88,10 +88,10 @@ test('a partially written record never reaches the renderer broken', () => {
   assert.equal(sanitizeView({ fileInfo: { warnings: [] } }).fileInfo, undefined);
 });
 
-test('only a running job is resumed on startup', () => {
+test('running and completed jobs take different restore paths', () => {
   assert.equal(isRunningJob('queued'), true);
   assert.equal(isRunningJob('running'), true);
-  // Завершённое задание — это результат чужой сессии: его не показываем.
+  // Completed идёт не в followBatch, а заново загружается как серверный отчёт.
   assert.equal(isRunningJob('completed'), false);
   assert.equal(isRunningJob('failed'), false);
 });

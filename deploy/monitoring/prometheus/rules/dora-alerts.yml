@@ -1,0 +1,99 @@
+# Alert rules for the Dora B2B classifier. Every metric referenced here is
+# emitted by api/app/core/metrics.py; api/tests/test_observability_assets.py
+# fails if a rule references a metric the application does not expose.
+groups:
+  - name: dora-service
+    rules:
+      - alert: DoraClassifierDown
+        expr: dora_classifier_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Классификатор не отвечает ({{ $labels.instance }})"
+          description: >-
+            Метрика dora_classifier_up держится на нуле более 2 минут:
+            /health/ready возвращает 503, служба не должна получать трафик.
+            Проверьте артефакт реранкера и логи старта (ALLOW_DEGRADE=false).
+
+      - alert: DoraEmbedderDegraded
+        expr: dora_vector_search_enabled == 1 and dora_embedder_up == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Векторный эмбеддер деградировал ({{ $labels.instance }})"
+          description: >-
+            Векторный поиск включён, но эмбеддер не поднялся — ответы идут
+            только на лексике. Тег активного эмбеддера виден в dora_embedder_info.
+
+      - alert: DoraVectorStoreDown
+        expr: dora_vector_search_enabled == 1 and dora_vector_store_up == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Векторное хранилище недоступно ({{ $labels.instance }})"
+          description: >-
+            Qdrant не отвечает на пробу; поиск переключился на in-memory индекс.
+            Проверьте контейнер qdrant и том qdrant_data.
+
+      - alert: DoraHighErrorRate
+        expr: |
+          (
+            sum(rate(dora_http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(dora_http_requests_total[5m]))
+          ) > 0.05
+          and sum(rate(dora_http_requests_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Доля 5xx выше 5% ({{ $labels.instance }})"
+          description: >-
+            Свыше 5% ответов — серверные ошибки в течение 5 минут при заметном
+            трафике. Сопоставьте с JSON-логами по request_id.
+
+      - alert: DoraHighLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(dora_http_request_duration_seconds_bucket[5m]))
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 латентности выше 1 с ({{ $labels.instance }})"
+          description: >-
+            Медиана ответов API — единицы миллисекунд; устойчивый p95 > 1 с
+            означает деградацию CPU/модели или блокировку семафора инференса.
+
+      - alert: DoraBatchJobsFailing
+        expr: increase(dora_batch_jobs_total{event="failed"}[15m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Падают пакетные задачи"
+          description: >-
+            За 15 минут есть проваленные batch-задания. Смотрите журнал
+            воркера (dora.worker, JSON-логи) и статус задачи в API.
+
+      - alert: DoraRateLimitSaturated
+        expr: |
+          (
+            sum(rate(dora_http_rate_limited_total[10m]))
+            /
+            sum(rate(dora_http_requests_total[10m]))
+          ) > 0.25
+          and sum(rate(dora_http_requests_total[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Более 25% запросов упираются в rate limit"
+          description: >-
+            Клиент регулярно получает 429: либо сбой настроек прокси
+            (TRUSTED_PROXIES), либо лимиты RATE_LIMIT_* пора пересмотреть.
