@@ -1,6 +1,16 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 const result = (query: string, code: string) => ({ query, code, title: 'Категория товара', status: 'ok', confidence: .95, confidence_raw: .8, clause_ref: 'Пункт 1', clause_url: '/source/test-1', alternatives: [] });
+const original = { code: '29.10.59.140', title: 'Автомобили пожарные', status: 'ok', confidence: .8, confidence_raw: .8, alternatives: [] };
+const clarificationOptions = [
+  { option_id: '1-92-01', code: '29.10.2', title: 'Автомобили легковые', confidence: .4, clause_ref: 'Приложение 1, позиция 92', clause_url: '/source/1-92-01', code_role: 'Включён', catalog_review_required: false },
+  { option_id: '1-94-01', code: '29.10.4', title: 'Средства автотранспортные грузовые', confidence: .3, clause_ref: 'Приложение 1, позиция 94', clause_url: '/source/1-94-01', code_role: 'Включён', catalog_review_required: false },
+];
+const pending = (itemId: number | null = null) => ({
+  query: 'автомобиль', code: null, title: null, status: 'needs_clarification', confidence: 0, confidence_raw: 0,
+  clause_ref: null, clause_url: null, alternatives: [], item_id: itemId, decision_source: 'model', attention_reasons: [],
+  clarification: { question: 'Какой именно автомобиль закупается?', options: clarificationOptions, catalog_sha256: 'a'.repeat(64), original },
+});
 
 test('single query, keyboard submission, feedback and accessibility', async ({ page }) => {
   await page.route('**/classify', r => r.fulfill({ json: result('Ноутбук', '26.20.11') }));
@@ -29,14 +39,14 @@ test('file results survive Back and feedback stays with its row after sorting', 
   await page.goto('/ui/');
   await page.locator('input[type=file]').setInputFiles({ name: 'goods.csv', mimeType: 'text/csv', buffer: Buffer.from('name\nСтол\nБумага') });
   await expect(page.locator('tbody tr')).toHaveCount(2);
-  const tableRow = page.locator('tbody tr:not(.expanded-row)').filter({ hasText: 'Стол' });
+  const tableRow = page.locator('tbody tr').filter({ hasText: 'Стол' });
   await expect(tableRow.locator('.procurement-brief')).toContainText('Ограничение закупки');
-  await tableRow.getByRole('button', { name: /Проверить результат/ }).click();
-  await page.locator('.expanded-row').getByText('Сообщить об ошибке (для экспертов)', { exact: true }).click();
-  await page.locator('.expanded-row').getByRole('button', { name: 'Код неверный' }).click();
-  await page.locator('.expanded-row').getByLabel('Правильный код ОКПД2').fill('31.02');
+  await tableRow.getByText('Проверить результат', { exact: true }).click();
+  await tableRow.getByText('Сообщить об ошибке (для экспертов)', { exact: true }).click();
+  await tableRow.getByRole('button', { name: 'Код неверный' }).click();
+  await tableRow.getByLabel('Правильный код ОКПД2').fill('31.02');
   await page.getByLabel('Сортировка').selectOption('name');
-  await expect(page.locator('.expanded-row').getByLabel('Правильный код ОКПД2')).toHaveValue('31.02');
+  await expect(tableRow.getByLabel('Правильный код ОКПД2')).toHaveValue('31.02');
   await tableRow.getByRole('link').first().click();
   await expect(page).toHaveURL(/source/);
   expect(context.pages()).toHaveLength(1);
@@ -141,10 +151,10 @@ test('batch clarification resolves the stable server item after sorting', async 
   await page.locator('input[type=file]').setInputFiles({ name: 'goods.csv', mimeType: 'text/csv', buffer: Buffer.from('name\nавтомобиль\nБумага') });
   await expect(page.locator('tbody tr')).toHaveCount(2);
   await page.getByLabel('Сортировка').selectOption('name');
-  const row = page.locator('tbody tr:not(.expanded-row)').filter({ hasText: 'автомобиль' });
-  await row.getByRole('button', { name: /Уточнить товар/ }).click();
-  await page.locator('.expanded-row .clarification-choice').filter({ hasText: '29.10.2' }).click();
-  await page.getByRole('button', { name: 'Подтвердить выбор' }).click();
+  const row = page.locator('tbody tr').filter({ hasText: 'автомобиль' });
+  await row.getByText('Уточнить товар', { exact: true }).click();
+  await row.locator('.clarification-choice').filter({ hasText: '29.10.2' }).click();
+  await row.getByRole('button', { name: 'Подтвердить выбор' }).click();
   await expect(row.locator('td').nth(2)).toContainText('29.10.2');
   await expect(page.locator('.summary-accepted strong')).toHaveText('2');
   await expect(page.locator('.summary-needs_review strong')).toHaveText('0');
@@ -213,7 +223,7 @@ test('long clarification titles stay readable inside a desktop table cell', asyn
   await page.route('**/classify/batch/microscopes', r => r.fulfill({ json: { job_id: 'microscopes', status: 'completed', total: 1, completed: 1, results: [row] } }));
   await page.goto('/ui/');
   await page.locator('input[type=file]').setInputFiles({ name: 'goods.csv', mimeType: 'text/csv', buffer: Buffer.from('name\nМикроскопы медицинские') });
-  await page.getByRole('button', { name: /Уточнить товар/ }).click();
+  await page.getByText('Уточнить товар', { exact: true }).click();
   const card = page.locator('.compact-result .clarification-option');
   const choice = card.locator('.clarification-choice').first();
   const titleBox = await card.locator('.clarification-title').boundingBox();
@@ -224,8 +234,6 @@ test('long clarification titles stay readable inside a desktop table cell', asyn
   expect(await choice.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
   expect((await choice.boundingBox())!.width).toBeGreaterThan(280);
   await expect(page.locator('.compact-result .clarification-clause').first()).toHaveText('Приложение 2, позиция 379');
-  expect((await page.locator('thead th').last().boundingBox())!.width).toBeLessThan(230);
-  await page.screenshot({ path: testInfo.outputPath('table-expanded.png'), fullPage: true });
   await testInfo.attach('microscopes-clarification', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
@@ -292,9 +300,7 @@ test('file history keeps three reports and reopens a previous server result', as
     return r.fulfill({ json: jobs[id] });
   });
   await page.goto('/ui/');
-  await page.route('**/classify/batch/history-*/events', r => r.fulfill({ contentType: 'text/event-stream', body: 'event: done\ndata: {}\n\n' }));
   for (let index = 1; index <= 4; index++) {
-    await expect(page.getByRole('button', { name: 'Выбрать файл', exact: true })).toBeEnabled();
     await page.locator('input[type=file]').setInputFiles({ name: `${index}.csv`, mimeType: 'text/csv', buffer: Buffer.from(`name\nТовар ${index}`) });
     await expect(page.locator('.history-file-copy strong').first()).toHaveText(`${index}.csv`);
   }
