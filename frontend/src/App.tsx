@@ -110,6 +110,11 @@ function ClarificationBox({ result, onResolve, onResolved }: {
           const option = codeGroup.options[0];
           const level = clarificationCodeLevel(option, clarification.options);
           const guide = clarificationGuide(option);
+          // Ссылка на проверку кода есть для любой позиции: даже если справочник
+          // не даёт расшифровки, код можно сверить на classifikators.ru.
+          const okpdSource = guide?.source
+            ?? (/^[0-9]{2}(\.[0-9]{1,2}){0,3}(\.[0-9]{3})?$/.test(codeGroup.code)
+              ? `https://classifikators.ru/okpd/${codeGroup.code}` : null);
           const differences = distinctiveWords(guide?.title ?? '', group.codeGroups.filter(item => item.key !== codeGroup.key)
             .map(item => item.options[0].okpd2Title ?? '').filter(Boolean));
           const review = codeGroup.options.some(item => item.catalogReviewRequired);
@@ -137,7 +142,7 @@ function ClarificationBox({ result, onResolve, onResolved }: {
               : guide.check}</p>
               : <p className="choice-hint">Расшифровка этого кода отсутствует в справочнике. Проверьте код и описание по документации; различия не определены.</p>}
             <SourcePositions options={codeGroup.options}/>
-            {guide?.source && <a className="guide-source" href={guide.source}>Расшифровка ОКПД2 ↗</a>}
+            {okpdSource && <a className="guide-source" href={okpdSource}>Проверить значение ОКПД ↗</a>}
           </div>;
         })}</div>
       </section>;
