@@ -19,9 +19,18 @@
 детерминирован и работает офлайн. В docker-сборке дополнительно включён
 векторный поиск, поэтому число может отличаться на 1–2 процентных пункта.
 
+Есть два набора:
+
+* `eval/client_test_100.csv` — «клиентский»: 100 позиций, собранных из
+  размеченного набора и подробных ТЗ-формулировок;
+* `eval/organizer_test_100.csv` — «как от организаторов чемпионата»: 70
+  официальных наименований позиций перечня ПП № 1875 и 30 реалистичных
+  ТЗ-позиций с брендами и характеристиками.
+
 Запуск::
 
-    python eval/check_client_test.py                 # отчёт и процент
+    python eval/check_client_test.py                 # отчёт и процент (клиентский набор)
+    python eval/check_client_test.py --file eval/organizer_test_100.csv
     python eval/check_client_test.py --min 96        # упасть, если ниже 96 %
     python eval/check_client_test.py --json report.json
 
